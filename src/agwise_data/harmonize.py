@@ -196,6 +196,8 @@ def to_monthly(da: xr.DataArray, variable: str) -> xr.DataArray:
         out = resampler.mean(skipna=True)
     out.attrs.update(da.attrs)
     out.attrs["temporal_aggregation"] = f"monthly {how} of daily values"
+    if how == "sum" and "day-1" in out.attrs.get("units", ""):
+        out.attrs["units"] = out.attrs["units"].replace("day-1", "month-1")
     return out
 
 

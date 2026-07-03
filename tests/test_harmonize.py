@@ -65,9 +65,12 @@ def test_standardize_renames_and_sorts():
 def test_to_monthly_sum_for_precip_mean_for_temp():
     # 31 days of January, value 2 each day
     da = _daily([2.0] * 31)
+    da.attrs["units"] = "mm day-1"
     monthly = to_monthly(da, "PRCP")
     assert monthly.sizes["time"] == 1
     assert float(monthly.isel(time=0).values.ravel()[0]) == pytest.approx(62.0)
+    # a monthly SUM must not keep per-day units
+    assert monthly.attrs["units"] == "mm month-1"
 
     monthly_mean = to_monthly(da.rename("TMAX"), "TMAX")
     assert float(monthly_mean.isel(time=0).values.ravel()[0]) == pytest.approx(2.0)
