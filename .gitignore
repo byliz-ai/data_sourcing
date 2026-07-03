@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Data — never commit downloaded datasets
+agwise_data_root/
+*.nc
+*.tif
+*.tiff
+*.zip
+*.grib
+
+# Credentials
+.cdsapirc
+*.json.key
+.env
+
+# OS / editors
+.DS_Store
+.Rproj.user/
+.Rhistory
+.idea/
+.vscode/

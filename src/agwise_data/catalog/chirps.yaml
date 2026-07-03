@@ -1,0 +1,59 @@
+# Catalog entry: CHIRPS v2.0 daily precipitation.
+# Field names follow the CGIAR Climate Data Hub metadata core (id, title,
+# description, license, providers, extent, version) plus AgWise extensions
+# (variables, access, driver). See docs/architecture.md for the migration
+# path to the Hub's STAC/OGC Records catalog.
+id: chirps
+title: CHIRPS v2.0 daily precipitation
+description: >
+  Climate Hazards Group InfraRed Precipitation with Station data (CHIRPS)
+  v2.0: quasi-global daily rainfall at 0.05 degree resolution, 1981 to
+  near-present. Used across AgWise as the primary historical rainfall
+  series.
+license: Public domain (freely available; cite Funk et al. 2015)
+citation: >
+  Funk, C., Peterson, P., Landsfeld, M. et al. The climate hazards infrared
+  precipitation with stations - a new environmental record for monitoring
+  extremes. Sci Data 2, 150066 (2015). https://doi.org/10.1038/sdata.2015.66
+version: "2.0"
+providers:
+  - name: UCSB Climate Hazards Center
+    roles: [producer, host]
+    url: https://www.chc.ucsb.edu/data/chirps
+extent:
+  spatial:
+    bbox: [-180.0, -50.0, 180.0, 50.0]
+  temporal:
+    start: "1981-01-01"
+    end: null   # near-present; final data lag of a few months
+spatial_resolution_deg: 0.05
+temporal_resolution: daily
+
+driver: chirps
+access:
+  - type: https
+    role: primary
+    # Yearly global NetCDF (~1.1 GB/year, compressed); the driver crops it
+    # to the configured domain before caching. UCSB removed the old
+    # africa_daily/netcdf files, so global is the only yearly NetCDF now.
+    urls:
+      global: "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/netcdf/p05/chirps-v2.0.{year}.days_p05.nc"
+  - type: https-cog
+    role: alternative
+    # Daily cloud-optimized GeoTIFFs — enables windowed range-request reads
+    # (roadmap: cloud-optimized access path).
+    url_pattern: "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/cogs/p05/{year}/chirps-v2.0.{year}.{month:02d}.{day:02d}.cog"
+  - type: https
+    role: alternative
+    # Monthly chunks of the current (partial) year.
+    url_pattern: "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/netcdf/p05/by_month/chirps-v2.0.{year}.{month:02d}.days_p05.nc"
+  - type: gee
+    role: alternative
+    collection: "UCSB-CHG/CHIRPS/DAILY"
+    note: Used by the legacy AgWise GEE downloader; not required by this driver.
+
+variables:
+  AGRO.PRCP:
+    source_name: precip
+    source_units: "mm day-1"
+    conversion: null

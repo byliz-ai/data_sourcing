@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agwise-data"
+version = "0.1.0"
+description = "AgWise data access layer: one call to fetch, harmonize and cache the climate data every AgWise module needs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "AgWise Data Sourcing Team, Alliance Bioversity & CIAT" },
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "xarray>=2023.1",
+    "dask",
+    "netCDF4",
+    "requests",
+    "PyYAML",
+    "filelock",
+    "pycountry",
+]
+
+[project.optional-dependencies]
+# Geometry clipping (country/admin masks) and GeoTIFF export
+geo = ["rioxarray", "rasterio", "geopandas", "shapely"]
+# AgERA5 downloads from the Copernicus Climate Data Store
+cds = ["cdsapi>=0.7.2"]
+dev = ["pytest", "rioxarray", "rasterio", "geopandas", "shapely"]
+all = ["rioxarray", "rasterio", "geopandas", "shapely", "cdsapi>=0.7.2"]
+
+[project.scripts]
+agwise-data = "agwise_data.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agwise_data = ["catalog/*.yaml"]

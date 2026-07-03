@@ -1,0 +1,25 @@
+# Conda environment for CGLabs / local use.
+#   conda env create -f environment.yml
+#   conda activate agwise_data
+#   pip install -e ".[all]"
+name: agwise_data
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - xarray
+  - dask
+  - netcdf4
+  - rioxarray
+  - rasterio
+  - geopandas
+  - shapely
+  - requests
+  - pyyaml
+  - filelock
+  - pycountry
+  - pip
+  - pip:
+      - cdsapi>=0.7.2
