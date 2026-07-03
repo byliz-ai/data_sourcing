@@ -75,9 +75,27 @@ agwise-data get --vars PRCP --country Rwanda --years 2023:2023 --freq monthly
 agwise-data cache info
 ```
 
-Note: the first CHIRPS request downloads the yearly global NetCDF
-(~1.1 GB) once per year of data, crops it to the Africa domain and caches
-the result; every later request for any African country reuses it.
+## Performance tuning (optional)
+
+The defaults are sensible; two environment variables matter at scale:
+
+```bash
+# parallel (variable, year) fetches — raise for AgERA5-heavy workloads
+# where wall-clock is dominated by CDS queue waits:
+export AGWISE_DATA_WORKERS=6
+
+# on a shared bulk server you may prefer continental-domain fetching so
+# one cache serves every country (small requests otherwise fetch only
+# their own window, which is much faster for one-off runs):
+export AGWISE_DATA_SCOPE=domain     # default: auto
+```
+
+With the default `auto` scope, a country-scale CHIRPS request reads only
+that country's window from UCSB's daily COGs (a Rwanda year stores ~1 MB);
+Africa-scale requests download the yearly global NetCDF (~1.1 GB) once
+over parallel connections and every country afterwards reuses it. Requests
+against providers are deliberately paced — if a server rate-limits us the
+driver falls back to a gentler path automatically.
 
 ## Portability
 

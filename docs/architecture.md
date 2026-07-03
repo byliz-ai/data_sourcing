@@ -110,6 +110,41 @@ The endgame: when a dataset graduates to the Hub, its catalog entry's
 endpoint, the local cache becomes a thin read-through cache, and every
 module keeps calling the same three functions.
 
+## Performance model
+
+Measured baseline (v0.1): one year of Rwanda rainfall took ~18 minutes,
+of which ≥95% was downloading the 1.1 GB global CHIRPS file to keep a
+37×41-cell window — ~0.03% of the bytes moved. Four mechanisms fix this:
+
+1. **Region-scoped fetching** (`fetch_scope: auto`, the default). A request
+   covering a small area (≤ `region_max_area_deg2`, default a 20°×20° box)
+   gets its own cache domain (`harmonized/<source>/rg_*`), so only that
+   window is fetched: CHIRPS reads the daily COGs via windowed HTTP range
+   requests (a Rwanda year ≈ 1 MB stored instead of 1.1 GB downloaded);
+   AgERA5 asks the CDS for just that bbox, which also means much smaller
+   extraction jobs in their queue. Any containing cache that is already
+   complete — e.g. the Africa domain on CGLabs — is always preferred, and
+   `fetch_scope: domain` forces continental-domain fetching for shared
+   bulk servers. Region caches are rediscovered from disk across sessions.
+2. **Parallel prefetch.** All (variable, year) fetches run in a thread pool
+   (`max_workers`, default 4), so HTTP downloads and CDS queue waits
+   overlap instead of accumulating serially — the win is largest for
+   AgERA5, where each request can sit minutes in Copernicus' queue.
+3. **Segmented downloads.** Large single files (the yearly CHIRPS NetCDF)
+   are fetched over `download_parts` (default 4) parallel range
+   connections when the server supports it.
+4. **Aligned storage.** Harmonized files are written with chunk shapes
+   matching how they are read back (time=92, lat/lon=128) and a fast
+   compression level; reads never fight the storage layout.
+
+**Politeness and safety.** Data providers rate-limit aggressive clients —
+UCSB answers HTTP 403 and can temporarily ban an IP. The COG path is paced
+(`cog_workers`, default 3, plus a small delay per read), treats 403 as
+"server is blocking us" (falling back to the single-request yearly NetCDF)
+rather than as missing data, and a driver-level invariant refuses to cache
+a past year with missing days, so a mid-run block can never silently
+truncate the shared cache.
+
 ## Why not X?
 
 * **Why not keep per-module scripts?** They duplicate effort (the Nairobi

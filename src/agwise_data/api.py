@@ -9,12 +9,19 @@ Three calls cover the access patterns the AgWise modules use today:
 * :func:`extract_growing_season` — per-trial monthly values between
   planting and harvest dates (plus rainfall totals and rainy-day counts),
   matching the fertilizer ML pipeline's expected columns.
+
+Performance notes: all (variable, year) fetches run in a thread pool
+(``config.max_workers``) so downloads and CDS queue waits overlap, and
+small requests get a *region-scoped* cache (see ``config.fetch_scope``)
+so a one-country run fetches only that country's window instead of a
+whole continental domain.
 """
 
 from __future__ import annotations
 
 import logging
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
@@ -24,8 +31,8 @@ import xarray as xr
 
 from . import boundaries, catalog, drivers
 from .cache import write_manifest
-from .config import Config
-from .drivers.base import NC_ENCODING
+from .config import Config, region_domain_name, round_region_bbox
+from .drivers.base import nc_encoding
 from .harmonize import (
     canonical_name,
     legacy_name,
@@ -88,6 +95,74 @@ def _resolve_region(
 
 
 # ---------------------------------------------------------------------------
+def _bbox_area(bbox) -> float:
+    w, s, e, n = bbox
+    return max(0.0, e - w) * max(0.0, n - s)
+
+
+def _harmonized_complete(
+    config: Config, source_id: str, variable: str, years: List[int], domain: str
+) -> bool:
+    short = short_name(variable)
+    return all(
+        config.harmonized_path(source_id, domain, short, y).exists() for y in years
+    )
+
+
+def _effective_domain(
+    config: Config,
+    source_id: str,
+    variable: str,
+    years: List[int],
+    region_bbox,
+    override: Optional[str],
+) -> str:
+    """Pick the cache domain for a request.
+
+    Priority: an explicit override; any containing domain whose cache is
+    already complete for these years (free reuse, smallest first); a
+    region-scoped domain when the request is small (fetch only what is
+    needed); the smallest containing domain otherwise.
+    """
+    if override:
+        return override
+    include_regions = config.fetch_scope != "domain"
+    containing = config.containing_domains(region_bbox, include_regions)
+    for name in containing:
+        if _harmonized_complete(config, source_id, variable, years, name):
+            return name
+    base = containing[0] if containing else "global"
+    if config.fetch_scope == "domain":
+        return base
+    rbox = round_region_bbox(region_bbox)
+    if _bbox_area(rbox) > config.region_max_area_deg2:
+        return base
+    name = region_domain_name(rbox)
+    if name not in config.domains:
+        config.register_domain(name, rbox)
+    return name
+
+
+def _prefetch(config: Config, tasks: List[tuple]) -> None:
+    """Ensure many (driver, variable, year, domain) files, in parallel.
+
+    Downloads and CDS queue waits are I/O bound, so threads overlap them;
+    the per-file locks in the cache make duplicate tasks harmless.
+    """
+    if config.max_workers <= 1 or len(tasks) <= 1:
+        for drv, var, year, dom in tasks:
+            drv.ensure_daily_year(var, year, dom)
+        return
+    with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
+        futures = [
+            ex.submit(drv.ensure_daily_year, var, year, dom)
+            for drv, var, year, dom in tasks
+        ]
+        for fut in futures:
+            fut.result()  # propagate the first failure
+
+
+# ---------------------------------------------------------------------------
 def get_climate(
     variables: Union[str, Sequence[str]],
     years: Union[int, Sequence[int]],
@@ -124,26 +199,36 @@ def get_climate(
     gdf, region_bbox, tag = _resolve_region(
         config, country, bbox, admin_level, admin_name
     )
-    domain = domain or config.choose_domain(region_bbox)
-
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
-    results: Dict[str, dict] = {}
 
+    # Plan every variable first, then fetch everything in parallel.
+    plans = []
+    tasks = []
     for var in variables:
         driver, source_id = _driver_for(var, source, config)
+        var_domain = _effective_domain(
+            config, source_id, var, years, region_bbox, domain
+        )
         short = short_name(var)
         stem = f"{freq.capitalize()}_{short}_{years[0]}_{years[-1]}"
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-
         need_nc = overwrite or not nc_path.exists()
         need_tif = write_tif and (overwrite or not tif_path.exists())
+        plans.append(
+            (var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif)
+        )
+        if need_nc or need_tif:
+            tasks.extend((driver, var, y, var_domain) for y in years)
+    _prefetch(config, tasks)
 
+    results: Dict[str, dict] = {}
+    for var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif in plans:
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
             da = xr.open_dataarray(nc_path)
         else:
-            da = driver.open_years(var, years, domain)
+            da = driver.open_years(var, years, var_domain)
             da = subset_bbox(da, region_bbox, buffer=0.05)
             if gdf is not None:
                 da = clip_geometry(da, gdf)
@@ -157,11 +242,11 @@ def get_climate(
                 "region": tag,
                 "years": [years[0], years[-1]],
                 "freq": freq,
-                "domain": domain,
+                "domain": var_domain,
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                da.to_netcdf(nc_path, encoding={da.name: NC_ENCODING})
+                da.to_netcdf(nc_path, encoding={da.name: nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 from .spatial import write_geotiff
@@ -170,7 +255,7 @@ def get_climate(
                 write_manifest(tif_path, meta)
 
         results[var] = {
-            "short": short,
+            "short": short_name(var),
             "source": source_id,
             "nc": nc_path if nc_path.exists() else None,
             "tif": tif_path if (tif_path and tif_path.exists()) else None,
@@ -212,6 +297,25 @@ def _point_series(
     return da.sel(lon=ilon, lat=ilat, method="nearest").transpose("time", "point")
 
 
+def _plan_extraction(
+    config: Config,
+    variables: List[str],
+    years: List[int],
+    bbox,
+    source: Optional[str],
+):
+    """Resolve drivers/domains per variable and prefetch all years in parallel."""
+    plans = []
+    for var in variables:
+        driver, source_id = _driver_for(var, source, config)
+        dom = _effective_domain(config, source_id, var, years, bbox, None)
+        plans.append((var, driver, dom))
+    _prefetch(
+        config, [(drv, var, y, dom) for var, drv, dom in plans for y in years]
+    )
+    return plans
+
+
 def extract_points(
     points,
     variables: Union[str, Sequence[str]],
@@ -233,15 +337,14 @@ def extract_points(
     lons = df[lon_col].to_numpy(dtype=float)
     lats = df[lat_col].to_numpy(dtype=float)
     bbox = points_bbox(lons, lats)
-    domain = config.choose_domain(bbox)
+    plans = _plan_extraction(config, variables, years, bbox, source)
 
     # A mid-month start must not drop that month's aggregate.
     sel_start = start_ts.to_period("M").to_timestamp() if freq == "monthly" else start_ts
 
     frames = []
-    for var in variables:
-        driver, _ = _driver_for(var, source, config)
-        da = driver.open_years(var, years, domain)
+    for var, driver, dom in plans:
+        da = driver.open_years(var, years, dom)
         da = subset_bbox(da, bbox)
         if freq == "monthly":
             da = to_monthly(da, var)
@@ -318,7 +421,7 @@ def extract_growing_season(
 
     years = list(range(int(pl_v.dt.year.min()), int(hv_v.dt.year.max()) + 1))
     bbox = points_bbox(lons, lats)
-    domain = config.choose_domain(bbox)
+    plans = _plan_extraction(config, variables, years, bbox, source)
 
     pl_month = pl_v.dt.to_period("M").dt.to_timestamp()
     hv_month = hv_v.dt.to_period("M").dt.to_timestamp()
@@ -330,10 +433,9 @@ def extract_growing_season(
     out = df.copy()
     new_cols: Dict[str, np.ndarray] = {}
 
-    for var in variables:
+    for var, driver, dom in plans:
         prefix = legacy_name(var) if legacy_names else short_name(var)
-        driver, _ = _driver_for(var, source, config)
-        daily = driver.open_years(var, years, domain)
+        daily = driver.open_years(var, years, dom)
         daily = subset_bbox(daily, bbox)
 
         monthly_pts = _point_series(to_monthly(daily, var), lons, lats).load()

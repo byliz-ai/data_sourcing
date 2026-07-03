@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,9 @@ from filelock import FileLock
 
 DOWNLOAD_TIMEOUT = (30, 600)  # (connect, read) seconds
 CHUNK = 8 * 1024 * 1024
+# Below this size a single stream is fine; above it, parallel range
+# requests meaningfully beat one TCP connection's throughput.
+PART_MIN_BYTES = 64 * 1024 * 1024
 
 
 @contextmanager
@@ -49,24 +53,105 @@ def atomic_write(path: Path):
         raise
 
 
-def download_file(url: str, dest: Path, skip_if_exists: bool = True) -> Path:
-    """Stream ``url`` to ``dest`` atomically, under a lock, skipping if present."""
+def _split_ranges(size: int, parts: int) -> list:
+    """Byte ranges [(start, end), ...] covering ``size`` bytes in ``parts``."""
+    parts = max(1, min(int(parts), size))
+    step = size // parts
+    bounds = []
+    start = 0
+    for i in range(parts):
+        end = size - 1 if i == parts - 1 else start + step - 1
+        bounds.append((start, end))
+        start = end + 1
+    return bounds
+
+
+def _probe(url: str):
+    """(content_length, supports_ranges) — (0, False) when HEAD is unusable."""
+    try:
+        resp = requests.head(url, timeout=30, allow_redirects=True)
+        if resp.status_code == 404:
+            raise FileNotFoundError(_not_published(url))
+        resp.raise_for_status()
+        size = int(resp.headers.get("Content-Length") or 0)
+        ok = resp.headers.get("Accept-Ranges", "").lower() == "bytes" and size > 0
+        return size, ok
+    except FileNotFoundError:
+        raise
+    except (requests.RequestException, ValueError):
+        return 0, False
+
+
+def _not_published(url: str) -> str:
+    return (
+        f"Source file not published (HTTP 404): {url}\n"
+        "For the current year the provider may not have released final "
+        "data yet."
+    )
+
+
+def _download_stream(url: str, dest: Path) -> None:
+    with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT) as resp:
+        if resp.status_code == 404:
+            raise FileNotFoundError(_not_published(url))
+        resp.raise_for_status()
+        with atomic_write(dest) as tmp:
+            with open(tmp, "wb") as fh:
+                shutil.copyfileobj(resp.raw, fh, length=CHUNK)
+
+
+def _download_segmented(url: str, dest: Path, size: int, parts: int) -> None:
+    """Fetch ``parts`` byte ranges concurrently into a preallocated file."""
+    with atomic_write(dest) as tmp:
+        with open(tmp, "wb") as fh:
+            fh.truncate(size)
+
+        def grab(bounds):
+            a, b = bounds
+            with requests.get(
+                url,
+                headers={"Range": f"bytes={a}-{b}"},
+                stream=True,
+                timeout=DOWNLOAD_TIMEOUT,
+            ) as resp:
+                if resp.status_code != 206:
+                    raise RuntimeError(
+                        f"Server ignored Range request (HTTP {resp.status_code}): {url}"
+                    )
+                with open(tmp, "r+b") as fh:
+                    fh.seek(a)
+                    for chunk in resp.iter_content(CHUNK):
+                        fh.write(chunk)
+
+        with ThreadPoolExecutor(max_workers=parts) as ex:
+            list(ex.map(grab, _split_ranges(size, parts)))  # re-raises first error
+
+        got = tmp.stat().st_size
+        if got != size:
+            raise RuntimeError(
+                f"Segmented download size mismatch for {url}: {got} != {size}"
+            )
+
+
+def download_file(
+    url: str, dest: Path, skip_if_exists: bool = True, parts: int = 1
+) -> Path:
+    """Download ``url`` to ``dest`` atomically, under a lock, skipping if present.
+
+    With ``parts > 1`` and a server that supports byte ranges, large files
+    are fetched over several parallel connections (falls back to a single
+    stream otherwise).
+    """
     if skip_if_exists and dest.exists():
         return dest
     with locked(dest):
         if skip_if_exists and dest.exists():  # someone else finished it
             return dest
-        with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT) as resp:
-            if resp.status_code == 404:
-                raise FileNotFoundError(
-                    f"Source file not published (HTTP 404): {url}\n"
-                    "For the current year the provider may not have released "
-                    "final data yet."
-                )
-            resp.raise_for_status()
-            with atomic_write(dest) as tmp:
-                with open(tmp, "wb") as fh:
-                    shutil.copyfileobj(resp.raw, fh, length=CHUNK)
+        size, ranges_ok = _probe(url)
+        if parts > 1 and ranges_ok and size >= PART_MIN_BYTES:
+            _download_segmented(url, dest, size, parts)
+        else:
+            _download_stream(url, dest)
     return dest
 
 

@@ -68,8 +68,20 @@ FAKE_ENTRY = {
 }
 
 
+def fake_calls() -> list:
+    """The fetch log of the *registered* fake driver class.
+
+    pytest can import this file twice (as ``conftest`` and as
+    ``tests.conftest``), producing two FakeDriver classes; the driver
+    registry always holds the active one, so tests must go through it.
+    """
+    from agwise_data.drivers import _REGISTRY
+
+    return _REGISTRY["fake"].calls
+
+
 @pytest.fixture()
 def config(tmp_path):
     catalog.register_entry(FAKE_ENTRY)
-    FakeDriver.calls.clear()
+    fake_calls().clear()
     return Config(root=tmp_path / "root", domain="africa")

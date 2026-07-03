@@ -164,10 +164,11 @@ def standardize(da: xr.DataArray, variable: str, source_id: str) -> xr.DataArray
             f"(found {list(da.dims)})"
         )
 
-    # Daily timestamps at midnight, latitude ascending.
+    # Daily timestamps at midnight, latitude ascending, canonical dim order.
     da = da.assign_coords(time=pd.DatetimeIndex(da["time"].values).normalize())
     if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
         da = da.sortby("lat")
+    da = da.transpose("time", "lat", "lon")
 
     da = da.rename(meta["short"]).astype("float32")
     da.attrs.update(

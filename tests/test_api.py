@@ -33,7 +33,7 @@ def test_get_climate_monthly_bbox(config):
 
 
 def test_get_climate_product_cache_hit(config):
-    from tests.conftest import FakeDriver
+    from tests.conftest import fake_calls
 
     kwargs = dict(
         variables="PRCP",
@@ -44,26 +44,27 @@ def test_get_climate_product_cache_hit(config):
         config=config,
     )
     get_climate(**kwargs)
-    n_calls = len(FakeDriver.calls)
+    n_calls = len(fake_calls())
     res2 = get_climate(**kwargs)  # second call: no new fetches
-    assert len(FakeDriver.calls) == n_calls
+    assert len(fake_calls()) == n_calls
     assert res2["AGRO.PRCP"]["nc"].exists()
 
 
 def test_harmonized_year_reused_across_products(config):
-    from tests.conftest import FakeDriver
+    from tests.conftest import fake_calls
 
     get_climate(
         variables="PRCP", years=[2020], bbox=BBOX, freq="monthly",
         source="fake", config=config,
     )
-    n_calls = len(FakeDriver.calls)
-    # different product (daily, different bbox) but same harmonized year
+    n_calls = len(fake_calls())
+    # different product (daily, smaller bbox inside the first region) —
+    # the containing region cache must be reused, not re-fetched
     get_climate(
         variables="PRCP", years=[2020], bbox=(34.0, -1.0, 36.0, 1.0),
         freq="daily", source="fake", config=config,
     )
-    assert len(FakeDriver.calls) == n_calls
+    assert len(fake_calls()) == n_calls
 
 
 def test_get_climate_unit_conversion_applied(config):

@@ -113,6 +113,11 @@ agwise-data cache info
 - **Hub-compatible catalog** — each source is a YAML entry
   ([src/agwise_data/catalog/](src/agwise_data/catalog/)) carrying the
   Climate Data Hub metadata core, exportable as STAC.
+- **Fast by design** — country-scale requests fetch only that country's
+  window (CHIRPS via cloud-optimized GeoTIFF range reads, AgERA5 via
+  bbox-cropped CDS requests); all (variable, year) fetches run in
+  parallel; big files download over several connections. See the
+  [performance model](docs/architecture.md#performance-model).
 
 ## Repository layout
 
