@@ -1,0 +1,49 @@
+# Catalog entry: Copernicus DEM GLO-30 (30 m global elevation).
+# Slope/aspect/TPI/TRI are derived from elevation by the StaticDriver
+# (see harmonize.STATIC_VARS "derived"), so only TOPO.ELEV is listed here.
+id: cop_dem30
+title: Copernicus DEM GLO-30 global elevation
+description: >
+  Copernicus DEM GLO-30: global digital surface model at 30 m (1 arc
+  second) derived from the WorldDEM (TanDEM-X mission), distributed as
+  per-degree cloud-optimized GeoTIFFs on the AWS Open Data registry.
+  AgWise's source for elevation and terrain derivatives (slope, aspect,
+  TPI, TRI).
+license: >
+  Free for use under the Copernicus DEM licence (ESA/Airbus); attribution
+  "Copernicus DEM (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space
+  GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA".
+citation: >
+  European Space Agency (2021). Copernicus Global Digital Elevation Model.
+  Distributed by OpenTopography. https://doi.org/10.5069/G9028PQB
+version: "2021"
+providers:
+  - name: European Space Agency / Airbus
+    roles: [producer]
+    url: https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model
+  - name: AWS Open Data
+    roles: [host]
+    url: https://registry.opendata.aws/copernicus-dem/
+extent:
+  spatial:
+    bbox: [-180.0, -90.0, 180.0, 90.0]
+  temporal:
+    start: null
+    end: null   # static layer, no time axis
+spatial_resolution_deg: 0.000277778
+temporal_resolution: static
+
+driver: cop_dem30
+access:
+  - type: https-cog
+    role: primary
+    # One COG per 1x1 degree tile; {ns}/{ew} are N/S and E/W, lat/lon the
+    # integer degrees of the tile's SW corner. Windowed reads verified on
+    # CGLabs (open /vsicurl + from_bounds; AWS_NO_SIGN_REQUEST=YES).
+    url_pattern: "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM.tif"
+
+variables:
+  TOPO.ELEV:
+    source_name: dem
+    source_units: m
+    conversion: null

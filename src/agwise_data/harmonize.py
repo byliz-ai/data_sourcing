@@ -78,9 +78,143 @@ CANONICAL_VARS = {
 _SHORT_TO_CANONICAL = {v["short"]: k for k, v in CANONICAL_VARS.items()}
 _LEGACY_TO_CANONICAL = {v["legacy"].lower(): k for k, v in CANONICAL_VARS.items()}
 
+# ---------------------------------------------------------------------------
+# Canonical STATIC variables (no time axis): topography and soil properties.
+#   depth      : True for layers with a depth dimension (SoilGrids depths)
+#   derived    : computed from another static variable instead of fetched
+#                (slope/aspect/TPI/TRI come from elevation)
+STATIC_VARS = {
+    "TOPO.ELEV": {
+        "short": "ELEV",
+        "long_name": "Elevation above sea level",
+        "units": "m",
+        "legacy": "altitude",
+    },
+    "TOPO.SLOPE": {
+        "short": "SLOPE",
+        "long_name": "Terrain slope",
+        "units": "degree",
+        "legacy": "slope",
+        "derived": "TOPO.ELEV",
+    },
+    "TOPO.ASPECT": {
+        "short": "ASPECT",
+        "long_name": "Terrain aspect (clockwise from north)",
+        "units": "degree",
+        "legacy": "aspect",
+        "derived": "TOPO.ELEV",
+    },
+    "TOPO.TPI": {
+        "short": "TPI",
+        "long_name": "Topographic position index",
+        "units": "m",
+        "legacy": "TPI",
+        "derived": "TOPO.ELEV",
+    },
+    "TOPO.TRI": {
+        "short": "TRI",
+        "long_name": "Terrain ruggedness index",
+        "units": "m",
+        "legacy": "TRI",
+        "derived": "TOPO.ELEV",
+    },
+    "SOIL.CLAY": {
+        "short": "CLAY",
+        "long_name": "Clay content",
+        "units": "%",
+        "legacy": "clay",
+        "depth": True,
+    },
+    "SOIL.SAND": {
+        "short": "SAND",
+        "long_name": "Sand content",
+        "units": "%",
+        "legacy": "sand",
+        "depth": True,
+    },
+    "SOIL.SILT": {
+        "short": "SILT",
+        "long_name": "Silt content",
+        "units": "%",
+        "legacy": "silt",
+        "depth": True,
+    },
+    "SOIL.PH": {
+        "short": "PH",
+        "long_name": "Soil pH in water",
+        "units": "pH",
+        "legacy": "pH",
+        "depth": True,
+    },
+    "SOIL.SOC": {
+        "short": "SOC",
+        "long_name": "Soil organic carbon content",
+        "units": "g kg-1",
+        "legacy": "SOC",
+        "depth": True,
+    },
+    "SOIL.NITROGEN": {
+        "short": "NITROGEN",
+        "long_name": "Total nitrogen content",
+        "units": "g kg-1",
+        "legacy": "N",
+        "depth": True,
+    },
+    "SOIL.CEC": {
+        "short": "CEC",
+        "long_name": "Cation exchange capacity",
+        "units": "cmol(c) kg-1",
+        "legacy": "CEC",
+        "depth": True,
+    },
+    "SOIL.BDOD": {
+        "short": "BDOD",
+        "long_name": "Bulk density of the fine earth fraction",
+        "units": "kg dm-3",
+        "legacy": "BD",
+        "depth": True,
+    },
+    "SOIL.CFVO": {
+        "short": "CFVO",
+        "long_name": "Coarse fragments volumetric fraction",
+        "units": "vol%",
+        "legacy": "CF",
+        "depth": True,
+    },
+    "SOIL.WV0010": {
+        "short": "WV0010",
+        "long_name": "Volumetric water content at 10 kPa",
+        "units": "vol%",
+        "legacy": "WV0010",
+        "depth": True,
+    },
+    "SOIL.WV0033": {
+        "short": "WV0033",
+        "long_name": "Volumetric water content at 33 kPa (field capacity)",
+        "units": "vol%",
+        "legacy": "WV0033",
+        "depth": True,
+    },
+    "SOIL.WV1500": {
+        "short": "WV1500",
+        "long_name": "Volumetric water content at 1500 kPa (wilting point)",
+        "units": "vol%",
+        "legacy": "WV1500",
+        "depth": True,
+    },
+}
+
+_STATIC_SHORT = {v["short"]: k for k, v in STATIC_VARS.items()}
+_STATIC_LEGACY = {v["legacy"].lower(): k for k, v in STATIC_VARS.items()}
+
 # Default source for each variable when the caller does not specify one.
 DEFAULT_SOURCE = {name: "agera5" for name in CANONICAL_VARS}
 DEFAULT_SOURCE["AGRO.PRCP"] = "chirps"
+
+DEFAULT_STATIC_SOURCE = {
+    name: ("cop_dem30" if name.startswith("TOPO.") else "soilgrids")
+    for name in STATIC_VARS
+}
 
 RAINY_DAY_THRESHOLD_MM = 2.0  # same threshold as the fertilizer ML pipeline
 
@@ -113,12 +247,44 @@ def monthly_how(variable: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+def static_canonical_name(variable: str) -> str:
+    """Resolve 'SOIL.CLAY', 'CLAY' or legacy 'clay' to the canonical static name."""
+    v = variable.strip()
+    if v in STATIC_VARS:
+        return v
+    if v.upper() in _STATIC_SHORT:
+        return _STATIC_SHORT[v.upper()]
+    if v.lower() in _STATIC_LEGACY:
+        return _STATIC_LEGACY[v.lower()]
+    raise ValueError(
+        f"Unknown static variable '{variable}'. Known: "
+        f"{sorted(STATIC_VARS)} (or short/legacy names)"
+    )
+
+
+def static_short_name(variable: str) -> str:
+    return STATIC_VARS[static_canonical_name(variable)]["short"]
+
+
+def static_has_depth(variable: str) -> bool:
+    return bool(STATIC_VARS[static_canonical_name(variable)].get("depth"))
+
+
+def static_derived_from(variable: str):
+    """The canonical static variable this one is derived from, or None."""
+    return STATIC_VARS[static_canonical_name(variable)].get("derived")
+
+
+# ---------------------------------------------------------------------------
 # Unit conversions declared in the catalog ("conversion" field).
 _CONVERSIONS = {
     None: lambda x: x,
     "none": lambda x: x,
     "k_to_degc": lambda x: x - 273.15,
     "jm2_to_mjm2": lambda x: x / 1_000_000.0,
+    # SoilGrids stores scaled integers; /10 and /100 recover mapped units.
+    "d10": lambda x: x / 10.0,
+    "d100": lambda x: x / 100.0,
 }
 
 
@@ -169,6 +335,48 @@ def standardize(da: xr.DataArray, variable: str, source_id: str) -> xr.DataArray
     if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
         da = da.sortby("lat")
     da = da.transpose("time", "lat", "lon")
+
+    da = da.rename(meta["short"]).astype("float32")
+    da.attrs.update(
+        {
+            "agwise_name": canonical,
+            "long_name": meta["long_name"],
+            "units": meta["units"],
+            "source": source_id,
+        }
+    )
+    return da
+
+
+def standardize_static(da: xr.DataArray, variable: str, source_id: str) -> xr.DataArray:
+    """Apply the AgWise conventions to a raw static DataArray.
+
+    Same contract as :func:`standardize` but with no time axis: dims become
+    (``depth``,) ``lat``, ``lon`` with latitude ascending, the variable is
+    renamed to its short name and provenance attributes are attached.
+    """
+    canonical = static_canonical_name(variable)
+    meta = STATIC_VARS[canonical]
+
+    renames = {k: v for k, v in _DIM_RENAMES.items() if k in da.dims}
+    if renames:
+        da = da.rename(renames)
+    missing = {"lat", "lon"} - set(da.dims)
+    if missing:
+        raise ValueError(
+            f"Cannot standardize '{variable}' from {source_id}: missing dims "
+            f"{missing} (found {list(da.dims)})"
+        )
+    if meta.get("depth") and "depth" not in da.dims:
+        raise ValueError(
+            f"Static variable '{variable}' needs a 'depth' dimension "
+            f"(found {list(da.dims)})"
+        )
+
+    if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
+        da = da.sortby("lat")
+    dims = ("depth", "lat", "lon") if "depth" in da.dims else ("lat", "lon")
+    da = da.transpose(*dims)
 
     da = da.rename(meta["short"]).astype("float32")
     da.attrs.update(

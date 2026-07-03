@@ -11,10 +11,13 @@ catalog YAML + a driver), so each addition is incremental.
    historical + hindcast download, common grid/calendar/naming, merged
    `Daily_<VAR>_<y0>_<y1>.nc` products ready for bias correction and DSSAT.
    The `harmonized/` layout and manifests here were designed to receive it.
-2. **Soil & DEM driver** — SoilGrids / iSDAsoil / SRTM. Static layers, so
-   `ensure_daily_year` generalizes to `ensure_static` (fetch once, clip per
-   region). Reuses the download classes from
-   [CGIAR-AgWise/agwise_data_sourcing](https://github.com/CGIAR-AgWise/agwise_data_sourcing).
+2. ~~**Soil & DEM driver**~~ — **DONE (v0.2)**: `StaticDriver` base with
+   `ensure_static`, Copernicus GLO-30 DEM (windowed COG reads, derived
+   slope/aspect/TPI/TRI) and SoilGrids 2.0 via the ISRIC WCS (native 4326
+   subsets, all six depths cached per property). API: `get_dem`, `get_soil`,
+   `get_static`, `extract_static_points`; CLI `get-static`/`extract-static`;
+   R `ad_get_dem`/`ad_get_soil`/`ad_extract_static_points`. iSDAsoil (30 m,
+   Africa) remains a candidate alternative source.
 3. **GEE driver (MODIS NDVI, crop masks)** — wrap the existing GEE toolkit
    so its outputs land in the shared cache with manifests, and the
    planting-date phenology scripts read from there.

@@ -1,0 +1,55 @@
+# Catalog entry: SoilGrids 2.0 soil properties (ISRIC, ~250 m).
+# Access is the ISRIC WCS, which subsets in EPSG:4326 directly — the
+# COG/VRT files are in Goode Homolosine and would need reprojection, so
+# the WCS is the primary (and only) access path here.
+# SoilGrids stores scaled integers (see "conversion"); 0 is NoData.
+id: soilgrids
+title: SoilGrids 2.0 global soil properties
+description: >
+  SoilGrids 2.0: global machine-learning predictions of soil properties
+  (texture, chemistry, water retention) at ~250 m for six standard depth
+  intervals, produced by ISRIC - World Soil Information. AgWise's default
+  source of soil inputs for the fertilizer and soil-health modules.
+license: CC-BY 4.0
+citation: >
+  Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M.,
+  Kempen, B., Ribeiro, E., and Rossiter, D. (2021). SoilGrids 2.0:
+  producing soil information for the globe with quantified spatial
+  uncertainty. SOIL 7, 217-240. https://doi.org/10.5194/soil-7-217-2021
+version: "2.0"
+providers:
+  - name: ISRIC - World Soil Information
+    roles: [producer, host]
+    url: https://www.isric.org/explore/soilgrids
+extent:
+  spatial:
+    bbox: [-180.0, -62.0, 180.0, 87.37]
+  temporal:
+    start: null
+    end: null   # static layer, no time axis
+spatial_resolution_deg: 0.002273
+temporal_resolution: static
+
+driver: soilgrids
+# The six standard GlobalSoilMap depth intervals; every property is cached
+# with all of them as a "depth" dimension so depth subsets are cache hits.
+depths: ["0-5cm", "5-15cm", "15-30cm", "30-60cm", "60-100cm", "100-200cm"]
+access:
+  - type: wcs
+    role: primary
+    version: "2.0.1"
+    url: "https://maps.isric.org/mapserv?map=/map/{property}.map"
+
+variables:
+  SOIL.CLAY:    {source_name: clay,     source_units: g/kg,      conversion: d10,  nodata: 0}
+  SOIL.SAND:    {source_name: sand,     source_units: g/kg,      conversion: d10,  nodata: 0}
+  SOIL.SILT:    {source_name: silt,     source_units: g/kg,      conversion: d10,  nodata: 0}
+  SOIL.PH:      {source_name: phh2o,    source_units: pH*10,     conversion: d10,  nodata: 0}
+  SOIL.SOC:     {source_name: soc,      source_units: dg/kg,     conversion: d10,  nodata: 0}
+  SOIL.NITROGEN: {source_name: nitrogen, source_units: cg/kg,    conversion: d100, nodata: 0}
+  SOIL.CEC:     {source_name: cec,      source_units: mmol(c)/kg, conversion: d10, nodata: 0}
+  SOIL.BDOD:    {source_name: bdod,     source_units: cg/cm3,    conversion: d100, nodata: 0}
+  SOIL.CFVO:    {source_name: cfvo,     source_units: cm3/dm3,   conversion: d10,  nodata: 0}
+  SOIL.WV0010:  {source_name: wv0010,   source_units: 0.1 vol%,  conversion: d10,  nodata: 0}
+  SOIL.WV0033:  {source_name: wv0033,   source_units: 0.1 vol%,  conversion: d10,  nodata: 0}
+  SOIL.WV1500:  {source_name: wv1500,   source_units: 0.1 vol%,  conversion: d10,  nodata: 0}

@@ -123,6 +123,76 @@ ad_extract_points <- function(points, vars, start, end, freq = "daily",
   utils::read.csv(res$outputs[[1]]$csv)
 }
 
+#' Fetch harmonized static layers (soil, DEM) for a region.
+#'
+#' The static counterpart of ad_get_climate: elevation and terrain
+#' derivatives from the Copernicus GLO-30 DEM, soil properties from
+#' SoilGrids 2.0. Soil rasters have one band per depth interval.
+#'
+#' @param vars   e.g. c("ELEV", "SLOPE") or c("CLAY", "PH") — short,
+#'   canonical ("SOIL.CLAY") or legacy ("clay", "altitude") names
+#' @param depths soil depth subset, e.g. c("0-5cm", "5-15cm"); NULL = all six
+#' @return a named list of terra::SpatRaster (one per variable), or a single
+#'   SpatRaster when one variable is requested
+ad_get_static <- function(vars, country = NULL, bbox = NULL,
+                          admin_level = 0, admin_name = NULL,
+                          depths = NULL, source = NULL, overwrite = FALSE) {
+  args <- c("get-static",
+            "--vars", paste(vars, collapse = ","),
+            "--format", "tif")
+  if (!is.null(country))    args <- c(args, "--country", country)
+  if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(depths))     args <- c(args, "--depths", paste(depths, collapse = ","))
+  if (!is.null(source))     args <- c(args, "--source", source)
+  if (overwrite)            args <- c(args, "--overwrite")
+
+  res <- ad_run(args)
+  rasters <- lapply(res$outputs, function(o) terra::rast(o$tif))
+  names(rasters) <- vapply(res$outputs, function(o) o$short, character(1))
+  if (length(rasters) == 1) rasters[[1]] else rasters
+}
+
+#' Elevation + terrain derivatives (ELEV, SLOPE, ASPECT, TPI, TRI).
+ad_get_dem <- function(vars = c("ELEV", "SLOPE", "ASPECT", "TPI", "TRI"), ...) {
+  ad_get_static(vars, ...)
+}
+
+#' SoilGrids soil properties (default: the fertilizer-module set).
+ad_get_soil <- function(vars = c("CLAY", "SAND", "SILT", "PH", "SOC",
+                                 "NITROGEN", "CEC", "BDOD", "CFVO"),
+                        depths = NULL, ...) {
+  ad_get_static(vars, depths = depths, ...)
+}
+
+#' Soil/topography values at point locations (wide format).
+#'
+#' Returns the input data plus ELEV/SLOPE/... columns and one column per
+#' soil property and depth (CLAY_0_5cm, CLAY_5_15cm, ...) — the static
+#' counterpart of ad_extract_growing_season for trial data.
+ad_extract_static_points <- function(points, vars, depths = NULL,
+                                     lon_col = NULL, lat_col = NULL,
+                                     source = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  out_csv <- tempfile(fileext = ".csv")
+  args <- c("extract-static",
+            "--points", points_csv,
+            "--vars", paste(vars, collapse = ","),
+            "--out", out_csv)
+  if (!is.null(depths))  args <- c(args, "--depths", paste(depths, collapse = ","))
+  if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
+  if (!is.null(source))  args <- c(args, "--source", source)
+
+  res <- ad_run(args)
+  utils::read.csv(res$outputs[[1]]$csv)
+}
+
 #' Where is the shared cache?
 ad_cache_path <- function() {
   ad_run(c("cache", "path"))$root

@@ -38,6 +38,9 @@ from .harmonize import (
     legacy_name,
     rainy_days,
     short_name,
+    static_canonical_name,
+    static_has_depth,
+    static_short_name,
     time_labels,
     to_monthly,
 )
@@ -474,4 +477,319 @@ def extract_growing_season(
     return out
 
 
-__all__ = ["get_climate", "extract_points", "extract_growing_season", "rainy_days"]
+# ---------------------------------------------------------------------------
+# Static layers (soil, DEM): same fetch-once/cache/manifest pattern as the
+# climate cubes, but with no time axis (see drivers/static.py).
+
+DEM_DEFAULT_VARS = ["TOPO.ELEV", "TOPO.SLOPE", "TOPO.ASPECT", "TOPO.TPI", "TOPO.TRI"]
+SOIL_DEFAULT_VARS = [
+    "SOIL.CLAY", "SOIL.SAND", "SOIL.SILT", "SOIL.PH", "SOIL.SOC",
+    "SOIL.NITROGEN", "SOIL.CEC", "SOIL.BDOD", "SOIL.CFVO",
+]
+
+
+def _as_static_variables(variables: Union[str, Sequence[str]]) -> List[str]:
+    if isinstance(variables, str):
+        variables = [v for v in variables.split(",") if v.strip()]
+    return [static_canonical_name(v) for v in variables]
+
+
+def _static_driver_for(variable: str, source: Optional[str], config: Config):
+    source_id = catalog.static_source_for(variable, source)
+    entry = catalog.get_entry(source_id)
+    return drivers.get_driver(entry, config), source_id
+
+
+def _static_domain(
+    config: Config,
+    source_id: str,
+    variable: str,
+    region_bbox,
+    override: Optional[str],
+) -> str:
+    """Pick the cache domain for a static request (no year axis).
+
+    Same priorities as :func:`_effective_domain`: explicit override, then
+    any containing domain whose static cache already exists, then a
+    region-scoped domain for small requests.
+    """
+    if override:
+        return override
+    short = static_short_name(variable)
+    include_regions = config.fetch_scope != "domain"
+    containing = config.containing_domains(region_bbox, include_regions)
+    for name in containing:
+        if config.static_path(source_id, name, short).exists():
+            return name
+    base = containing[0] if containing else "global"
+    if config.fetch_scope == "domain":
+        return base
+    rbox = round_region_bbox(region_bbox)
+    if _bbox_area(rbox) > config.region_max_area_deg2:
+        return base
+    name = region_domain_name(rbox)
+    if name not in config.domains:
+        config.register_domain(name, rbox)
+    return name
+
+
+def _prefetch_static(config: Config, tasks: List[tuple]) -> None:
+    """Ensure many (driver, variable, domain) static files, in parallel."""
+    if config.max_workers <= 1 or len(tasks) <= 1:
+        for drv, var, dom in tasks:
+            drv.ensure_static(var, dom)
+        return
+    with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
+        futures = [
+            ex.submit(drv.ensure_static, var, dom) for drv, var, dom in tasks
+        ]
+        for fut in futures:
+            fut.result()  # propagate the first failure
+
+
+def _depth_tag(depths) -> str:
+    """Filesystem tag for a depth subset ('' = all depths)."""
+    if depths is None:
+        return ""
+    depths = [depths] if isinstance(depths, str) else list(depths)
+    return "_" + "_".join(d.replace("-", "to").replace("cm", "") for d in depths)
+
+
+def _subset_depths(da: xr.DataArray, depths) -> xr.DataArray:
+    if depths is None or "depth" not in da.dims:
+        return da
+    depths = [depths] if isinstance(depths, str) else list(depths)
+    available = [str(d) for d in da["depth"].values]
+    unknown = [d for d in depths if d not in available]
+    if unknown:
+        raise ValueError(f"Unknown depths {unknown}. Available: {available}")
+    return da.sel(depth=depths)
+
+
+def get_static(
+    variables: Union[str, Sequence[str]],
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    depths: Optional[Sequence[str]] = None,
+    source: Optional[str] = None,
+    domain: Optional[str] = None,
+    out_format: Union[str, Sequence[str]] = "nc",
+    out_dir: Optional[Path] = None,
+    overwrite: bool = False,
+    config: Optional[Config] = None,
+) -> Dict[str, dict]:
+    """Fetch, harmonize and cache static layers (soil, DEM) for a region.
+
+    Returns ``{canonical_variable: {"nc": Path, "tif": Path|None,
+    "data": xr.DataArray}}`` like :func:`get_climate`. Soil layers carry a
+    ``depth`` dimension (all six SoilGrids depths are cached; ``depths``
+    subsets the returned product). ``TOPO.SLOPE``/``ASPECT``/``TPI``/``TRI``
+    are derived from the cached elevation, fetched once.
+    """
+    config = config or Config.load()
+    variables = _as_static_variables(variables)
+    formats = [out_format] if isinstance(out_format, str) else list(out_format)
+    for f in formats:
+        if f not in ("nc", "tif"):
+            raise ValueError(f"Unknown output format '{f}' (use 'nc' and/or 'tif')")
+    write_tif = "tif" in formats
+
+    gdf, region_bbox, tag = _resolve_region(
+        config, country, bbox, admin_level, admin_name
+    )
+    out_root = Path(out_dir) if out_dir else config.products_dir(tag)
+
+    plans = []
+    tasks = []
+    for var in variables:
+        driver, source_id = _static_driver_for(var, source, config)
+        var_domain = _static_domain(config, source_id, var, region_bbox, domain)
+        short = static_short_name(var)
+        stem = f"Static_{short}"
+        if static_has_depth(var):
+            stem += _depth_tag(depths)
+        nc_path = out_root / f"{stem}.nc"
+        tif_path = out_root / f"{stem}.tif" if write_tif else None
+        need_nc = overwrite or not nc_path.exists()
+        need_tif = write_tif and (overwrite or not tif_path.exists())
+        plans.append(
+            (var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif)
+        )
+        if need_nc or need_tif:
+            tasks.append((driver, var, var_domain))
+    _prefetch_static(config, tasks)
+
+    from .drivers.static import static_nc_encoding
+
+    results: Dict[str, dict] = {}
+    for var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif in plans:
+        if not need_nc and not need_tif:
+            logger.info("Product cache hit: %s", nc_path)
+            da = xr.open_dataarray(nc_path)
+        else:
+            da = driver.open_static(var, var_domain)
+            da = subset_bbox(da, region_bbox, buffer=0.05)
+            da = _subset_depths(da, depths)
+            if gdf is not None:
+                da = clip_geometry(da, gdf)
+            da = da.load()
+
+            meta = {
+                "source_id": source_id,
+                "variable": var,
+                "region": tag,
+                "domain": var_domain,
+            }
+            if "depth" in da.dims:
+                meta["depths"] = [str(d) for d in da["depth"].values]
+            if need_nc:
+                nc_path.parent.mkdir(parents=True, exist_ok=True)
+                da.to_netcdf(nc_path, encoding={da.name: static_nc_encoding(da)})
+                write_manifest(nc_path, meta)
+            if need_tif:
+                from .spatial import write_geotiff
+
+                labels = (
+                    [str(d) for d in da["depth"].values]
+                    if "depth" in da.dims
+                    else [static_short_name(var)]
+                )
+                write_geotiff(da, tif_path, labels=labels)
+                write_manifest(tif_path, meta)
+
+        results[var] = {
+            "short": static_short_name(var),
+            "source": source_id,
+            "nc": nc_path if nc_path.exists() else None,
+            "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "data": da,
+        }
+    return results
+
+
+def get_dem(
+    variables: Union[str, Sequence[str], None] = None, **kwargs
+) -> Dict[str, dict]:
+    """Elevation and terrain derivatives (defaults: ELEV, SLOPE, ASPECT, TPI, TRI)."""
+    return get_static(variables or DEM_DEFAULT_VARS, **kwargs)
+
+
+def get_soil(
+    variables: Union[str, Sequence[str], None] = None, **kwargs
+) -> Dict[str, dict]:
+    """SoilGrids soil properties (default: the fertilizer-module set)."""
+    return get_static(variables or SOIL_DEFAULT_VARS, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# One trial-point extraction covers a small area, but a national trial set
+# can span a whole country; fetching one static window for all of it could
+# blow past memory at 30 m. Points are therefore grouped: one window when
+# the rounded bbox is small, else per 1x1-degree cell (each cell's window
+# is cached and reused by later extractions).
+_EXTRACT_ONE_WINDOW_DEG2 = 4.0
+
+
+def _static_point_cells(lons: np.ndarray, lats: np.ndarray):
+    """Group point indices by bbox: one group for a tight cluster, else 1° cells."""
+    bbox = round_region_bbox(points_bbox(lons, lats, buffer=0.0), pad=0.0)
+    if _bbox_area(bbox) <= _EXTRACT_ONE_WINDOW_DEG2:
+        return {tuple(bbox): np.arange(len(lons))}
+    cells: Dict[tuple, list] = {}
+    for i, (x, y) in enumerate(zip(lons, lats)):
+        cell = (float(np.floor(x)), float(np.floor(y)))
+        cells.setdefault(
+            (cell[0], cell[1], cell[0] + 1.0, cell[1] + 1.0), []
+        ).append(i)
+    return {box: np.asarray(idx) for box, idx in cells.items()}
+
+
+def extract_static_points(
+    points,
+    variables: Union[str, Sequence[str]],
+    depths: Optional[Sequence[str]] = None,
+    source: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> pd.DataFrame:
+    """Soil/topography values at point locations (wide format).
+
+    Returns the input data plus one column per static variable —
+    ``ELEV``, ``SLOPE``, ... for topography and ``CLAY_0_5cm``,
+    ``CLAY_5_15cm``, ... for soil properties (one column per depth).
+    This is the static counterpart of :func:`extract_growing_season`:
+    the fertilizer module extracts soil and terrain at trial points.
+    """
+    config = config or Config.load()
+    variables = _as_static_variables(variables)
+    df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+    valid = df[lon_col].notna() & df[lat_col].notna()
+    if valid.sum() == 0:
+        raise ValueError("No rows with valid coordinates")
+
+    sub = df[valid]
+    lons = sub[lon_col].to_numpy(dtype=float)
+    lats = sub[lat_col].to_numpy(dtype=float)
+    cells = _static_point_cells(lons, lats)
+
+    # Resolve (driver, domain) per (variable, cell) and prefetch in parallel.
+    plans: Dict[tuple, tuple] = {}
+    tasks = []
+    for var in variables:
+        driver, source_id = _static_driver_for(var, source, config)
+        for box in cells:
+            dom = _static_domain(config, source_id, var, list(box), None)
+            plans[(var, box)] = (driver, dom)
+            tasks.append((driver, var, dom))
+    _prefetch_static(config, [t for t in dict.fromkeys(tasks)])
+
+    new_cols: Dict[str, np.ndarray] = {}
+    for var in variables:
+        short = static_short_name(var)
+        depth_labels = None
+        collected: Dict[str, np.ndarray] = {}
+        for box, idx in cells.items():
+            driver, dom = plans[(var, box)]
+            da = driver.open_static(var, dom)
+            da = _subset_depths(da, depths)
+            ilon = xr.DataArray(lons[idx], dims="point")
+            ilat = xr.DataArray(lats[idx], dims="point")
+            vals = da.sel(lon=ilon, lat=ilat, method="nearest").load()
+            if "depth" in vals.dims:
+                labels = [str(d) for d in vals["depth"].values]
+                if depth_labels is None:
+                    depth_labels = labels
+                for d, label in enumerate(labels):
+                    key = f"{short}_{label.replace('-', '_')}"
+                    col = collected.setdefault(
+                        key, np.full(len(sub), np.nan, dtype="float32")
+                    )
+                    col[idx] = vals.isel(depth=d).values
+            else:
+                col = collected.setdefault(
+                    short, np.full(len(sub), np.nan, dtype="float32")
+                )
+                col[idx] = vals.values
+        new_cols.update(collected)
+
+    out = df.copy()
+    for name, values in new_cols.items():
+        col = pd.Series(np.nan, index=df.index, dtype="float64")
+        col.loc[sub.index] = values
+        out[name] = col
+    return out
+
+
+__all__ = [
+    "get_climate",
+    "extract_points",
+    "extract_growing_season",
+    "rainy_days",
+    "get_static",
+    "get_dem",
+    "get_soil",
+    "extract_static_points",
+]

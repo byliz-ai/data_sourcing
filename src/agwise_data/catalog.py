@@ -14,7 +14,12 @@ from typing import Dict, Optional
 
 import yaml
 
-from .harmonize import DEFAULT_SOURCE, canonical_name
+from .harmonize import (
+    DEFAULT_SOURCE,
+    DEFAULT_STATIC_SOURCE,
+    canonical_name,
+    static_canonical_name,
+)
 
 _CATALOG_DIR = Path(__file__).parent / "catalog"
 
@@ -64,6 +69,27 @@ def source_for(variable: str, source: Optional[str] = None) -> str:
     source_id = source or DEFAULT_SOURCE[canonical]
     entry = get_entry(source_id)
     if canonical not in entry.get("variables", {}):
+        raise ValueError(
+            f"Source '{source_id}' does not provide {canonical}. "
+            f"It provides: {sorted(entry.get('variables', {}))}"
+        )
+    return source_id
+
+
+def static_source_for(variable: str, source: Optional[str] = None) -> str:
+    """Resolve which source serves a *static* variable (honouring an override).
+
+    Derived variables (slope, aspect, ...) are served by the source of the
+    variable they are derived from, so a catalog entry only needs to list
+    what it actually fetches.
+    """
+    from .harmonize import static_derived_from
+
+    canonical = static_canonical_name(variable)
+    source_id = source or DEFAULT_STATIC_SOURCE[canonical]
+    entry = get_entry(source_id)
+    lookup = static_derived_from(canonical) or canonical
+    if lookup not in entry.get("variables", {}):
         raise ValueError(
             f"Source '{source_id}' does not provide {canonical}. "
             f"It provides: {sorted(entry.get('variables', {}))}"

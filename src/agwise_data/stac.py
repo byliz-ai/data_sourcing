@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from .catalog import get_entry
-from .harmonize import CANONICAL_VARS
+from .harmonize import CANONICAL_VARS, STATIC_VARS
 
 STAC_VERSION = "1.0.0"
 
@@ -31,7 +31,7 @@ def to_stac_collection(source_id: str) -> dict:
 
     variables = {}
     for name, spec in entry.get("variables", {}).items():
-        meta = CANONICAL_VARS.get(name, {})
+        meta = CANONICAL_VARS.get(name) or STATIC_VARS.get(name) or {}
         variables[name] = {
             "description": meta.get("long_name", name),
             "unit": meta.get("units"),

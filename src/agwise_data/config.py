@@ -190,6 +190,16 @@ class Config:
             / f"Daily_{short}_{year}.nc"
         )
 
+    def static_path(self, source: str, domain: str, short: str) -> Path:
+        return (
+            self.root
+            / "harmonized"
+            / source
+            / domain
+            / short
+            / f"Static_{short}.nc"
+        )
+
     def products_dir(self, region_tag: str) -> Path:
         return self.root / "products" / region_tag
 

@@ -1,16 +1,17 @@
 # agwise-data — the AgWise data access layer
 
-One call to fetch, harmonize and cache the climate data every AgWise module
-needs, **while the CGIAR data hubs come online**. A dataset is downloaded
-once into a shared cache, standardized to the AgWise conventions, and reused
-by every module and every person afterwards.
+One call to fetch, harmonize and cache the climate, soil and terrain data
+every AgWise module needs, **while the CGIAR data hubs come online**. A
+dataset is downloaded once into a shared cache, standardized to the AgWise
+conventions, and reused by every module and every person afterwards.
 
 ```
-                       ┌────────────────────────────────────┐
-  CHIRPS (UCSB) ──────▶│            agwise-data             │
-  AgERA5 (CDS)  ──────▶│  catalog → driver → harmonize →    │──▶ Python: get_climate()
-  (+ future sources)   │  shared cache → products/manifests │──▶ R:      ad_get_climate()
-                       └────────────────────────────────────┘──▶ CLI:    agwise-data get
+                          ┌────────────────────────────────────┐
+  CHIRPS (UCSB)   ───────▶│            agwise-data             │
+  AgERA5 (CDS)    ───────▶│  catalog → driver → harmonize →    │──▶ Python: get_climate() / get_soil() / get_dem()
+  SoilGrids (ISRIC) ─────▶│  shared cache → products/manifests │──▶ R:      ad_get_climate() / ad_get_soil() / ad_get_dem()
+  Copernicus DEM (AWS) ──▶│                                    │──▶ CLI:    agwise-data get / get-static
+  (+ future sources)      └────────────────────────────────────┘
 ```
 
 **Why**: today every AgWise module re-downloads and re-processes its own
@@ -65,6 +66,15 @@ df = extract_growing_season(
     harvest_col="Hv_date",
 )
 # adds Precipitation_m1..mN, TemperatureMax_m1..mN, totalRF, nrRainyDays
+
+# Static layers: soil properties (SoilGrids 2.0) and terrain (Copernicus DEM)
+from agwise_data import get_soil, get_dem, extract_static_points
+
+soil = get_soil(["CLAY", "PH", "SOC"], country="Rwanda", depths=["0-5cm", "5-15cm"])
+dem = get_dem(country="Rwanda")        # ELEV + derived SLOPE/ASPECT/TPI/TRI
+trials = extract_static_points(        # soil/topo at trial points, wide columns
+    "trials.csv", ["ELEV", "SLOPE", "CLAY", "PH"], depths=["0-5cm"]
+)   # adds ELEV, SLOPE, CLAY_0_5cm, PH_0_5cm, ...
 ```
 
 ## Use from R
@@ -83,6 +93,11 @@ trials <- ad_extract_growing_season(
   points = "trials.csv", vars = c("Precipitation", "TemperatureMax"),
   planting_col = "Pl_date", harvest_col = "Hv_date"
 )
+
+# Replaces the soil/topography part of get_geoSpatialData:
+soil <- ad_get_soil(c("CLAY", "PH"), country = "Rwanda", depths = "0-5cm")
+dem  <- ad_get_dem(country = "Rwanda")   # ELEV, SLOPE, ASPECT, TPI, TRI
+pts  <- ad_extract_static_points("trials.csv", c("ELEV", "SLOPE", "CLAY"))
 ```
 
 ## Use from the shell
@@ -92,6 +107,9 @@ agwise-data get --vars PRCP,TMAX --country Kenya --years 2015:2024 \
     --freq monthly --format nc,tif
 agwise-data extract --points trials.csv --vars PRCP --planting-col Pl_date \
     --harvest-col Hv_date --out trials_climate.csv
+agwise-data get-static --vars ELEV,SLOPE,CLAY --country Rwanda --format nc,tif
+agwise-data extract-static --points trials.csv --vars ELEV,CLAY,PH \
+    --depths 0-5cm --out trials_static.csv
 agwise-data catalog list
 agwise-data catalog stac chirps      # STAC Collection for Data Hub handoff
 agwise-data cache info
@@ -99,11 +117,15 @@ agwise-data cache info
 
 ## What you get
 
-- **Canonical variables** — `AGRO.PRCP`, `AGRO.TMAX`, `AGRO.TMIN`,
-  `AGRO.TEMP`, `AGRO.SRAD`, `AGRO.RHUM`, `AGRO.WIND`; legacy names
-  (`Precipitation`, `TemperatureMax`, ...) still accepted everywhere.
-- **Agreed units** — °C, mm/day, MJ m⁻² day⁻¹ (conversions applied once,
-  at ingestion, not in every module script).
+- **Canonical variables** — climate `AGRO.PRCP`, `AGRO.TMAX`, `AGRO.TMIN`,
+  `AGRO.TEMP`, `AGRO.SRAD`, `AGRO.RHUM`, `AGRO.WIND`; terrain `TOPO.ELEV`,
+  `TOPO.SLOPE`, `TOPO.ASPECT`, `TOPO.TPI`, `TOPO.TRI`; soil `SOIL.CLAY`,
+  `SOIL.SAND`, `SOIL.SILT`, `SOIL.PH`, `SOIL.SOC`, `SOIL.NITROGEN`,
+  `SOIL.CEC`, `SOIL.BDOD`, `SOIL.CFVO`, `SOIL.WV0010/0033/1500`; legacy
+  names (`Precipitation`, `altitude`, `clay`, ...) still accepted everywhere.
+- **Agreed units** — °C, mm/day, MJ m⁻² day⁻¹, %, g/kg, cmol(c)/kg
+  (conversions — including SoilGrids' scaled integers — applied once, at
+  ingestion, not in every module script).
 - **Shared cache** — harmonized yearly files (`Daily_PRCP_2023.nc`) written
   once under `$AGWISE_DATA_ROOT`, with file-locking so concurrent users
   trigger a single download.
@@ -127,7 +149,8 @@ src/agwise_data/        the Python package
   drivers/              per-source fetchers (chirps, agera5, ...)
   harmonize.py          AgWise naming/units/aggregation conventions
   cache.py              shared-cache locking, atomic writes, manifests
-  api.py                get_climate / extract_points / extract_growing_season
+  api.py                get_climate / get_soil / get_dem / point extraction
+  terrain.py            slope/aspect/TPI/TRI from the cached DEM
   cli.py                the `agwise-data` command
 r/agwise_data.R         R wrapper (terra-friendly)
 docs/                   architecture, CGLabs setup, module pipeline map, roadmap
@@ -146,8 +169,11 @@ tests/                  network-free test suite (synthetic driver)
 
 ## Status
 
-v0.1 covers historical climate (CHIRPS rainfall, AgERA5 temperature /
+v0.1 covered historical climate (CHIRPS rainfall, AgERA5 temperature /
 radiation / humidity / wind) — the bottleneck flagged by every module at the
-Nairobi AoW1 technical meeting. The seasonal hindcast workflow (Jemal's
-standardization proposal), soil/DEM and MODIS sources follow the same
-catalog + driver pattern; see the [roadmap](docs/roadmap.md).
+Nairobi AoW1 technical meeting. v0.2 adds the static layers: SoilGrids 2.0
+soil properties (six depths, native 250 m via the ISRIC WCS) and the
+Copernicus GLO-30 DEM with derived slope/aspect/TPI/TRI (windowed COG reads,
+no full-tile downloads). The seasonal hindcast workflow (Jemal's
+standardization proposal) and MODIS sources follow the same catalog + driver
+pattern; see the [roadmap](docs/roadmap.md).
