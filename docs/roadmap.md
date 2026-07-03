@@ -18,6 +18,10 @@ catalog YAML + a driver), so each addition is incremental.
 3. **GEE driver (MODIS NDVI, crop masks)** — wrap the existing GEE toolkit
    so its outputs land in the shared cache with manifests, and the
    planting-date phenology scripts read from there.
+3b. **Sentinel-1/2 phenology driver** — fold the SAR/optical phenology
+   pipeline in as a new *product type* (composite stacks, not daily cubes).
+   Design + fix-mapping in [sentinel_integration.md](sentinel_integration.md);
+   needs live GEE credentials to build and validate.
 4. **CHIRPS v3.0 catalog entry** — v3 dailies are being released; add as a
    separate catalog id so v2/v3 can be compared before switching the
    default.
