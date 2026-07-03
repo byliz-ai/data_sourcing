@@ -4,6 +4,25 @@ Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
 Last updated: 2026-07-03.
 
+## ⚠️ GROUND RULES ON CGLABS — read before touching anything
+
+**Never modify or delete any original/existing file on CGLabs.** The
+downloaded datasets, the existing scripts, the shared `common_data`, and
+anything already on disk are **READ-ONLY inputs**. Treat them as immutable.
+
+- **Only create or modify files inside a NEW dedicated folder** created for
+  testing these flows (e.g. `~/agwise_data_test/` or a fresh working dir).
+  All test outputs, clones, scratch files and edits live there and nowhere
+  else.
+- Point **`AGWISE_DATA_ROOT` at a NEW test folder**, NOT at the shared
+  `common_data` that holds the original downloads — otherwise the cache
+  would write into the originals. e.g.
+  `export AGWISE_DATA_ROOT=~/agwise_data_test/cache`.
+- Read the original data with read-only access; copy anything you need into
+  the test folder rather than editing in place.
+- If a task seems to require changing an original file, STOP and ask Lizeth
+  first.
+
 ## The one-line scope
 
 Build the **data-sourcing layer that generates analysis-ready INPUTS** for
@@ -108,9 +127,11 @@ cache-key validation by index set, headless gating of `ee.Authenticate`/
 
 ## Environment (CGLabs)
 
-- conda env `agwise_data`; `AGWISE_DATA_ROOT` → the shared `common_data`
-  location so one download serves everyone. CDS creds in `~/.cdsapirc`
-  (never in code). See `docs/cglabs_setup.md`.
+- conda env `agwise_data`. In production `AGWISE_DATA_ROOT` → the shared
+  `common_data` so one download serves everyone — but **for testing use a
+  separate test root** (see Ground Rules above); never write into the
+  originals. CDS creds in `~/.cdsapirc` (never in code). See
+  `docs/cglabs_setup.md`.
 - CGLabs already has downloaded data and better network to these servers —
   do the real end-to-end verifications there.
 
