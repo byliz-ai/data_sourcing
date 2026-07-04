@@ -32,25 +32,57 @@ Earth Engine registration wizard creates the Cloud project for you.
 6. Click **Confirm**. **Write down the project ID** (e.g. `ee-lizeth`) —
    the scripts need it as `gee_project=`.
 
-### 1b. Authenticate on the server (terminal, once)
+### 1b. Authenticate — do it on your LAPTOP, then copy one file
+
+**Do not run `earthengine authenticate` on CGLabs.** Google blocks OAuth
+sign-ins where the browser is on a different machine than the one running
+the command ("Access blocked … for your security"), so the server-side
+flows fail. The reliable path: authenticate on a machine that *has* a
+browser, then copy the resulting credentials file (a portable refresh
+token) to the server.
+
+**On your laptop** (any OS; needs Python — Anaconda/Miniconda is fine):
 
 ```bash
-# inside the agwise_data conda env
-pip install earthengine-api
+pip install --upgrade earthengine-api   # --upgrade matters: old versions
+                                        # use retired flows Google now blocks
 earthengine authenticate
 ```
 
-CGLabs has no browser, so if nothing opens run:
+Your normal browser opens → sign in with the Google account from step 1a →
+*Allow*. Done — it wrote a small file called `credentials`:
+
+- Linux/Mac: `~/.config/earthengine/credentials`
+- Windows: `C:\Users\<you>\.config\earthengine\credentials`
+
+**Copy that file to CGLabs**: in JupyterLab, drag-and-drop it into the
+file browser (it lands in your home dir), then in a terminal:
 
 ```bash
-earthengine authenticate --auth_mode=notebook
+mkdir -p ~/.config/earthengine
+mv ~/credentials ~/.config/earthengine/credentials
+chmod 600 ~/.config/earthengine/credentials
 ```
 
-It prints a long URL → open it **on your laptop's browser** → sign in with
-the same Google account → *Allow* → copy the verification code it shows →
-paste it back in the terminal. That writes
-`~/.config/earthengine/credentials` (treat it like a password: never
-commit or share it).
+Treat the file like a password — never commit or share it. On CGLabs also
+install the client once: `pip install earthengine-api` (inside the
+`agwise_data` env).
+
+**No Python on the laptop?** Use Google Colab as the "browser machine":
+open <https://colab.research.google.com> → new notebook → run
+`import ee; ee.Authenticate(auth_mode='notebook')` and follow the link
+(this Notebook Authenticator flow is Google-hosted, so it is not blocked
+there), then export the file with
+`from google.colab import files; files.download('/root/.config/earthengine/credentials')`
+and upload it to CGLabs as above.
+
+**For unattended/scheduled jobs** (no human to sign in, credentials shared
+by a service, token expired revocation worries): the clean long-term
+answer is a [service account](https://developers.google.com/earth-engine/guides/service_account)
+— create it under your EE-registered project, download its JSON key, and
+initialize with `ee.ServiceAccountCredentials(email, keyfile)`. More
+clicks in the Cloud console, so start with the credentials-file copy and
+move to this only when needed.
 
 ### 1c. Verify (10 seconds)
 
@@ -63,6 +95,12 @@ Prints `2` → you are done. Use the same ID in the phenology scripts:
 
 ### GEE troubleshooting
 
+- **"Access blocked: … for your security" / "Google ha bloqueado el
+  acceso"** during sign-in → you are running the auth command on a
+  machine without a browser (CGLabs), or your `earthengine-api` is old
+  and uses a retired OAuth flow. Fix: `pip install --upgrade
+  earthengine-api` **on your laptop**, authenticate there, copy the
+  credentials file over (section 1b) — never authenticate on the server.
 - `ee.Initialize: no project found` → you must pass
   `project="ee-<yourname>"`; there is no default.
 - `Not signed up for Earth Engine` → step 1a was not finished for the
