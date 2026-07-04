@@ -42,8 +42,9 @@ person. Nothing in the cache is ever modified, only added.
 | AgERA5 (temp/radiation/etc.), SEAS5 forecasts | free [CDS account](https://cds.climate.copernicus.eu) | put your token in `~/.cdsapirc` (below), accept the dataset licence on its CDS page |
 | Sentinel stack (`sentinel/script1`), future MODIS | Google Earth Engine account | `earthengine authenticate` once in a terminal |
 
-Never used GCP or Copernicus before? Follow the from-zero walkthrough:
-[docs/credentials_setup.md](docs/credentials_setup.md).
+Step-by-step in [docs/credentials_setup.md](docs/credentials_setup.md):
+a 5-minute path if you already have the credentials, and a from-zero
+walkthrough if you have never used GCP or Copernicus.
 
 `~/.cdsapirc` (then `chmod 600 ~/.cdsapirc`):
 
@@ -155,7 +156,7 @@ agwise-data catalog list && agwise-data cache info
 | Doc | What it covers |
 | --- | --- |
 | [docs/cglabs_setup.md](docs/cglabs_setup.md) | One-time CGLabs setup, credentials, shared root |
-| [docs/credentials_setup.md](docs/credentials_setup.md) | From-zero GEE + Copernicus CDS credentials walkthrough |
+| [docs/credentials_setup.md](docs/credentials_setup.md) | GEE + CDS credentials: 5-min path (have them) and from-zero path (first time) |
 | [docs/architecture.md](docs/architecture.md) | Design, cache layout, Data Hub migration path |
 | [docs/pipeline_map.md](docs/pipeline_map.md) | Module-by-module data pipeline map |
 | [docs/roadmap.md](docs/roadmap.md) | What is done (climate, soil+DEM, SEAS5) and what is next (MODIS/GEE) |
