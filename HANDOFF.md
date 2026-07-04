@@ -54,8 +54,15 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
-1. **MODIS NDVI driver** — still blocked on GEE credentials.
-2. Housekeeping: rotate the leaked CDS key (see Backlog).
+1. **PUSH TO ORIGIN** — `main` is 11 commits ahead of `origin/main` (soil/DEM,
+   SEAS5 v0.3.0, CI workflow, sentinel/ move, dead-code cleanup). Push failed
+   2026-07-04: **no GitHub credentials on this machine** (no `gh`, no
+   `~/.git-credentials`, no token in env). Lizeth: run
+   `git -C ~/agwise_data_test/data_sourcing push origin main` with your token
+   (or store it via `git config credential.helper store` first).
+2. **MODIS NDVI driver** — still blocked on GEE credentials; also the
+   `earthengine-api` package is not installed in the `agwise_data` env yet.
+3. Housekeeping: rotate the leaked CDS key (see Backlog).
 
 (SEAS5 live verification: **DONE 2026-07-04** — real CDS smoke test
 passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
@@ -140,9 +147,11 @@ axis with real-date band labels.
   in this repo, now the source of truth).
 - MODIS NDVI driver (needs GEE credentials to build/validate).
 - ~~Live CDS smoke test of the SEAS5 driver~~ — DONE 2026-07-04 (passed).
-- Cleanups flagged in review: dead code in
-  `agwise_phenology_utils.combine_indices_pixelwise` (~lines 951-1037,
-  unreachable after the `raise`); `replace_outliers` fabricates data
+- ~~Dead code in `agwise_phenology_utils.combine_indices_pixelwise`~~ —
+  DONE 2026-07-04: 87 unreachable lines after the closing `raise` removed
+  (old pre-chunking implementation); smoke-tested both combine methods and
+  the error path; `sentinel_scripts/` working copy synced.
+- `replace_outliers` fabricates data
   (replaces ~13% of pixels with the regional mean — consider NaN; science
   decision for Lizeth, still open).
 - **Security**: rotate the CDS key hardcoded in the legacy
