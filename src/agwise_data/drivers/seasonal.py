@@ -108,7 +108,8 @@ class SeasonalDriver:
             da.attrs["init_year"] = int(year)
 
             with cache.atomic_write(dest) as tmp:
-                da.to_netcdf(tmp, encoding={da.name: seasonal_nc_encoding(da)})
+                with cache.NC_WRITE_LOCK:
+                    da.to_netcdf(tmp, encoding={da.name: seasonal_nc_encoding(da)})
             cache.write_manifest(
                 dest,
                 {

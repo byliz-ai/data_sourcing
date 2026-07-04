@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -22,6 +23,12 @@ from filelock import FileLock
 
 DOWNLOAD_TIMEOUT = (30, 600)  # (connect, read) seconds
 CHUNK = 8 * 1024 * 1024
+
+# netCDF4/HDF5 built without a threadsafe HDF5 (the pip wheels, e.g. on CI)
+# segfaults on concurrent writes even to *different* files. Drivers hold
+# this process-wide lock around ``to_netcdf`` in prefetch worker threads;
+# downloads stay parallel — only the final write is serialized.
+NC_WRITE_LOCK = threading.Lock()
 # Below this size a single stream is fine; above it, parallel range
 # requests meaningfully beat one TCP connection's throughput.
 PART_MIN_BYTES = 64 * 1024 * 1024
