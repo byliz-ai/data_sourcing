@@ -54,11 +54,7 @@ data each module consumes, nothing past it.
    Check: 25 members, valid dates start Feb 2, plausible mm/day values,
    PRCP de-accumulation sane (no negatives).
 2. **MODIS NDVI driver** — still blocked on GEE credentials.
-3. **CI**: `.github/workflows/tests.yml` — the workflow file move is
-   blocked because the fine-grained GitHub token lacks the **Workflows**
-   permission; add "Workflows: read and write" to the token (or add the
-   file via the GitHub web UI). The file currently lives in `ci/tests.yml`.
-4. Housekeeping: rotate the leaked CDS key (see Backlog).
+3. Housekeeping: rotate the leaked CDS key (see Backlog).
 
 ## Seasonal (SEAS5) layer (BUILT 2026-07-04, network-free tested; NOT yet live-verified against CDS)
 
@@ -145,9 +141,8 @@ headless gating, GEE 5xx retry.
   decision for Lizeth, still open).
 - **Security**: rotate the CDS key hardcoded in the legacy
   `chirps_download 1.R` (cds.climate.copernicus.eu → regenerate token).
-- **CI**: move `ci/tests.yml` → `.github/workflows/tests.yml`; needs the
-  GitHub token to have the Workflows write permission (fine-grained) or
-  `workflow` scope (classic). Pushing it was rejected 2026-07-04.
+- ~~CI~~ — DONE 2026-07-04: `.github/workflows/tests.yml` pushed (token
+  got the Workflows permission); pytest matrix runs on push/PR to main.
 
 ## Environment (CGLabs)
 
