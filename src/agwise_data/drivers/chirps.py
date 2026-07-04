@@ -110,11 +110,12 @@ class ChirpsDriver(Driver):
         )
 
         spec = variable_spec(self.source_id, variable)
-        with xr.open_dataset(raw, chunks={"time": 92}) as ds:
-            da = ds[spec["source_name"]]
-            da = subset_bbox(da, self.config.bbox_for(domain))
-            da = apply_conversion(da, spec.get("conversion"))
-            da = da.load()
+        with cache.NC_LOCK:
+            with xr.open_dataset(raw, chunks={"time": 92}) as ds:
+                da = ds[spec["source_name"]]
+                da = subset_bbox(da, self.config.bbox_for(domain))
+                da = apply_conversion(da, spec.get("conversion"))
+                da = da.load()
 
         if not self.config.keep_raw:
             raw.unlink(missing_ok=True)

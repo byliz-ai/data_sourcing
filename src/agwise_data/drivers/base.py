@@ -76,7 +76,7 @@ class Driver:
                     )
 
             with cache.atomic_write(dest) as tmp:
-                with cache.NC_WRITE_LOCK:
+                with cache.NC_LOCK:
                     da.to_netcdf(tmp, encoding={da.name: nc_encoding(da)})
             cache.write_manifest(
                 dest,

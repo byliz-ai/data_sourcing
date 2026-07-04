@@ -25,10 +25,11 @@ DOWNLOAD_TIMEOUT = (30, 600)  # (connect, read) seconds
 CHUNK = 8 * 1024 * 1024
 
 # netCDF4/HDF5 built without a threadsafe HDF5 (the pip wheels, e.g. on CI)
-# segfaults on concurrent writes even to *different* files. Drivers hold
-# this process-wide lock around ``to_netcdf`` in prefetch worker threads;
-# downloads stay parallel — only the final write is serialized.
-NC_WRITE_LOCK = threading.Lock()
+# segfaults on *any* concurrent access — reads included — even to
+# different files. Drivers hold this process-wide lock around every
+# netCDF open/load/write that can run inside a prefetch worker thread;
+# downloads stay parallel — only the netCDF I/O is serialized.
+NC_LOCK = threading.RLock()
 # Below this size a single stream is fine; above it, parallel range
 # requests meaningfully beat one TCP connection's throughput.
 PART_MIN_BYTES = 64 * 1024 * 1024

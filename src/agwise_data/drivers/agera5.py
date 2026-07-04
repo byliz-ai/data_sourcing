@@ -98,12 +98,15 @@ class Agera5Driver(Driver):
                 raise RuntimeError(
                     f"CDS zip for {variable} {year} contained no NetCDF files"
                 )
-            ds = xr.open_mfdataset(nc_files, combine="by_coords", parallel=False)
-            da = ds[_main_var(ds)]
-            da = subset_bbox(da, self.config.bbox_for(domain))
-            da = apply_conversion(da, spec.get("conversion"))
-            da = da.load()
-            ds.close()
+            with cache.NC_LOCK:
+                ds = xr.open_mfdataset(
+                    nc_files, combine="by_coords", parallel=False
+                )
+                da = ds[_main_var(ds)]
+                da = subset_bbox(da, self.config.bbox_for(domain))
+                da = apply_conversion(da, spec.get("conversion"))
+                da = da.load()
+                ds.close()
 
         if not self.config.keep_raw:
             zip_path.unlink(missing_ok=True)

@@ -73,7 +73,7 @@ class StaticDriver:
             da = standardize_static(da, canonical, self.source_id)
 
             with cache.atomic_write(dest) as tmp:
-                with cache.NC_WRITE_LOCK:
+                with cache.NC_LOCK:
                     da.to_netcdf(tmp, encoding={da.name: static_nc_encoding(da)})
             cache.write_manifest(
                 dest,
@@ -98,8 +98,9 @@ class StaticDriver:
     def _derive(self, variable: str, parent: str, domain: str):
         """Compute a derived variable (slope/aspect/...) from its parent."""
         parent_path = self.ensure_static(parent, domain)
-        with xr.open_dataset(parent_path) as ds:
-            elev = ds[static_short_name(parent)].load()
+        with cache.NC_LOCK:
+            with xr.open_dataset(parent_path) as ds:
+                elev = ds[static_short_name(parent)].load()
         da = terrain.DERIVATIVES[variable](elev)
         da.attrs.clear()
         return da, {

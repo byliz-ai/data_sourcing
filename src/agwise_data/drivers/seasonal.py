@@ -108,7 +108,7 @@ class SeasonalDriver:
             da.attrs["init_year"] = int(year)
 
             with cache.atomic_write(dest) as tmp:
-                with cache.NC_WRITE_LOCK:
+                with cache.NC_LOCK:
                     da.to_netcdf(tmp, encoding={da.name: seasonal_nc_encoding(da)})
             cache.write_manifest(
                 dest,
@@ -197,8 +197,9 @@ class Seas5Driver(SeasonalDriver):
         client = cdsapi.Client()
         client.retrieve(access["dataset"], request, str(raw_path))
 
-        with xr.open_dataset(raw_path) as ds:
-            da = ds[spec["nc_var"]].load()
+        with cache.NC_LOCK:
+            with xr.open_dataset(raw_path) as ds:
+                da = ds[spec["nc_var"]].load()
         da = self._to_valid_time(da, spec)
         da = apply_conversion(da, spec.get("conversion"))
 
