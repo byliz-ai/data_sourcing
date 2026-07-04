@@ -14,9 +14,8 @@ catalog YAML + a driver), so each addition is incremental.
    and observations pair by name for bias correction — Jemal's proposal;
    the historical/observation half is `get_climate`). API `get_seasonal`;
    CLI `get-seasonal`; R `ad_get_seasonal`; catalog `seas5.yaml`.
-   *Not yet live-verified against CDS (no `~/.cdsapirc` on the test
-   machine)* — run a 1-year, 1-variable smoke test on CGLabs when
-   credentials are available.
+   Live-verified against CDS 2026-07-04 (PRCP i02/1995, Rwanda bbox:
+   25 members, 215 valid days, plausible mm/day, clean de-accumulation).
 2. ~~**Soil & DEM driver**~~ — **DONE (v0.2)**: `StaticDriver` base with
    `ensure_static`, Copernicus GLO-30 DEM (windowed COG reads, derived
    slope/aspect/TPI/TRI) and SoilGrids 2.0 via the ISRIC WCS (native 4326

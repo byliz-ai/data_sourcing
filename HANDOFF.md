@@ -34,11 +34,17 @@ data each module consumes, nothing past it.
 ## Decisions recorded 2026-07-04 (from Lizeth)
 
 1. **Seasons DO cross the calendar year** (e.g. Rwanda season B, Sep→Feb).
-   Consequence: `script1` (Sentinel, in OneDrive — NOT in this repo or on
-   this machine) must label bands by **real date** instead of day-of-year.
-   Self-contained fix, still pending because the script lives in OneDrive;
-   do it next time the OneDrive scripts are at hand. The fail-loud guard
-   currently in place means nothing silently breaks meanwhile.
+   Consequence: `script1` must label bands by real date instead of
+   day-of-year — **FIXED 2026-07-04** on the copies in
+   `~/agwise_data_test/sentinel_scripts/`: time axis is now days-since-
+   season-start (monotonic across New Year), bands are named
+   `EVI_20200914_SG` (real date), meta CSV has `date` + `doy` columns,
+   checkpoint plots use real datetimes, and `parse_band_name` in the utils
+   accepts both the legacy `DOY` and the new date labels. Verified with a
+   synthetic Sep 2020→Feb 2021 season (guard still trips on the old DOY
+   axis; offsets axis smooths correctly across the boundary).
+   **Lizeth: copy the two fixed files back to OneDrive** ("data sourcing
+   scripts") — OneDrive is the source of truth for these.
 2. **SoilGrids urban/water NaN → fill from the nearest valid pixel** —
    IMPLEMENTED (see below): bounded search radius (`fill_nearest_m`,
    default 1 km), traceability column `<VAR>_fill_m` per variable
@@ -47,16 +53,15 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
-1. **Live-verify the SEAS5 driver on CGLabs** — the driver is built and
-   unit-tested but has NOT hit the real CDS API (no `~/.cdsapirc` on the
-   machine used this session). Smoke test: 1 variable, 1 year, small bbox:
-   `get_seasonal("PRCP", init_month=2, years=1995, bbox=(29,-3,31,-1))`.
-   Check: 25 members, valid dates start Feb 2, plausible mm/day values,
-   PRCP de-accumulation sane (no negatives).
-2. **MODIS NDVI driver** — still blocked on GEE credentials.
-3. Housekeeping: rotate the leaked CDS key (see Backlog).
+1. **MODIS NDVI driver** — still blocked on GEE credentials.
+2. Housekeeping: rotate the leaked CDS key (see Backlog).
 
-## Seasonal (SEAS5) layer (BUILT 2026-07-04, network-free tested; NOT yet live-verified against CDS)
+(SEAS5 live verification: **DONE 2026-07-04** — real CDS smoke test
+passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
+1995-02-02, mean 3.0 mm/day, max 36.7, no negatives, no NaNs. CDS creds
+now in `~/.cdsapirc` on this machine.)
+
+## Seasonal (SEAS5) layer (BUILT + LIVE-VERIFIED on CDS 2026-07-04)
 
 Implements Jemal's standardization proposal (reference scripts studied:
 `CGIAR-AgWise/agwise-planting-date-and-cultivar` → `Forecast/AgWise_download.py`).
@@ -131,9 +136,10 @@ headless gating, GEE 5xx retry.
 
 ## Backlog
 
-- **script1 real-date band labels** (decision made; script in OneDrive).
+- ~~script1 real-date band labels~~ — DONE 2026-07-04 (fixed copies in
+  `~/agwise_data_test/sentinel_scripts/`; copy back to OneDrive).
 - MODIS NDVI driver (needs GEE credentials to build/validate).
-- Live CDS smoke test of the SEAS5 driver on CGLabs (see Immediate next step).
+- ~~Live CDS smoke test of the SEAS5 driver~~ — DONE 2026-07-04 (passed).
 - Cleanups flagged in review: dead code in
   `agwise_phenology_utils.combine_indices_pixelwise` (~lines 951-1037,
   unreachable after the `raise`); `replace_outliers` fabricates data
