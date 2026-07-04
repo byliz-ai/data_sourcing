@@ -54,15 +54,16 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
-1. **PUSH TO ORIGIN** — `main` is 11 commits ahead of `origin/main` (soil/DEM,
-   SEAS5 v0.3.0, CI workflow, sentinel/ move, dead-code cleanup). Push failed
-   2026-07-04: **no GitHub credentials on this machine** (no `gh`, no
-   `~/.git-credentials`, no token in env). Lizeth: run
-   `git -C ~/agwise_data_test/data_sourcing push origin main` with your token
-   (or store it via `git config credential.helper store` first).
-2. **MODIS NDVI driver** — still blocked on GEE credentials; also the
+1. **MODIS NDVI driver** — still blocked on GEE credentials; also the
    `earthengine-api` package is not installed in the `agwise_data` env yet.
-3. Housekeeping: rotate the leaked CDS key (see Backlog).
+   From-zero credential walkthrough now in `docs/credentials_setup.md`.
+2. Housekeeping: rotate the leaked CDS key (see Backlog). ALSO rotate the
+   GitHub PAT when convenient — Lizeth pasted it in a chat session
+   2026-07-04; it now lives in `~/.git-credentials` (chmod 600, helper
+   `store`), so pushes work without retyping it.
+
+(Push backlog cleared 2026-07-04: everything through the credentials doc
+is on `origin/main`; CI runs on push.)
 
 (SEAS5 live verification: **DONE 2026-07-04** — real CDS smoke test
 passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
