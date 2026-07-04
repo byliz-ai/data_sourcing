@@ -8,6 +8,10 @@ Everything here is done **once per user**. Pick your path:
 | I have never used Google Earth Engine or Copernicus | [Path B — first time, from zero (≈20 min)](#path-b--first-time-from-zero-20-min) |
 | Something failed | [Troubleshooting](#troubleshooting) |
 
+Whichever path you take, read the
+[shared-server rules](#shared-server-rules-cglabs--read-this-first) first
+— they say where things go and what must never be shared.
+
 What each credential unlocks:
 
 | Provider | Needed for | What you place on the server |
@@ -15,6 +19,45 @@ What each credential unlocks:
 | Copernicus CDS | AgERA5 climate, SEAS5 forecasts | token in `~/.cdsapirc` |
 | Google Earth Engine (GEE) | `sentinel/script1`, future MODIS | file `~/.config/earthengine/credentials` |
 | CHIRPS, SoilGrids, DEM | nothing — no account needed | — |
+
+---
+
+## Shared-server rules (CGLabs) — read this first
+
+CGLabs gives **each person their own private home** (`/home/jovyan` is
+yours alone) plus one **shared folder** (`common_data`) that every AgWise
+user can read and write. The team policy in one line: **data is shared,
+credentials are personal.**
+
+**Data → shared.** Everyone points `AGWISE_DATA_ROOT` at the shared cache
+root; the first person to request a dataset pays the download and everyone
+else gets a cache hit. Nothing secret is ever stored there.
+
+**Credentials → personal, always.** Each person creates their **own** free
+accounts and keeps the tokens in their **own** home:
+
+- your own CDS account → your token in `~/.cdsapirc` (`chmod 600`)
+- your own Google sign-in → your `~/.config/earthengine/credentials` (`chmod 600`)
+- your own GitHub PAT (fine-grained, this repo only, with an expiry date)
+
+Never place a credential in `common_data`, in the repo, in a notebook, or
+lend one to a colleague "just to test" — with this guide they can create
+their own in ~10 minutes. Why it matters: a personal free token that leaks
+is rotated in 2 minutes and affects only you; a shared one takes the whole
+team down. CDS download queues are also **per account** — sharing one
+token means the whole team waits in a single queue.
+
+**GEE as a team: one project, individual sign-ins.** The project owner
+adds each member once: <https://console.cloud.google.com> → *IAM* →
+*Grant access* → colleague's Gmail → role **Earth Engine Resource
+Writer**. Then everyone uses the same `gee_project="ee-<team-project>"`
+in scripts, but each authenticates with their own account and file.
+(Members added this way can skip step B3 below — jump straight to B4.)
+
+**Unattended/scheduled jobs only** (no human to sign in): use a GEE
+[service account](https://developers.google.com/earth-engine/guides/service_account)
+and a dedicated CDS "bot" account, keys stored only in the home of the
+account running the job. Not needed for interactive work.
 
 ---
 
@@ -101,23 +144,87 @@ Downloads fail until you accept the terms of each dataset, once:
 
 ⚠️ Google **blocks** the sign-in if the browser is on a different machine
 than the one running the command ("Access blocked … for your security").
-So never run `earthengine authenticate` on CGLabs. Do it where a browser
-exists, then copy one small file.
+So never run the auth command on CGLabs. Do it on your laptop, then copy
+one small file (B5).
 
-On your laptop (any OS with Python — Anaconda counts):
+Two more traps we already hit, so you don't have to: GEE **no longer
+works on Python 3.9** (the default on many Macs), and macOS Python often
+lacks SSL certificates. The steps below avoid both — tested on a real
+Mac. Do them once, in order, in the Terminal:
+
+**Step 1.** Install a modern Python if you don't have one (Mac):
 
 ```bash
-pip install --upgrade earthengine-api
-earthengine authenticate
+brew install python@3.11
 ```
 
-Your browser opens → sign in with the account from B3 → **Allow**. That
-wrote the file you need:
+**Step 2.** Create a clean environment with it:
 
-- Windows: `C:\Users\<you>\.config\earthengine\credentials`
-- Mac/Linux: `~/.config/earthengine/credentials`
+```bash
+$(brew --prefix)/opt/python@3.11/bin/python3.11 -m venv ~/ee-env
+```
 
-No Python on the laptop? Use Colab as the browser machine:
+(Windows: install Python 3.11 from python.org, then
+`py -3.11 -m venv %UserProfile%\ee-env`.)
+
+**Step 3.** Activate it:
+
+```bash
+source ~/ee-env/bin/activate
+```
+
+The prompt must now start with `(ee-env)`. **If it doesn't, stop and
+repeat this step** — nothing below works outside the environment.
+(Windows: `%UserProfile%\ee-env\Scripts\activate`.)
+
+**Step 4.** Install Earth Engine inside the environment:
+
+```bash
+pip install --upgrade earthengine-api certifi
+```
+
+**Step 5.** (Mac only, once) Pin the SSL certificates — prevents the
+`CERTIFICATE_VERIFY_FAILED` error forever:
+
+```bash
+echo 'export SSL_CERT_FILE=$(python -m certifi 2>/dev/null)' >> ~/.zshrc
+echo 'export REQUESTS_CA_BUNDLE=$(python -m certifi 2>/dev/null)' >> ~/.zshrc
+```
+
+Then close the Terminal, open a new one, and re-activate (Step 3).
+
+**Step 6.** Authenticate — use this exact form (the bare `earthengine`
+command can silently resolve to the old system Python):
+
+```bash
+python -m ee.cli.eecli authenticate
+```
+
+Your browser opens → sign in with the account from B3 → **Allow** → when
+the browser says it succeeded, close that tab.
+
+**Step 7.** Confirm the credentials file exists:
+
+```bash
+ls -la ~/.config/earthengine/
+```
+
+You must see a file named `credentials` (no extension). That file is your
+key: **never share it or upload it to GitHub** — the only place it goes
+is your own home on CGLabs (B5).
+
+- Windows path: `C:\Users\<you>\.config\earthengine\credentials`
+
+**Step 8.** Test — replace with your real project ID; must print `2`:
+
+```bash
+python -c "import ee; ee.Initialize(project='ee-<yourname>'); print(ee.Number(1).add(1).getInfo())"
+```
+
+Later sessions on the laptop only ever need Step 3 again — certificates
+and credentials are already saved.
+
+No Python on the laptop at all? Use Colab as the browser machine:
 <https://colab.research.google.com> → new notebook → run
 `import ee; ee.Authenticate(auth_mode='notebook')` → follow the link →
 then `from google.colab import files; files.download('/root/.config/earthengine/credentials')`.
@@ -135,9 +242,18 @@ You now have a CDS token (B1) and a `credentials` file (B4) — follow
 
 - **"Access blocked / Google ha bloqueado el acceso"** while signing in →
   you ran the auth command on a machine without a browser (CGLabs), or
-  your `earthengine-api` is old (retired OAuth flow). Fix:
-  `pip install --upgrade earthengine-api` **on your laptop**, authenticate
-  there, copy the file (B4–B5).
+  your `earthengine-api` is old (retired OAuth flow). Fix: follow B4 **on
+  your laptop** (fresh env, `pip install --upgrade earthengine-api`),
+  authenticate there, copy the file (B5).
+- `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'` →
+  you are running the old system Python (3.9). Make sure the prompt shows
+  `(ee-env)` (B4 Step 3) and call the CLI as
+  `python -m ee.cli.eecli authenticate`, **not** bare `earthengine`.
+- `SSL: CERTIFICATE_VERIFY_FAILED` → missing certificates (common on
+  Mac). Run B4 Step 5, close and reopen the Terminal, re-activate the
+  env.
+- Prompt doesn't show `(ee-env)`, or `command not found: python` → the
+  environment is not active. Run B4 Step 3 again.
 - `ee.Initialize: no project found` → pass `project="ee-yourname"`;
   there is no default.
 - `Not signed up for Earth Engine` → registration (B3) was not finished
