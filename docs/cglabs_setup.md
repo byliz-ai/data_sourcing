@@ -31,6 +31,9 @@ that gets a cache hit.
 
 ## 3. CDS credentials (per user, for AgERA5)
 
+(First time on Copernicus or Google Earth Engine? There is a from-zero,
+click-by-click guide in [credentials_setup.md](credentials_setup.md).)
+
 1. Create a free account at <https://cds.climate.copernicus.eu>.
 2. Accept the license of the *"Agrometeorological indicators"* dataset
    (one click on its download page).
