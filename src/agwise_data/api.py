@@ -119,20 +119,26 @@ def _effective_domain(
     years: List[int],
     region_bbox,
     override: Optional[str],
+    complete_fn=None,
 ) -> str:
     """Pick the cache domain for a request.
 
     Priority: an explicit override; any containing domain whose cache is
     already complete for these years (free reuse, smallest first); a
     region-scoped domain when the request is small (fetch only what is
-    needed); the smallest containing domain otherwise.
+    needed); the smallest containing domain otherwise. ``complete_fn``
+    overrides the cache-completeness test (seasonal files are keyed
+    differently from the daily climate files).
     """
     if override:
         return override
+    complete = complete_fn or (
+        lambda name: _harmonized_complete(config, source_id, variable, years, name)
+    )
     include_regions = config.fetch_scope != "domain"
     containing = config.containing_domains(region_bbox, include_regions)
     for name in containing:
-        if _harmonized_complete(config, source_id, variable, years, name):
+        if complete(name):
             return name
     base = containing[0] if containing else "global"
     if config.fetch_scope == "domain":
@@ -684,6 +690,176 @@ def get_soil(
 
 
 # ---------------------------------------------------------------------------
+# Seasonal forecasts/hindcasts (SEAS5): Jemal's standardization proposal.
+
+_DEFAULT_SEASONAL_SOURCE = "seas5"
+
+
+def _seasonal_driver_for(variable: str, source: Optional[str], config: Config):
+    source_id = source or _DEFAULT_SEASONAL_SOURCE
+    entry = catalog.get_entry(source_id)
+    if canonical_name(variable) not in entry.get("variables", {}):
+        raise ValueError(
+            f"Source '{source_id}' does not provide {canonical_name(variable)}. "
+            f"It provides: {sorted(entry.get('variables', {}))}"
+        )
+    return drivers.get_driver(entry, config), source_id
+
+
+def _seasonal_complete(
+    config: Config,
+    source_id: str,
+    variable: str,
+    init_month: int,
+    years: List[int],
+    domain: str,
+) -> bool:
+    short = short_name(variable)
+    return all(
+        config.seasonal_path(source_id, domain, short, init_month, y).exists()
+        for y in years
+    )
+
+
+def _prefetch_seasonal(config: Config, tasks: List[tuple]) -> None:
+    """Ensure many (driver, variable, init_month, year, domain) files in
+    parallel — CDS queue waits overlap, like the climate prefetch."""
+    tasks = list(dict.fromkeys(tasks))
+    if config.max_workers <= 1 or len(tasks) <= 1:
+        for drv, var, init, year, dom in tasks:
+            drv.ensure_seasonal(var, init, year, dom)
+        return
+    with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
+        futures = [
+            ex.submit(drv.ensure_seasonal, var, init, year, dom)
+            for drv, var, init, year, dom in tasks
+        ]
+        for fut in futures:
+            fut.result()  # propagate the first failure
+
+
+def get_seasonal(
+    variables: Union[str, Sequence[str]],
+    init_month: int,
+    years: Union[int, Sequence[int]],
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    ensemble: str = "members",
+    source: Optional[str] = None,
+    domain: Optional[str] = None,
+    out_format: Union[str, Sequence[str]] = "nc",
+    out_dir: Optional[Path] = None,
+    overwrite: bool = False,
+    config: Optional[Config] = None,
+) -> Dict[str, dict]:
+    """Fetch, harmonize and cache seasonal forecast/hindcast cubes.
+
+    One initialization month across ``years`` (hindcast range and/or
+    real-time years) — the input the planting-date module bias-corrects
+    against the :func:`get_climate` observations. Returns
+    ``{canonical_variable: {"nc": Path, "tif": Path|None, "data":
+    xr.DataArray}}`` where the data has dims ``(member, time, lat, lon)``
+    and ``time`` is the valid date (init + lead, daily steps, ~7 months
+    per year). ``ensemble="mean"``/``"median"`` reduces the member axis
+    (required for GeoTIFF export); the default keeps all members.
+    """
+    config = config or Config.load()
+    variables = _as_variables(variables)
+    years = _as_years(years)
+    init_month = int(init_month)
+    if not 1 <= init_month <= 12:
+        raise ValueError(f"init_month must be 1..12, got {init_month}")
+    if ensemble not in ("members", "mean", "median"):
+        raise ValueError("ensemble must be 'members', 'mean' or 'median'")
+    formats = [out_format] if isinstance(out_format, str) else list(out_format)
+    for f in formats:
+        if f not in ("nc", "tif"):
+            raise ValueError(f"Unknown output format '{f}' (use 'nc' and/or 'tif')")
+    write_tif = "tif" in formats
+    if write_tif and ensemble == "members":
+        raise ValueError(
+            "GeoTIFF export needs a reduced ensemble: use ensemble='mean' "
+            "or 'median' (a members × time cube does not fit raster bands)"
+        )
+
+    gdf, region_bbox, tag = _resolve_region(
+        config, country, bbox, admin_level, admin_name
+    )
+    out_root = Path(out_dir) if out_dir else config.products_dir(tag)
+
+    from .drivers.seasonal import seasonal_nc_encoding
+
+    plans = []
+    tasks = []
+    for var in variables:
+        driver, source_id = _seasonal_driver_for(var, source, config)
+        var_domain = _effective_domain(
+            config, source_id, var, years, region_bbox, domain,
+            complete_fn=lambda name, s=source_id, v=var: _seasonal_complete(
+                config, s, v, init_month, years, name
+            ),
+        )
+        short = short_name(var)
+        stem = f"Seasonal_{short}_i{init_month:02d}_{years[0]}_{years[-1]}"
+        if ensemble != "members":
+            stem += f"_{ensemble}"
+        nc_path = out_root / f"{stem}.nc"
+        tif_path = out_root / f"{stem}.tif" if write_tif else None
+        need_nc = overwrite or not nc_path.exists()
+        need_tif = write_tif and (overwrite or not tif_path.exists())
+        plans.append(
+            (var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif)
+        )
+        if need_nc or need_tif:
+            tasks.extend((driver, var, init_month, y, var_domain) for y in years)
+    _prefetch_seasonal(config, tasks)
+
+    results: Dict[str, dict] = {}
+    for var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif in plans:
+        if not need_nc and not need_tif:
+            logger.info("Product cache hit: %s", nc_path)
+            da = xr.open_dataarray(nc_path)
+        else:
+            da = driver.open_inits(var, init_month, years, var_domain)
+            da = subset_bbox(da, region_bbox, buffer=0.05)
+            if gdf is not None:
+                da = clip_geometry(da, gdf)
+            if ensemble != "members":
+                da = getattr(da, ensemble)(dim="member", keep_attrs=True)
+            da = da.load()
+
+            meta = {
+                "source_id": source_id,
+                "variable": var,
+                "region": tag,
+                "init_month": init_month,
+                "years": [years[0], years[-1]],
+                "ensemble": ensemble,
+                "domain": var_domain,
+            }
+            if need_nc:
+                nc_path.parent.mkdir(parents=True, exist_ok=True)
+                da.to_netcdf(nc_path, encoding={da.name: seasonal_nc_encoding(da)})
+                write_manifest(nc_path, meta)
+            if need_tif:
+                from .spatial import write_geotiff
+
+                write_geotiff(da, tif_path, labels=time_labels(da, "daily"))
+                write_manifest(tif_path, meta)
+
+        results[var] = {
+            "short": short_name(var),
+            "source": source_id,
+            "nc": nc_path if nc_path.exists() else None,
+            "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "data": da,
+        }
+    return results
+
+
+# ---------------------------------------------------------------------------
 # One trial-point extraction covers a small area, but a national trial set
 # can span a whole country; fetching one static window for all of it could
 # blow past memory at 30 m. Points are therefore grouped: one window when
@@ -706,6 +882,42 @@ def _static_point_cells(lons: np.ndarray, lats: np.ndarray):
     return {box: np.asarray(idx) for box, idx in cells.items()}
 
 
+# SoilGrids masks urban areas and water bodies (NoData → NaN), so trial
+# points in towns land on masked pixels. Decision (Lizeth, 2026-07-04):
+# fill those from the nearest unmasked pixel within a bounded search
+# radius, and record the donor distance so the fill is traceable.
+_M_PER_DEG = 111_320.0
+
+
+def _nearest_valid_fill(da: xr.DataArray, lon: float, lat: float, max_m: float):
+    """Value(s) of the nearest non-NaN pixel within ``max_m`` meters.
+
+    Returns ``(values, distance_m)`` — values is a per-depth vector when
+    the layer has a depth dim — or ``None`` if no valid pixel is in range.
+    A pixel only counts as valid when it is finite at *all* depths, so
+    every depth column of a filled point comes from the same donor pixel.
+    """
+    dlat = max_m / _M_PER_DEG
+    dlon = max_m / (_M_PER_DEG * max(np.cos(np.radians(lat)), 0.01))
+    win = subset_bbox(da, (lon - dlon, lat - dlat, lon + dlon, lat + dlat))
+    if win.sizes["lat"] == 0 or win.sizes["lon"] == 0:
+        return None
+    win = win.transpose(*(d for d in ("depth", "lat", "lon") if d in win.dims))
+    win = win.load()
+    finite = np.isfinite(win.values)
+    valid = finite.all(axis=0) if "depth" in win.dims else finite
+    if not valid.any():
+        return None
+    dy = (win["lat"].values[:, None] - lat) * _M_PER_DEG
+    dx = (win["lon"].values[None, :] - lon) * _M_PER_DEG * np.cos(np.radians(lat))
+    dist = np.where(valid, np.hypot(dx, dy), np.inf)
+    j, i = np.unravel_index(np.argmin(dist), dist.shape)
+    if dist[j, i] > max_m:
+        return None
+    donor = win.isel(lat=j, lon=i).values
+    return donor, float(dist[j, i])
+
+
 def extract_static_points(
     points,
     variables: Union[str, Sequence[str]],
@@ -713,6 +925,7 @@ def extract_static_points(
     source: Optional[str] = None,
     lon_col: Optional[str] = None,
     lat_col: Optional[str] = None,
+    fill_nearest_m: Optional[float] = 1000.0,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
     """Soil/topography values at point locations (wide format).
@@ -722,6 +935,13 @@ def extract_static_points(
     ``CLAY_5_15cm``, ... for soil properties (one column per depth).
     This is the static counterpart of :func:`extract_growing_season`:
     the fertilizer module extracts soil and terrain at trial points.
+
+    Points on masked pixels (SoilGrids NoData over urban areas/water) are
+    filled from the nearest valid pixel within ``fill_nearest_m`` meters
+    (default 1 km; pass ``None`` or 0 to disable). When enabled, each
+    variable gets a ``<VAR>_fill_m`` column: 0 where the point's own pixel
+    was valid, the donor-pixel distance in meters where it was filled, and
+    NaN where no valid pixel was in range (the value stays NaN too).
     """
     config = config or Config.load()
     variables = _as_static_variables(variables)
@@ -746,11 +966,13 @@ def extract_static_points(
             tasks.append((driver, var, dom))
     _prefetch_static(config, [t for t in dict.fromkeys(tasks)])
 
+    fill_enabled = bool(fill_nearest_m)
     new_cols: Dict[str, np.ndarray] = {}
     for var in variables:
         short = static_short_name(var)
         depth_labels = None
         collected: Dict[str, np.ndarray] = {}
+        fill_m = np.full(len(sub), np.nan, dtype="float32")
         for box, idx in cells.items():
             driver, dom = plans[(var, box)]
             da = driver.open_static(var, dom)
@@ -758,6 +980,24 @@ def extract_static_points(
             ilon = xr.DataArray(lons[idx], dims="point")
             ilat = xr.DataArray(lats[idx], dims="point")
             vals = da.sel(lon=ilon, lat=ilat, method="nearest").load()
+            if "depth" in vals.dims:
+                vals = vals.transpose("depth", "point")
+            arr = np.asarray(vals.values, dtype="float32")
+            if fill_enabled:
+                bad = np.isnan(arr).any(axis=0) if arr.ndim == 2 else np.isnan(arr)
+                dist = np.where(bad, np.nan, 0.0).astype("float32")
+                for k in np.flatnonzero(bad):
+                    hit = _nearest_valid_fill(
+                        da, lons[idx][k], lats[idx][k], float(fill_nearest_m)
+                    )
+                    if hit is not None:
+                        donor, d = hit
+                        if arr.ndim == 2:
+                            arr[:, k] = donor
+                        else:
+                            arr[k] = donor
+                        dist[k] = d
+                fill_m[idx] = dist
             if "depth" in vals.dims:
                 labels = [str(d) for d in vals["depth"].values]
                 if depth_labels is None:
@@ -767,12 +1007,14 @@ def extract_static_points(
                     col = collected.setdefault(
                         key, np.full(len(sub), np.nan, dtype="float32")
                     )
-                    col[idx] = vals.isel(depth=d).values
+                    col[idx] = arr[d]
             else:
                 col = collected.setdefault(
                     short, np.full(len(sub), np.nan, dtype="float32")
                 )
-                col[idx] = vals.values
+                col[idx] = arr
+        if fill_enabled:
+            collected[f"{short}_fill_m"] = fill_m
         new_cols.update(collected)
 
     out = df.copy()
@@ -791,5 +1033,6 @@ __all__ = [
     "get_static",
     "get_dem",
     "get_soil",
+    "get_seasonal",
     "extract_static_points",
 ]

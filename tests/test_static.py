@@ -117,3 +117,43 @@ def test_extract_static_points_invalid_coords(config):
     out = extract_static_points(pts, "ELEV", source="fake_static", config=config)
     assert out["ELEV"].iloc[0] == pytest.approx(34.0)
     assert np.isnan(out["ELEV"].iloc[1])
+
+
+# The fake soil layer has a 3x3-pixel NoData "town" at lon 35.0-35.2,
+# lat 0.0-0.2 (see conftest); its center is ~22 km from the nearest
+# valid pixel on the 0.1-degree grid.
+
+
+def test_extract_static_points_fill_nearest(config):
+    pts = pd.DataFrame({"lon": [35.1, 34.0], "lat": [0.1, 0.0]})
+    out = extract_static_points(
+        pts, ["ELEV", "CLAY"], source="fake_static", config=config,
+        fill_nearest_m=50_000,
+    )
+    # masked point: soil filled from the nearest valid pixel, same values
+    for di, depth in enumerate(["0_5cm", "5_15cm", "15_30cm"]):
+        assert out[f"CLAY_{depth}"].tolist() == pytest.approx(
+            [(di + 1) * 10.0] * 2
+        )
+    assert 15_000 < out["CLAY_fill_m"].iloc[0] < 30_000
+    assert out["CLAY_fill_m"].iloc[1] == 0.0  # own pixel was valid
+    assert out["ELEV_fill_m"].tolist() == [0.0, 0.0]  # DEM has no mask here
+
+
+def test_extract_static_points_fill_disabled(config):
+    pts = pd.DataFrame({"lon": [35.1], "lat": [0.1]})
+    out = extract_static_points(
+        pts, "CLAY", source="fake_static", config=config, fill_nearest_m=None
+    )
+    assert np.isnan(out["CLAY_0_5cm"].iloc[0])
+    assert "CLAY_fill_m" not in out.columns
+
+
+def test_extract_static_points_fill_out_of_range(config):
+    # radius smaller than the distance to any valid pixel: NaN stays NaN
+    pts = pd.DataFrame({"lon": [35.1], "lat": [0.1]})
+    out = extract_static_points(
+        pts, "CLAY", source="fake_static", config=config, fill_nearest_m=5_000
+    )
+    assert np.isnan(out["CLAY_0_5cm"].iloc[0])
+    assert np.isnan(out["CLAY_fill_m"].iloc[0])

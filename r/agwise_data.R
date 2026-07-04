@@ -95,6 +95,7 @@ ad_extract_growing_season <- function(points, vars, planting_col, harvest_col,
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!legacy_names)     args <- c(args, "--agwise-names")
   if (!is.null(source))  args <- c(args, "--source", source)
+  args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
@@ -118,6 +119,7 @@ ad_extract_points <- function(points, vars, start, end, freq = "daily",
   if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!is.null(source))  args <- c(args, "--source", source)
+  args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
@@ -166,14 +168,54 @@ ad_get_soil <- function(vars = c("CLAY", "SAND", "SILT", "PH", "SOC",
   ad_get_static(vars, depths = depths, ...)
 }
 
+#' Seasonal forecast/hindcast cubes (SEAS5) for a region.
+#'
+#' One initialization month across a range of years (e.g. the 1993:2016
+#' hindcast) — the input the planting-date module bias-corrects against
+#' the ad_get_climate observations. The product is a NetCDF cube with
+#' dims (member, time, lat, lon) where time is the valid date; terra has
+#' no ensemble axis, so this returns the NetCDF path(s) instead of a
+#' SpatRaster (read with ncdf4/stars, or reduce with ensemble = "mean").
+#'
+#' @param vars       e.g. c("PRCP", "TMAX") — same AGRO names as observations
+#' @param init_month initialization month (1-12)
+#' @param years      e.g. 1993:2016
+#' @param ensemble   "members" (default), "mean" or "median"
+#' @return named list of NetCDF paths (one per variable)
+ad_get_seasonal <- function(vars, init_month, years, country = NULL,
+                            bbox = NULL, admin_level = 0, admin_name = NULL,
+                            ensemble = "members", source = NULL,
+                            overwrite = FALSE) {
+  args <- c("get-seasonal",
+            "--vars", paste(vars, collapse = ","),
+            "--init-month", as.character(init_month),
+            "--years", paste0(min(years), ":", max(years)),
+            "--ensemble", ensemble)
+  if (!is.null(country))    args <- c(args, "--country", country)
+  if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(source))     args <- c(args, "--source", source)
+  if (overwrite)            args <- c(args, "--overwrite")
+
+  res <- ad_run(args)
+  paths <- lapply(res$outputs, function(o) o$nc)
+  names(paths) <- vapply(res$outputs, function(o) o$short, character(1))
+  paths
+}
+
 #' Soil/topography values at point locations (wide format).
 #'
 #' Returns the input data plus ELEV/SLOPE/... columns and one column per
 #' soil property and depth (CLAY_0_5cm, CLAY_5_15cm, ...) — the static
 #' counterpart of ad_extract_growing_season for trial data.
+#' Points on masked pixels (SoilGrids NoData over urban/water) are filled
+#' from the nearest valid pixel within fill_nearest_m meters (0 disables);
+#' each variable gets a <VAR>_fill_m traceability column (0 = own pixel,
+#' >0 = donor distance, NA = nothing valid in range).
 ad_extract_static_points <- function(points, vars, depths = NULL,
                                      lon_col = NULL, lat_col = NULL,
-                                     source = NULL) {
+                                     source = NULL, fill_nearest_m = 1000) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -188,6 +230,7 @@ ad_extract_static_points <- function(points, vars, depths = NULL,
   if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!is.null(source))  args <- c(args, "--source", source)
+  args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)

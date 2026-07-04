@@ -27,3 +27,4 @@ agwise_data_root/
 .Rhistory
 .idea/
 .vscode/
+.claude/

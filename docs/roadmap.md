@@ -6,11 +6,17 @@ catalog YAML + a driver), so each addition is incremental.
 
 ## Near term
 
-1. **Seasonal hindcast/forecast driver (SEAS5)** — implement the
-   standardization proposal from the planting-date module (Jemal): one-time
-   historical + hindcast download, common grid/calendar/naming, merged
-   `Daily_<VAR>_<y0>_<y1>.nc` products ready for bias correction and DSSAT.
-   The `harmonized/` layout and manifests here were designed to receive it.
+1. ~~**Seasonal hindcast/forecast driver (SEAS5)**~~ — **DONE (v0.3)**:
+   `SeasonalDriver` base with `ensure_seasonal`, SEAS5 via CDS
+   `seasonal-original-single-levels` (per-year append-only cache
+   `Seasonal_<VAR>_i<MM>_<year>.nc`, dims `(member, time, lat, lon)` with
+   valid-date time, de-accumulation of PRCP/SRAD, AGRO units so hindcast
+   and observations pair by name for bias correction — Jemal's proposal;
+   the historical/observation half is `get_climate`). API `get_seasonal`;
+   CLI `get-seasonal`; R `ad_get_seasonal`; catalog `seas5.yaml`.
+   *Not yet live-verified against CDS (no `~/.cdsapirc` on the test
+   machine)* — run a 1-year, 1-variable smoke test on CGLabs when
+   credentials are available.
 2. ~~**Soil & DEM driver**~~ — **DONE (v0.2)**: `StaticDriver` base with
    `ensure_static`, Copernicus GLO-30 DEM (windowed COG reads, derived
    slope/aspect/TPI/TRI) and SoilGrids 2.0 via the ISRIC WCS (native 4326

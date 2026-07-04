@@ -1,0 +1,75 @@
+# Catalog entry: ECMWF SEAS5 daily seasonal forecasts/hindcasts.
+# Downloaded from the Copernicus Climate Data Store (CDS) dataset
+# "seasonal-original-single-levels". Requires a free CDS account and a
+# ~/.cdsapirc file — see docs/cglabs_setup.md. Never put API keys in code.
+id: seas5
+title: ECMWF SEAS5 daily seasonal forecasts and hindcasts
+description: >
+  Daily fields from the ECMWF SEAS5 seasonal forecast system (system 51)
+  at ~1 degree resolution, up to 215 days of lead time: 25-member
+  hindcasts (1981-2016) and 51-member real-time forecasts (2017-present),
+  initialized on the 1st of every month. AgWise pairs the hindcast with
+  AgERA5/CHIRPS observations for bias correction and DSSAT workflows in
+  the planting-date and cultivar module (Jemal's standardization
+  proposal). Accumulated fields (precipitation, solar radiation) are
+  de-accumulated to daily values; units match the AGRO conventions so
+  observation and hindcast line up by variable name.
+license: Copernicus License (free use with attribution)
+citation: >
+  Johnson, S. J. et al. (2019): SEAS5: the new ECMWF seasonal forecast
+  system. Geoscientific Model Development 12, 1087-1117.
+  https://doi.org/10.5194/gmd-12-1087-2019
+version: "51"
+providers:
+  - name: ECMWF
+    roles: [producer]
+    url: https://www.ecmwf.int
+  - name: Copernicus Climate Change Service (C3S)
+    roles: [host]
+    url: https://cds.climate.copernicus.eu
+extent:
+  spatial:
+    bbox: [-180.0, -90.0, 180.0, 90.0]
+  temporal:
+    start: "1981-01-01"
+    end: null   # real-time forecasts, monthly initializations
+spatial_resolution_deg: 1.0
+temporal_resolution: daily (24-hour lead steps, up to 5160 h)
+
+driver: seas5
+access:
+  - type: cds
+    role: primary
+    dataset: seasonal-original-single-levels
+    originating_centre: ecmwf
+    system: "51"
+
+variables:
+  AGRO.PRCP:
+    source_name: total_precipitation
+    nc_var: tp
+    source_units: m (accumulated from step 0)
+    accumulated: true
+    conversion: m_to_mm
+  AGRO.TMAX:
+    source_name: maximum_2m_temperature_in_the_last_24_hours
+    nc_var: mx2t24
+    source_units: K
+    conversion: k_to_degc
+  AGRO.TMIN:
+    source_name: minimum_2m_temperature_in_the_last_24_hours
+    nc_var: mn2t24
+    source_units: K
+    conversion: k_to_degc
+  AGRO.TEMP:
+    source_name: 2m_temperature
+    nc_var: t2m
+    source_units: K
+    conversion: k_to_degc
+    note: instantaneous 2m temperature at each 24-hour step, not a daily mean.
+  AGRO.SRAD:
+    source_name: surface_solar_radiation_downwards
+    nc_var: ssrd
+    source_units: J m-2 (accumulated from step 0)
+    accumulated: true
+    conversion: jm2_to_mjm2

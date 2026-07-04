@@ -154,6 +154,40 @@ def cmd_get_static(args) -> dict:
     }
 
 
+def cmd_get_seasonal(args) -> dict:
+    from .api import get_seasonal
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    results = get_seasonal(
+        variables=args.vars,
+        init_month=args.init_month,
+        years=_parse_years(args.years),
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        ensemble=args.ensemble,
+        source=args.source,
+        domain=args.domain,
+        out_format=[f.strip() for f in args.format.split(",")],
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        overwrite=args.overwrite,
+    )
+    return {
+        "ok": True,
+        "outputs": [
+            {
+                "variable": var,
+                "short": info["short"],
+                "source": info["source"],
+                "nc": str(info["nc"]) if info["nc"] else None,
+                "tif": str(info["tif"]) if info["tif"] else None,
+            }
+            for var, info in results.items()
+        ],
+    }
+
+
 def cmd_extract_static(args) -> dict:
     from .api import extract_static_points
 
@@ -169,6 +203,7 @@ def cmd_extract_static(args) -> dict:
         source=args.source,
         lon_col=args.lon_col,
         lat_col=args.lat_col,
+        fill_nearest_m=args.fill_nearest_m or None,
     )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +293,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_ex.add_argument("--source")
     p_ex.set_defaults(func=cmd_extract)
 
+    p_se = sub.add_parser(
+        "get-seasonal",
+        help="Fetch seasonal forecast/hindcast cubes (SEAS5) for a region",
+    )
+    p_se.add_argument("--vars", required=True, help="e.g. PRCP,TMAX or AGRO.PRCP")
+    p_se.add_argument(
+        "--init-month", dest="init_month", type=int, required=True,
+        help="Initialization month (1-12)",
+    )
+    p_se.add_argument("--years", required=True, help="e.g. 1993:2016 (hindcast range)")
+    _add_region_args(p_se)
+    p_se.add_argument(
+        "--ensemble", choices=["members", "mean", "median"], default="members",
+        help="Keep all members or reduce the ensemble axis",
+    )
+    p_se.add_argument("--format", default="nc", help="nc, tif or nc,tif")
+    p_se.add_argument("--source", help="Override the seasonal source (default seas5)")
+    p_se.add_argument("--domain", help="Cache domain (default: auto)")
+    p_se.add_argument("--out-dir", dest="out_dir")
+    p_se.add_argument("--overwrite", action="store_true")
+    p_se.set_defaults(func=cmd_get_seasonal)
+
     p_gs = sub.add_parser(
         "get-static", help="Fetch harmonized static layers (soil, DEM) for a region"
     )
@@ -283,6 +340,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_es.add_argument("--lon-col", dest="lon_col")
     p_es.add_argument("--lat-col", dest="lat_col")
     p_es.add_argument("--source")
+    p_es.add_argument(
+        "--fill-nearest-m",
+        dest="fill_nearest_m",
+        type=float,
+        default=1000.0,
+        help="Fill masked (NaN) pixels from the nearest valid pixel within "
+        "this many meters; 0 disables (default: 1000)",
+    )
     p_es.set_defaults(func=cmd_extract_static)
 
     p_cat = sub.add_parser("catalog", help="Inspect the dataset catalog")

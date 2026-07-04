@@ -282,6 +282,7 @@ _CONVERSIONS = {
     "none": lambda x: x,
     "k_to_degc": lambda x: x - 273.15,
     "jm2_to_mjm2": lambda x: x / 1_000_000.0,
+    "m_to_mm": lambda x: x * 1000.0,
     # SoilGrids stores scaled integers; /10 and /100 recover mapped units.
     "d10": lambda x: x / 10.0,
     "d100": lambda x: x / 100.0,
@@ -335,6 +336,50 @@ def standardize(da: xr.DataArray, variable: str, source_id: str) -> xr.DataArray
     if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
         da = da.sortby("lat")
     da = da.transpose("time", "lat", "lon")
+
+    da = da.rename(meta["short"]).astype("float32")
+    da.attrs.update(
+        {
+            "agwise_name": canonical,
+            "long_name": meta["long_name"],
+            "units": meta["units"],
+            "source": source_id,
+        }
+    )
+    return da
+
+
+def standardize_seasonal(
+    da: xr.DataArray, variable: str, source_id: str
+) -> xr.DataArray:
+    """Apply the AgWise conventions to a raw seasonal-forecast DataArray.
+
+    Same contract as :func:`standardize` but with an ensemble axis: dims
+    become (``member``, ``time``, ``lat``, ``lon``) where ``time`` is the
+    *valid* date (initialization + lead) and ``member`` the ensemble
+    member. Variable names and units are the same ``AGRO.*`` conventions
+    as the observations, so hindcast and reference data pair up by name
+    for bias correction.
+    """
+    canonical = canonical_name(variable)
+    meta = CANONICAL_VARS[canonical]
+
+    renames = {k: v for k, v in _DIM_RENAMES.items() if k in da.dims}
+    if "number" in da.dims:
+        renames["number"] = "member"
+    if renames:
+        da = da.rename(renames)
+    missing = {"member", "time", "lat", "lon"} - set(da.dims)
+    if missing:
+        raise ValueError(
+            f"Cannot standardize seasonal '{variable}' from {source_id}: "
+            f"missing dims {missing} (found {list(da.dims)})"
+        )
+
+    da = da.assign_coords(time=pd.DatetimeIndex(da["time"].values).normalize())
+    if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
+        da = da.sortby("lat")
+    da = da.transpose("member", "time", "lat", "lon")
 
     da = da.rename(meta["short"]).astype("float32")
     da.attrs.update(

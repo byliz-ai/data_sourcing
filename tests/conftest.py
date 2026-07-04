@@ -16,6 +16,7 @@ from agwise_data import catalog
 from agwise_data.config import Config
 from agwise_data.drivers import register
 from agwise_data.drivers.base import Driver
+from agwise_data.drivers.seasonal import SeasonalDriver
 from agwise_data.drivers.static import StaticDriver
 from agwise_data.harmonize import apply_conversion
 
@@ -100,8 +101,14 @@ class FakeStaticDriver(StaticDriver):
                 np.full((len(lats), len(lons)), (di + 1) * 100.0, dtype="float32")
                 for di in range(len(FAKE_DEPTHS))
             ]
+            data = np.stack(layers)
+            # a masked "town": SoilGrids-style NoData block (all depths NaN)
+            mask = ((lats >= -0.001) & (lats <= 0.201))[:, None] & (
+                (lons >= 34.999) & (lons <= 35.201)
+            )[None, :]
+            data[:, mask] = np.nan
             da = xr.DataArray(
-                np.stack(layers),
+                data,
                 coords={"depth": FAKE_DEPTHS, "lat": lats, "lon": lons},
                 dims=("depth", "lat", "lon"),
                 name=spec.get("source_name", "value"),
@@ -129,6 +136,69 @@ FAKE_STATIC_ENTRY = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Seasonal counterpart: synthetic ensemble forecasts. Values encode member
+# and lead (member*1000 + lead_day) for easy assertions.
+
+FAKE_MEMBERS = 5
+FAKE_LEAD_DAYS = 30
+
+
+def synthetic_seasonal(init_month: int, year: int, bbox) -> xr.DataArray:
+    w, s, e, n = bbox
+    lats = np.arange(s, n + 0.001, 0.5)
+    lons = np.arange(w, e + 0.001, 0.5)
+    valid = pd.date_range(
+        f"{year}-{init_month:02d}-02", periods=FAKE_LEAD_DAYS, freq="D"
+    )
+    members = np.arange(FAKE_MEMBERS)
+    lead_day = np.arange(1, FAKE_LEAD_DAYS + 1)
+    data = (
+        members[:, None] * 1000.0 + lead_day[None, :]
+    )[:, :, None, None] * np.ones((1, 1, len(lats), len(lons)))
+    return xr.DataArray(
+        data.astype("float32"),
+        coords={"number": members, "time": valid, "latitude": lats, "longitude": lons},
+        dims=("number", "time", "latitude", "longitude"),
+        name="tp",
+    )
+
+
+@register("fake_seasonal")
+class FakeSeasonalDriver(SeasonalDriver):
+    calls: list = []  # class-level: records fetches to assert cache hits
+
+    def _fetch_seasonal(self, variable: str, init_month: int, year: int, domain: str):
+        FakeSeasonalDriver.calls.append((variable, init_month, year, domain))
+        da = synthetic_seasonal(init_month, year, self.config.bbox_for(domain))
+        return da, {"source_url": f"fake://{variable}/{init_month:02d}/{year}"}
+
+
+FAKE_SEASONAL_ENTRY = {
+    "id": "fake_seasonal",
+    "title": "Synthetic seasonal test source",
+    "license": "none",
+    "version": "0",
+    "driver": "fake_seasonal",
+    "extent": {
+        "spatial": {"bbox": FAKE_BBOX},
+        "temporal": {"start": "1981-01-01", "end": None},
+    },
+    "access": [{"type": "fake", "role": "primary"}],
+    "variables": {
+        "AGRO.PRCP": {"source_name": "total_precipitation", "nc_var": "tp"},
+        "AGRO.TMAX": {"source_name": "mx2t24", "nc_var": "mx2t24"},
+    },
+}
+
+
+def fake_seasonal_calls() -> list:
+    """The fetch log of the registered fake seasonal driver class."""
+    from agwise_data.drivers import _REGISTRY
+
+    return _REGISTRY["fake_seasonal"].calls
+
+
 def fake_static_calls() -> list:
     """The fetch log of the registered fake static driver class."""
     from agwise_data.drivers import _REGISTRY
@@ -152,6 +222,8 @@ def fake_calls() -> list:
 def config(tmp_path):
     catalog.register_entry(FAKE_ENTRY)
     catalog.register_entry(FAKE_STATIC_ENTRY)
+    catalog.register_entry(FAKE_SEASONAL_ENTRY)
     fake_calls().clear()
     fake_static_calls().clear()
+    fake_seasonal_calls().clear()
     return Config(root=tmp_path / "root", domain="africa")

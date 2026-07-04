@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agwise-data"
-version = "0.2.0"
+version = "0.3.0"
 description = "AgWise data access layer: one call to fetch, harmonize and cache the climate, soil and terrain data every AgWise module needs"
 readme = "README.md"
 requires-python = ">=3.10"

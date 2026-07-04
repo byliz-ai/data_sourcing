@@ -190,6 +190,18 @@ class Config:
             / f"Daily_{short}_{year}.nc"
         )
 
+    def seasonal_path(
+        self, source: str, domain: str, short: str, init_month: int, year: int
+    ) -> Path:
+        return (
+            self.root
+            / "harmonized"
+            / source
+            / domain
+            / short
+            / f"Seasonal_{short}_i{init_month:02d}_{year}.nc"
+        )
+
     def static_path(self, source: str, domain: str, short: str) -> Path:
         return (
             self.root
