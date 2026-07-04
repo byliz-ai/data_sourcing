@@ -19,8 +19,3 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: pytest -q
-
-# NOTE: this file lives in ci/ because the token used for the initial push
-# lacked the GitHub "workflow" scope. To enable CI, move it to
-# .github/workflows/tests.yml and push (e.g. after `gh auth refresh -h
-# github.com -s workflow`), or add it via the GitHub web UI.
