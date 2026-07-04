@@ -43,8 +43,9 @@ data each module consumes, nothing past it.
    accepts both the legacy `DOY` and the new date labels. Verified with a
    synthetic Sep 2020→Feb 2021 season (guard still trips on the old DOY
    axis; offsets axis smooths correctly across the boundary).
-   **Lizeth: copy the two fixed files back to OneDrive** ("data sourcing
-   scripts") — OneDrive is the source of truth for these.
+   **Source of truth for these scripts is now `sentinel/` in THIS repo**
+   (Lizeth 2026-07-04) — the modules run from git; OneDrive copies are
+   historical.
 2. **SoilGrids urban/water NaN → fill from the nearest valid pixel** —
    IMPLEMENTED (see below): bounded search radius (`fill_nearest_m`,
    default 1 km), traceability column `<VAR>_fill_m` per variable
@@ -123,21 +124,20 @@ Env note: fresh `agwise_data` conda env on CGLabs had broken rasterio
 - **Robustness**: CHIRPS 403 → yearly-NetCDF fallback; drivers refuse to
   cache incomplete past years.
 
-## Sentinel phenology scripts (in OneDrive, fixed, standalone — NOT in repo)
+## Sentinel phenology scripts (IN REPO: `sentinel/` — source of truth)
 
-`data sourcing scripts/{script1_Download_Stack_Smooth,agwise_phenology_utils}.py`.
-For Lizeth's scope, **script1 IS the input generator**; scripts 1b/2/3/4
-are out of scope. Already fixed: parallel composite downloads, TLS opt-in,
-cross-year DOY fail-loud guard, leap-year Feb, cache-key validation,
-headless gating, GEE 5xx retry.
-- **Decision closed 2026-07-04**: seasons DO cross the calendar year → the
-  remaining work on script1 is real-date band labels (see Decisions above).
-- Integration design: `docs/sentinel_integration.md`.
+`sentinel/{script1_Download_Stack_Smooth,agwise_phenology_utils}.py` (+
+README). For Lizeth's scope, **script1 IS the input generator**; scripts
+1b/2/3/4 are out of scope and stay in OneDrive. Already fixed: parallel
+composite downloads, TLS opt-in, leap-year Feb, cache-key validation,
+headless gating, GEE 5xx retry, and (2026-07-04) the cross-year date-based
+axis with real-date band labels.
+- Integration design (fold into the package): `docs/sentinel_integration.md`.
 
 ## Backlog
 
-- ~~script1 real-date band labels~~ — DONE 2026-07-04 (fixed copies in
-  `~/agwise_data_test/sentinel_scripts/`; copy back to OneDrive).
+- ~~script1 real-date band labels~~ — DONE 2026-07-04 (in `sentinel/`
+  in this repo, now the source of truth).
 - MODIS NDVI driver (needs GEE credentials to build/validate).
 - ~~Live CDS smoke test of the SEAS5 driver~~ — DONE 2026-07-04 (passed).
 - Cleanups flagged in review: dead code in
@@ -166,6 +166,7 @@ headless gating, GEE 5xx retry.
 src/agwise_data/{__init__,api,cache,catalog,config,boundaries,harmonize,spatial,stac,terrain,cli}.py
 src/agwise_data/catalog/{chirps,agera5,dem,soil,seas5}.yaml
 src/agwise_data/drivers/{__init__,base,chirps,agera5,static,dem,soil,seasonal}.py
+sentinel/{script1_Download_Stack_Smooth,agwise_phenology_utils}.py + README.md
 r/agwise_data.R          tests/            examples/
 docs/{architecture,cglabs_setup,pipeline_map,roadmap,sentinel_integration}.md
 ```
