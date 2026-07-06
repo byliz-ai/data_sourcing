@@ -23,9 +23,16 @@ catalog YAML + a driver), so each addition is incremental.
    `get_static`, `extract_static_points`; CLI `get-static`/`extract-static`;
    R `ad_get_dem`/`ad_get_soil`/`ad_extract_static_points`. iSDAsoil (30 m,
    Africa) remains a candidate alternative source.
-3. **GEE driver (MODIS NDVI, crop masks)** — wrap the existing GEE toolkit
-   so its outputs land in the shared cache with manifests, and the
-   planting-date phenology scripts read from there.
+3. **GEE driver (MODIS NDVI, crop masks)** — NDVI/EVI half **BUILT (v0.4)**,
+   live validation pending: `ModisGeeDriver` (MOD13Q1 + MYD13Q1 v6.1 via
+   `ee.data.computePixels`, tiled pulls, per-year append-only cache
+   `Composite_<VAR>_<year>.nc`, QA/fill/range masking declared in the
+   catalog and recorded in manifests). API `get_modis`/`get_ndvi`
+   interleaves Terra+Aqua into the 46-composites-per-year phenology
+   series; CLI `get-modis`; R `ad_get_modis`; STAC works (`RS.*` vars).
+   **Blocked on a registered GEE Cloud project for live verification**
+   (credentials themselves are in place; see HANDOFF). The ESA WorldCover
+   **crop-mask** layer is still to do (static GEE fetch, same machinery).
 3b. **Sentinel-1/2 phenology driver** — fold the SAR/optical phenology
    pipeline in as a new *product type* (composite stacks, not daily cubes).
    Design + fix-mapping in [sentinel_integration.md](sentinel_integration.md);

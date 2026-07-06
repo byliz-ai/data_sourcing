@@ -37,6 +37,8 @@ from .harmonize import (
     canonical_name,
     legacy_name,
     rainy_days,
+    rs_canonical_name,
+    rs_short_name,
     short_name,
     static_canonical_name,
     static_has_depth,
@@ -860,6 +862,191 @@ def get_seasonal(
 
 
 # ---------------------------------------------------------------------------
+# MODIS vegetation-index composites (Terra + Aqua interleaved): the input
+# of the planting-date phenology workflow.
+
+_MODIS_SATELLITE_SOURCES = {"terra": "mod13q1", "aqua": "myd13q1"}
+
+
+def _as_rs_variables(variables: Union[str, Sequence[str]]) -> List[str]:
+    if isinstance(variables, str):
+        variables = [v for v in variables.split(",") if v.strip()]
+    return [rs_canonical_name(v) for v in variables]
+
+
+def _modis_driver_for(variable: str, source_id: str, config: Config):
+    entry = catalog.get_entry(source_id)
+    if rs_canonical_name(variable) not in entry.get("variables", {}):
+        raise ValueError(
+            f"Source '{source_id}' does not provide {rs_canonical_name(variable)}. "
+            f"It provides: {sorted(entry.get('variables', {}))}"
+        )
+    return drivers.get_driver(entry, config)
+
+
+def _modis_complete(
+    config: Config,
+    source_id: str,
+    variable: str,
+    years: List[int],
+    domain: str,
+) -> bool:
+    short = rs_short_name(variable)
+    return all(
+        config.composite_path(source_id, domain, short, y).exists() for y in years
+    )
+
+
+def _prefetch_modis(config: Config, tasks: List[tuple]) -> None:
+    """Ensure many (driver, variable, year, domain) composite files.
+
+    Runs serially: each yearly fetch already parallelizes its per-composite
+    GEE pixel pulls (``config.cog_workers``), and Earth Engine rate-limits
+    aggressive clients."""
+    for drv, var, year, dom in dict.fromkeys(tasks):
+        drv.ensure_composite_year(var, year, dom)
+
+
+def get_modis(
+    variables: Union[str, Sequence[str]],
+    years: Union[int, Sequence[int]],
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    satellite: str = "both",
+    source: Union[str, Sequence[str], None] = None,
+    domain: Optional[str] = None,
+    out_format: Union[str, Sequence[str]] = "nc",
+    out_dir: Optional[Path] = None,
+    overwrite: bool = False,
+    config: Optional[Config] = None,
+) -> Dict[str, dict]:
+    """Fetch, harmonize and cache MODIS vegetation-index composite stacks.
+
+    Returns ``{canonical_variable: {"nc": Path, "tif": Path|None, "data":
+    xr.DataArray}}`` where the data has dims ``(time, lat, lon)`` and
+    ``time`` holds the composite start dates. The default
+    ``satellite="both"`` interleaves Terra (MOD13Q1) and Aqua (MYD13Q1)
+    into the 46-composites-per-year series the planting-date phenology
+    workflow expects; ``"terra"``/``"aqua"`` keep a single satellite
+    (23 per year). GeoTIFF band labels carry the composite date
+    (``2021_01_17``), so year-based layer selection keeps working.
+    """
+    config = config or Config.load()
+    variables = _as_rs_variables(variables)
+    years = _as_years(years)
+    formats = [out_format] if isinstance(out_format, str) else list(out_format)
+    for f in formats:
+        if f not in ("nc", "tif"):
+            raise ValueError(f"Unknown output format '{f}' (use 'nc' and/or 'tif')")
+    write_tif = "tif" in formats
+
+    if source:
+        source_ids = [source] if isinstance(source, str) else list(source)
+        suffix = "_" + "-".join(source_ids)
+    elif satellite == "both":
+        source_ids = list(_MODIS_SATELLITE_SOURCES.values())
+        suffix = ""
+    elif satellite in _MODIS_SATELLITE_SOURCES:
+        source_ids = [_MODIS_SATELLITE_SOURCES[satellite]]
+        suffix = f"_{satellite}"
+    else:
+        raise ValueError(
+            f"satellite must be 'both', 'terra' or 'aqua', got '{satellite}'"
+        )
+
+    gdf, region_bbox, tag = _resolve_region(
+        config, country, bbox, admin_level, admin_name
+    )
+    out_root = Path(out_dir) if out_dir else config.products_dir(tag)
+
+    from .drivers.modis import composite_nc_encoding
+
+    plans = []
+    tasks = []
+    for var in variables:
+        parts = []
+        for sid in source_ids:
+            driver = _modis_driver_for(var, sid, config)
+            var_domain = _effective_domain(
+                config, sid, var, years, region_bbox, domain,
+                complete_fn=lambda name, s=sid, v=var: _modis_complete(
+                    config, s, v, years, name
+                ),
+            )
+            parts.append((sid, driver, var_domain))
+        short = rs_short_name(var)
+        stem = f"Composite_{short}_{years[0]}_{years[-1]}{suffix}"
+        nc_path = out_root / f"{stem}.nc"
+        tif_path = out_root / f"{stem}.tif" if write_tif else None
+        need_nc = overwrite or not nc_path.exists()
+        need_tif = write_tif and (overwrite or not tif_path.exists())
+        plans.append((var, parts, nc_path, tif_path, need_nc, need_tif))
+        if need_nc or need_tif:
+            tasks.extend(
+                (driver, var, y, dom) for _, driver, dom in parts for y in years
+            )
+    _prefetch_modis(config, tasks)
+
+    results: Dict[str, dict] = {}
+    for var, parts, nc_path, tif_path, need_nc, need_tif in plans:
+        if not need_nc and not need_tif:
+            logger.info("Product cache hit: %s", nc_path)
+            da = xr.open_dataarray(nc_path)
+        else:
+            stacks = [
+                driver.open_years(var, years, dom) for _, driver, dom in parts
+            ]
+            da = (
+                stacks[0]
+                if len(stacks) == 1
+                else xr.concat(
+                    stacks, dim="time", join="outer",
+                    combine_attrs="drop_conflicts",
+                )
+            )
+            da = da.sortby("time")
+            da = subset_bbox(da, region_bbox, buffer=0.05)
+            if gdf is not None:
+                da = clip_geometry(da, gdf)
+            da = da.load()
+
+            meta = {
+                "source_ids": [sid for sid, _, _ in parts],
+                "satellite": "custom" if source else satellite,
+                "variable": var,
+                "region": tag,
+                "years": [years[0], years[-1]],
+                "n_composites": int(da.sizes["time"]),
+                "domains": {sid: dom for sid, _, dom in parts},
+            }
+            if need_nc:
+                nc_path.parent.mkdir(parents=True, exist_ok=True)
+                da.to_netcdf(nc_path, encoding={da.name: composite_nc_encoding(da)})
+                write_manifest(nc_path, meta)
+            if need_tif:
+                from .spatial import write_geotiff
+
+                write_geotiff(da, tif_path, labels=time_labels(da, "daily"))
+                write_manifest(tif_path, meta)
+
+        results[var] = {
+            "short": rs_short_name(var),
+            "source": ",".join(sid for sid, _, _ in parts),
+            "nc": nc_path if nc_path.exists() else None,
+            "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "data": da,
+        }
+    return results
+
+
+def get_ndvi(**kwargs) -> Dict[str, dict]:
+    """MODIS NDVI composites (Terra + Aqua interleaved by default)."""
+    return get_modis(variables=["RS.NDVI"], **kwargs)
+
+
+# ---------------------------------------------------------------------------
 # One trial-point extraction covers a small area, but a national trial set
 # can span a whole country; fetching one static window for all of it could
 # blow past memory at 30 m. Points are therefore grouped: one window when
@@ -1034,5 +1221,7 @@ __all__ = [
     "get_dem",
     "get_soil",
     "get_seasonal",
+    "get_modis",
+    "get_ndvi",
     "extract_static_points",
 ]

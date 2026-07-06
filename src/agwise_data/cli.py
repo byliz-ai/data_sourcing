@@ -188,6 +188,39 @@ def cmd_get_seasonal(args) -> dict:
     }
 
 
+def cmd_get_modis(args) -> dict:
+    from .api import get_modis
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    results = get_modis(
+        variables=args.vars,
+        years=_parse_years(args.years),
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        satellite=args.satellite,
+        source=args.source,
+        domain=args.domain,
+        out_format=[f.strip() for f in args.format.split(",")],
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        overwrite=args.overwrite,
+    )
+    return {
+        "ok": True,
+        "outputs": [
+            {
+                "variable": var,
+                "short": info["short"],
+                "source": info["source"],
+                "nc": str(info["nc"]) if info["nc"] else None,
+                "tif": str(info["tif"]) if info["tif"] else None,
+            }
+            for var, info in results.items()
+        ],
+    }
+
+
 def cmd_extract_static(args) -> dict:
     from .api import extract_static_points
 
@@ -314,6 +347,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_se.add_argument("--out-dir", dest="out_dir")
     p_se.add_argument("--overwrite", action="store_true")
     p_se.set_defaults(func=cmd_get_seasonal)
+
+    p_mo = sub.add_parser(
+        "get-modis",
+        help="Fetch MODIS vegetation-index composites (Terra+Aqua) for a region",
+    )
+    p_mo.add_argument("--vars", default="NDVI", help="e.g. NDVI,EVI or RS.NDVI")
+    p_mo.add_argument("--years", required=True, help="e.g. 2020:2023")
+    _add_region_args(p_mo)
+    p_mo.add_argument(
+        "--satellite", choices=["both", "terra", "aqua"], default="both",
+        help="both interleaves MOD13Q1+MYD13Q1 (46 composites/year)",
+    )
+    p_mo.add_argument("--format", default="nc", help="nc, tif or nc,tif")
+    p_mo.add_argument("--source", help="Override the source ids (advanced)")
+    p_mo.add_argument("--domain", help="Cache domain (default: auto)")
+    p_mo.add_argument("--out-dir", dest="out_dir")
+    p_mo.add_argument("--overwrite", action="store_true")
+    p_mo.set_defaults(func=cmd_get_modis)
 
     p_gs = sub.add_parser(
         "get-static", help="Fetch harmonized static layers (soil, DEM) for a region"

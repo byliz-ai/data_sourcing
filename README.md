@@ -6,11 +6,12 @@ units (`AGRO.PRCP` in mm/day, `SOIL.CLAY` in %, ...), and reused by every
 module and every person afterwards.
 
 ```
-  CHIRPS (UCSB)      ───▶ ┌─────────────────────────────────┐ ──▶ Python  get_climate() / get_soil() / get_dem() / get_seasonal()
-  AgERA5 (CDS)       ───▶ │           agwise-data           │ ──▶ R       ad_get_climate() / ad_get_soil() / ...
-  SEAS5 (CDS)        ───▶ │ catalog → driver → harmonize →  │ ──▶ CLI     agwise-data get / get-static / get-seasonal
+  CHIRPS (UCSB)      ───▶ ┌─────────────────────────────────┐ ──▶ Python  get_climate() / get_soil() / get_dem() / get_seasonal() / get_ndvi()
+  AgERA5 (CDS)       ───▶ │           agwise-data           │ ──▶ R       ad_get_climate() / ad_get_soil() / ad_get_modis() / ...
+  SEAS5 (CDS)        ───▶ │ catalog → driver → harmonize →  │ ──▶ CLI     agwise-data get / get-static / get-seasonal / get-modis
   SoilGrids (ISRIC)  ───▶ │ shared cache → products         │
-  Copernicus DEM     ───▶ └─────────────────────────────────┘      + sentinel/script1 (GEE) for the phenology stack
+  Copernicus DEM     ───▶ │                                 │
+  MODIS VI (GEE)     ───▶ └─────────────────────────────────┘      + sentinel/script1 (GEE) for the phenology stack
 ```
 
 ## Install & setup (2 minutes on CGLabs)
@@ -40,7 +41,7 @@ person. Nothing in the cache is ever modified, only added.
 | --- | --- | --- |
 | CHIRPS rainfall, SoilGrids, DEM/terrain | nothing | — |
 | AgERA5 (temp/radiation/etc.), SEAS5 forecasts | free [CDS account](https://cds.climate.copernicus.eu) | put your token in `~/.cdsapirc` (below), accept the dataset licence on its CDS page |
-| Sentinel stack (`sentinel/script1`), future MODIS | Google Earth Engine account | `earthengine authenticate` once in a terminal |
+| MODIS NDVI/EVI (`get_ndvi`), Sentinel stack (`sentinel/script1`) | Google Earth Engine credentials **plus** a Cloud project registered for EE | `earthengine authenticate` once, then `export AGWISE_GEE_PROJECT=ee-<yourproject>` |
 
 Step-by-step in [docs/credentials_setup.md](docs/credentials_setup.md):
 a 5-minute path if you already have the credentials, and a from-zero
@@ -101,6 +102,25 @@ h <- ad_get_seasonal("PRCP", init_month = 2, years = 1993:2016, country = "Rwand
 o <- ad_get_climate("PRCP", years = 1993:2016, country = "Rwanda", freq = "daily")
 ```
 
+### Planting date — MODIS NDVI composites (the phenology input)
+
+Terra (MOD13Q1) and Aqua (MYD13Q1) 16-day composites at ~250 m,
+interleaved into the 46-images-per-year series the phenology workflow
+smooths. Fill/out-of-range/cloudy pixels are NaN (the QA policy is in the
+catalog and recorded in every manifest); the Savitzky-Golay smoothing
+downstream fills the gaps. Needs GEE credentials + project (table above).
+
+```python
+from agwise_data import get_ndvi
+
+ndvi = get_ndvi(years=[2021, 2022], country="Rwanda",
+                out_format=["nc", "tif"])   # (time, lat, lon), 46/year
+```
+
+```r
+nd <- ad_get_modis("NDVI", years = 2021:2022, country = "Rwanda")
+```
+
 ### Phenology / planting-date detection — Sentinel-1/2 smoothed stack
 
 `sentinel/script1_Download_Stack_Smooth.py` (in this repo — the source of
@@ -136,6 +156,7 @@ Same from the shell (what the R wrapper calls under the hood):
 ```bash
 agwise-data get         --vars PRCP,TMAX --country Kenya --years 2015:2024 --freq monthly
 agwise-data get-seasonal --vars PRCP --init-month 2 --years 1993:2016 --country Rwanda
+agwise-data get-modis   --vars NDVI --years 2021:2022 --country Rwanda --format nc,tif
 agwise-data get-static  --vars ELEV,SLOPE,CLAY --country Rwanda --format nc,tif
 agwise-data extract-static --points trials.csv --vars ELEV,CLAY --out out.csv
 agwise-data catalog list && agwise-data cache info
@@ -149,7 +170,7 @@ agwise-data catalog list && agwise-data cache info
   data hubs; catalog entries export as STAC (`agwise-data catalog stac chirps`).
 - Country-scale requests fetch **only that country's window**, in parallel;
   a new season is just `years=range(..., 2027)` — files are append-only.
-- 54 network-free tests run in CI on every push.
+- 64 network-free tests run in CI on every push.
 
 ## Documentation
 

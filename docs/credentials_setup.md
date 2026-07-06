@@ -102,7 +102,14 @@ agwise-data get --vars TMAX --country Rwanda --years 2023:2023 --freq monthly
 python -c "import ee; ee.Initialize(project='ee-<yourname>'); print(ee.Number(1).add(1).getInfo())"
 ```
 
-Both worked? You are done. Anything failed → [Troubleshooting](#troubleshooting).
+Both worked? Then tell `agwise-data` your project once (add to
+`~/.bashrc`), so `get_ndvi`/`get-modis` find it:
+
+```bash
+export AGWISE_GEE_PROJECT=ee-<yourname>
+```
+
+You are done. Anything failed → [Troubleshooting](#troubleshooting).
 
 ---
 

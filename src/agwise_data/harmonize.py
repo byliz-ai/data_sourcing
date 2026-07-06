@@ -207,6 +207,28 @@ STATIC_VARS = {
 _STATIC_SHORT = {v["short"]: k for k, v in STATIC_VARS.items()}
 _STATIC_LEGACY = {v["legacy"].lower(): k for k, v in STATIC_VARS.items()}
 
+# ---------------------------------------------------------------------------
+# Canonical REMOTE-SENSING variables: vegetation-index composite stacks
+# (irregular ~8/16-day time axis, not daily cubes). The legacy names match
+# the layer labels the planting-date phenology scripts already use.
+RS_VARS = {
+    "RS.NDVI": {
+        "short": "NDVI",
+        "long_name": "Normalized difference vegetation index (16-day composite)",
+        "units": "1",
+        "legacy": "NDVI",
+    },
+    "RS.EVI": {
+        "short": "EVI",
+        "long_name": "Enhanced vegetation index (16-day composite)",
+        "units": "1",
+        "legacy": "EVI",
+    },
+}
+
+_RS_SHORT = {v["short"]: k for k, v in RS_VARS.items()}
+_RS_LEGACY = {v["legacy"].lower(): k for k, v in RS_VARS.items()}
+
 # Default source for each variable when the caller does not specify one.
 DEFAULT_SOURCE = {name: "agera5" for name in CANONICAL_VARS}
 DEFAULT_SOURCE["AGRO.PRCP"] = "chirps"
@@ -276,6 +298,26 @@ def static_derived_from(variable: str):
 
 
 # ---------------------------------------------------------------------------
+def rs_canonical_name(variable: str) -> str:
+    """Resolve 'RS.NDVI', 'NDVI' or a legacy label to the canonical RS name."""
+    v = variable.strip()
+    if v in RS_VARS:
+        return v
+    if v.upper() in _RS_SHORT:
+        return _RS_SHORT[v.upper()]
+    if v.lower() in _RS_LEGACY:
+        return _RS_LEGACY[v.lower()]
+    raise ValueError(
+        f"Unknown remote-sensing variable '{variable}'. Known: "
+        f"{sorted(RS_VARS)} (or short names)"
+    )
+
+
+def rs_short_name(variable: str) -> str:
+    return RS_VARS[rs_canonical_name(variable)]["short"]
+
+
+# ---------------------------------------------------------------------------
 # Unit conversions declared in the catalog ("conversion" field).
 _CONVERSIONS = {
     None: lambda x: x,
@@ -286,6 +328,8 @@ _CONVERSIONS = {
     # SoilGrids stores scaled integers; /10 and /100 recover mapped units.
     "d10": lambda x: x / 10.0,
     "d100": lambda x: x / 100.0,
+    # MODIS vegetation indices store NDVI/EVI * 10000 as int16.
+    "d10000": lambda x: x / 10000.0,
 }
 
 
@@ -380,6 +424,45 @@ def standardize_seasonal(
     if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
         da = da.sortby("lat")
     da = da.transpose("member", "time", "lat", "lon")
+
+    da = da.rename(meta["short"]).astype("float32")
+    da.attrs.update(
+        {
+            "agwise_name": canonical,
+            "long_name": meta["long_name"],
+            "units": meta["units"],
+            "source": source_id,
+        }
+    )
+    return da
+
+
+def standardize_composite(
+    da: xr.DataArray, variable: str, source_id: str
+) -> xr.DataArray:
+    """Apply the AgWise conventions to a raw composite-stack DataArray.
+
+    Same contract as :func:`standardize` but for remote-sensing composite
+    products (``RS.*``): the time axis holds the composite start dates
+    (~16-day steps, 23 per year per satellite), not daily values.
+    """
+    canonical = rs_canonical_name(variable)
+    meta = RS_VARS[canonical]
+
+    renames = {k: v for k, v in _DIM_RENAMES.items() if k in da.dims}
+    if renames:
+        da = da.rename(renames)
+    missing = {"time", "lat", "lon"} - set(da.dims)
+    if missing:
+        raise ValueError(
+            f"Cannot standardize composite '{variable}' from {source_id}: "
+            f"missing dims {missing} (found {list(da.dims)})"
+        )
+
+    da = da.assign_coords(time=pd.DatetimeIndex(da["time"].values).normalize())
+    if da.lat.size > 1 and float(da.lat[0]) > float(da.lat[-1]):
+        da = da.sortby("lat")
+    da = da.sortby("time").transpose("time", "lat", "lon")
 
     da = da.rename(meta["short"]).astype("float32")
     da.attrs.update(

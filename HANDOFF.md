@@ -2,8 +2,8 @@
 
 Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
-Last updated: 2026-07-04 (SoilGrids fill + SEAS5 driver done; decisions from
-Lizeth recorded).
+Last updated: 2026-07-06 (MODIS NDVI/EVI driver built + tested, v0.4.0;
+GEE credential state diagnosed — see Immediate next step).
 
 ## ⚠️ GROUND RULES ON CGLABS — read before touching anything
 
@@ -54,13 +54,38 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
-1. **MODIS NDVI driver** — still blocked on GEE credentials; also the
-   `earthengine-api` package is not installed in the `agwise_data` env yet.
-   From-zero credential walkthrough now in `docs/credentials_setup.md`.
-2. Housekeeping: rotate the leaked CDS key (see Backlog). ALSO rotate the
-   GitHub PAT when convenient — Lizeth pasted it in a chat session
-   2026-07-04; it now lives in `~/.git-credentials` (chmod 600, helper
-   `store`), so pushes work without retyping it.
+1. **Unblock GEE project access (Lizeth — only she can do this).**
+   Diagnosed 2026-07-06 on CGLabs: `earthengine-api` 1.7.33 IS now
+   installed in `agwise_data`, and the refresh token in
+   `~/.config/earthengine/credentials` is valid and belongs to
+   `llanoslizeth@gmail.com` — but that account has **no usable EE
+   project**: `ee-moodle-sites` / `ee-moodle-sites-440814` come back
+   "not found or deleted" (never registered under this account, or
+   deleted), and the team project `ee-pgd31792` **exists but denies her**
+   ("caller does not have required permission"). Two ways out, either
+   works:
+   - *Fastest:* the owner of `ee-pgd31792` adds `llanoslizeth@gmail.com`
+     in Cloud Console IAM as **Earth Engine Resource Writer** +
+     **Service Usage Consumer** (the team flow in
+     `docs/credentials_setup.md`).
+   - *Own project:* register one at
+     https://code.earthengine.google.com/register with the gmail
+     (from-zero path, section B of the same doc).
+   Then `export AGWISE_GEE_PROJECT=<the-project-id>` (or `gee_project:` in
+   `~/.config/agwise_data.yaml`) and run the live smoke test below.
+2. **Live-verify the MODIS driver** (built 2026-07-06, see section below;
+   all network-free tests pass). Suggested smoke test on CGLabs:
+   `get_ndvi(years=2021, country="Rwanda", out_format=["nc","tif"])` →
+   expect 46 composites, NDVI in [-0.2, 1], NaN over Lake Kivu clouds,
+   ~23+23 dates interleaved Terra/Aqua.
+3. **Crop-mask layer** (ESA WorldCover via GEE, static) — the other half
+   of roadmap item 3; reuses the same GEE fetch machinery
+   (`drivers/modis.py::plan_tiles` + `computePixels`), enters as a
+   `StaticDriver` source. Needed by the phenology preproc (masks non-crop).
+4. Housekeeping: rotate the leaked CDS key (see Backlog); rotate the
+   GitHub PAT when convenient (pasted in chat 2026-07-04, now in
+   `~/.git-credentials` chmod 600); NEW — rotate the **EOSDIS Earthdata
+   password hardcoded in the legacy `get_MODISdata.R`** (see Backlog).
 
 (Push backlog cleared 2026-07-04: everything through the credentials doc
 is on `origin/main`; CI runs on push.)
@@ -69,6 +94,42 @@ is on `origin/main`; CI runs on push.)
 passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
 1995-02-02, mean 3.0 mm/day, max 36.7, no negatives, no NaNs. CDS creds
 now in `~/.cdsapirc` on this machine.)
+
+## MODIS NDVI/EVI layer (BUILT 2026-07-06, live verification pending GEE project)
+
+Roadmap item 3 (NDVI half). Sources studied: legacy
+`agwise-planting-date-and-cultivar/main/RS/get_MODISdata.R` (modisfast/
+Earthdata download, MOD13Q1.061 + MYD13Q1.061) and
+`get_MODISts_PreProc.R` (the consumer: expects **46 images per civil
+year**, selects layers by year in the name, SG-smooths, masks by ESA
+WorldCover cropland==40).
+
+- `drivers/modis.py` — `ModisDriver` base (`ensure_composite_year` →
+  file-locked, append-only `Composite_<VAR>_<year>.nc`, refuses to cache
+  an incomplete past year: 23 composites expected once the year is fully
+  inside the collection's coverage) + `ModisGeeDriver` (GEE
+  `ee.data.computePixels` on the high-volume endpoint, ≤2048 px tiled
+  pulls via pure `plan_tiles`, per-composite fetches parallelized with
+  `config.cog_workers`). Grid: 1/480° (~250 m) pixel-edge aligned to the
+  domain bbox.
+- **Masking never fabricates**: fill (−3000), out-of-valid-range and
+  QA-rejected pixels (SummaryQA not in `keep: [0,1]`) → NaN (pure
+  `mask_invalid`); the downstream SG smoothing fills gaps. The QA policy
+  lives in the catalog YAML and is recorded in every manifest — changing
+  it means bumping the entry `version`.
+- Data model: dims `(time, lat, lon)`, `time` = composite start dates;
+  new `RS.*` namespace in `harmonize.py` (`RS.NDVI`, `RS.EVI`, scaled by
+  new `d10000` conversion) + `standardize_composite`.
+- API `get_modis(variables, years, country/bbox, satellite="both"|"terra"
+  |"aqua", ...)` + `get_ndvi(...)` — default interleaves Terra (DOY 1,
+  17, ...) + Aqua (DOY 9, 25, ...) into the 46-composites-per-year series
+  the phenology preproc checks for; GeoTIFF band labels are composite
+  dates (`2021_01_17`) so year-based layer selection keeps working.
+- CLI `get-modis`; R `ad_get_modis` (returns terra SpatRaster); catalog
+  `mod13q1.yaml` + `myd13q1.yaml`; STAC export works (`RS.*` vars);
+  GEE project comes from `AGWISE_GEE_PROJECT` env or `gee_project:` in
+  `~/.config/agwise_data.yaml` (`Config.gee_project`).
+- Version bumped to **0.4.0**. **64 network-free tests pass** (was 54).
 
 ## Seasonal (SEAS5) layer (BUILT + LIVE-VERIFIED on CDS 2026-07-04)
 
@@ -146,7 +207,15 @@ axis with real-date band labels.
 
 - ~~script1 real-date band labels~~ — DONE 2026-07-04 (in `sentinel/`
   in this repo, now the source of truth).
-- MODIS NDVI driver (needs GEE credentials to build/validate).
+- ~~MODIS NDVI driver~~ — BUILT 2026-07-06 (see section above); live
+  verification pending the GEE project unblock (Immediate next step #1).
+- Crop-mask layer (ESA WorldCover via GEE) — next after the MODIS live
+  check; same GEE machinery, enters as a static source.
+- **Security**: rotate the EOSDIS Earthdata credentials hardcoded in the
+  legacy `agwise-planting-date-and-cultivar/main/RS/get_MODISdata.R`
+  (username+password in plain text in a shared repo, found 2026-07-06;
+  urs.earthdata.nasa.gov → change password). Not our repo — flag to the
+  AgWise maintainers.
 - ~~Live CDS smoke test of the SEAS5 driver~~ — DONE 2026-07-04 (passed).
 - ~~Dead code in `agwise_phenology_utils.combine_indices_pixelwise`~~ —
   DONE 2026-07-04: 87 unreachable lines after the closing `raise` removed
@@ -174,9 +243,9 @@ axis with real-date band labels.
 
 ```
 src/agwise_data/{__init__,api,cache,catalog,config,boundaries,harmonize,spatial,stac,terrain,cli}.py
-src/agwise_data/catalog/{chirps,agera5,dem,soil,seas5}.yaml
-src/agwise_data/drivers/{__init__,base,chirps,agera5,static,dem,soil,seasonal}.py
+src/agwise_data/catalog/{chirps,agera5,dem,soil,seas5,mod13q1,myd13q1}.yaml
+src/agwise_data/drivers/{__init__,base,chirps,agera5,static,dem,soil,seasonal,modis}.py
 sentinel/{script1_Download_Stack_Smooth,agwise_phenology_utils}.py + README.md
 r/agwise_data.R          tests/            examples/
-docs/{architecture,cglabs_setup,pipeline_map,roadmap,sentinel_integration}.md
+docs/{architecture,cglabs_setup,credentials_setup,pipeline_map,roadmap,sentinel_integration}.md
 ```

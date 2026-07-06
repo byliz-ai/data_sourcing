@@ -1,0 +1,63 @@
+# Catalog entry: MODIS/Terra vegetation indices, 16-day 250 m composites.
+# Fetched from Google Earth Engine; needs personal EE credentials plus a
+# registered Cloud project (AGWISE_GEE_PROJECT or gee_project in
+# ~/.config/agwise_data.yaml) — see docs/credentials_setup.md.
+#
+# The QA policy below is part of the product definition: changing it
+# changes cached pixel values, so bump `version` if you touch it.
+id: mod13q1
+title: MODIS/Terra Vegetation Indices 16-Day L3 Global 250m (MOD13Q1 v6.1)
+description: >
+  NDVI and EVI 16-day composites from Terra MODIS at ~250 m, 23 composites
+  per year starting at day-of-year 1. Combined with the Aqua twin
+  (myd13q1, offset by 8 days) it forms the 46-images-per-year series the
+  AgWise planting-date phenology workflow smooths and analyzes. Values are
+  scaled to the physical index range; fill values, out-of-range pixels and
+  pixels whose summary QA is not "good" or "marginal" are NaN.
+license: NASA Earthdata — free and open (LP DAAC)
+citation: >
+  Didan, K. (2021): MODIS/Terra Vegetation Indices 16-Day L3 Global 250m
+  SIN Grid V061. NASA EOSDIS Land Processes DAAC.
+  https://doi.org/10.5067/MODIS/MOD13Q1.061
+version: "061"
+providers:
+  - name: NASA LP DAAC
+    roles: [producer]
+    url: https://lpdaac.usgs.gov
+  - name: Google Earth Engine
+    roles: [host]
+    url: https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD13Q1
+extent:
+  spatial:
+    bbox: [-180.0, -90.0, 180.0, 90.0]
+  temporal:
+    start: "2000-02-18"
+    end: null
+spatial_resolution_deg: 0.00208333   # 1/480 degree, ~250 m (native 231.66 m SIN)
+temporal_resolution: 16-day composites (23 per year, DOY 1, 17, ...)
+composites_per_year: 23
+first_doy: 1
+
+driver: modis_gee
+access:
+  - type: gee
+    role: primary
+    collection: MODIS/061/MOD13Q1
+    scale_deg: 0.0020833333333333333   # 1/480 degree
+    qa:
+      band: SummaryQA
+      keep: [0, 1]   # 0 = good, 1 = marginal; 2 (snow/ice) and 3 (cloud) -> NaN
+
+variables:
+  RS.NDVI:
+    source_name: NDVI
+    source_units: NDVI * 10000 (int16)
+    conversion: d10000
+    fill_value: -3000
+    valid_range: [-2000, 10000]
+  RS.EVI:
+    source_name: EVI
+    source_units: EVI * 10000 (int16)
+    conversion: d10000
+    fill_value: -3000
+    valid_range: [-2000, 10000]

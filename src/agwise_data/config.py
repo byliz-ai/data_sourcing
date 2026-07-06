@@ -41,6 +41,7 @@ ENV_DOMAIN = "AGWISE_DATA_DOMAIN"
 ENV_CONFIG = "AGWISE_DATA_CONFIG"
 ENV_WORKERS = "AGWISE_DATA_WORKERS"
 ENV_SCOPE = "AGWISE_DATA_SCOPE"
+ENV_GEE_PROJECT = "AGWISE_GEE_PROJECT"
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +94,7 @@ class Config:
         download_parts: int = 4,
         cog_workers: int = 3,
         region_max_area_deg2: float = 400.0,
+        gee_project: Optional[str] = None,
     ):
         self.root = Path(root).expanduser() if root else Path.home() / "agwise_data"
         self.domain = domain
@@ -118,6 +120,10 @@ class Config:
         # Region-scoped fetching kicks in below this bbox area (deg^2);
         # 400 = a 20x20 degree box, comfortably any single country.
         self.region_max_area_deg2 = float(region_max_area_deg2)
+        # Google Cloud project registered for Earth Engine (GEE drivers).
+        # Credentials themselves stay personal (~/.config/earthengine) —
+        # see docs/credentials_setup.md.
+        self.gee_project = gee_project
         self._discover_region_domains()
 
     # ------------------------------------------------------------------
@@ -153,6 +159,7 @@ class Config:
             download_parts=int(file_cfg.get("download_parts", 4)),
             cog_workers=int(file_cfg.get("cog_workers", 8)),
             region_max_area_deg2=float(file_cfg.get("region_max_area_deg2", 400.0)),
+            gee_project=os.environ.get(ENV_GEE_PROJECT) or file_cfg.get("gee_project"),
         )
 
     # ------------------------------------------------------------------
@@ -210,6 +217,16 @@ class Config:
             / domain
             / short
             / f"Static_{short}.nc"
+        )
+
+    def composite_path(self, source: str, domain: str, short: str, year: int) -> Path:
+        return (
+            self.root
+            / "harmonized"
+            / source
+            / domain
+            / short
+            / f"Composite_{short}_{year}.nc"
         )
 
     def products_dir(self, region_tag: str) -> Path:

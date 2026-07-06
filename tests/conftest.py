@@ -16,6 +16,7 @@ from agwise_data import catalog
 from agwise_data.config import Config
 from agwise_data.drivers import register
 from agwise_data.drivers.base import Driver
+from agwise_data.drivers.modis import ModisDriver
 from agwise_data.drivers.seasonal import SeasonalDriver
 from agwise_data.drivers.static import StaticDriver
 from agwise_data.harmonize import apply_conversion
@@ -192,6 +193,72 @@ FAKE_SEASONAL_ENTRY = {
 }
 
 
+# ---------------------------------------------------------------------------
+# MODIS counterpart: synthetic 16-day composites. Terra-like (first DOY 1)
+# and Aqua-like (first DOY 9) entries interleave into 46 composites/year;
+# values encode the composite's day of year for easy assertions.
+
+FAKE_COMPOSITES = 23
+
+
+def synthetic_composites(year: int, first_doy: int, bbox) -> xr.DataArray:
+    w, s, e, n = bbox
+    lats = np.arange(s, n + 0.001, 0.5)
+    lons = np.arange(w, e + 0.001, 0.5)
+    doys = np.arange(first_doy, first_doy + 16 * FAKE_COMPOSITES, 16)
+    times = pd.to_datetime(f"{year}-01-01") + pd.to_timedelta(doys - 1, unit="D")
+    data = np.broadcast_to(
+        doys.astype("float32")[:, None, None], (len(doys), len(lats), len(lons))
+    ).copy()
+    return xr.DataArray(
+        data,
+        coords={"time": times, "latitude": lats, "longitude": lons},
+        dims=("time", "latitude", "longitude"),
+        name="NDVI",
+    )
+
+
+@register("fake_modis")
+class FakeModisDriver(ModisDriver):
+    calls: list = []  # class-level: records fetches to assert cache hits
+
+    def _fetch_year(self, variable: str, year: int, domain: str):
+        FakeModisDriver.calls.append((self.source_id, variable, year, domain))
+        da = synthetic_composites(
+            year, int(self.entry["first_doy"]), self.config.bbox_for(domain)
+        )
+        return da, {"source_url": f"fake://{self.source_id}/{variable}/{year}"}
+
+
+def _fake_modis_entry(source_id: str, first_doy: int, start: str) -> dict:
+    return {
+        "id": source_id,
+        "title": f"Synthetic MODIS test source (first DOY {first_doy})",
+        "license": "none",
+        "version": "0",
+        "driver": "fake_modis",
+        "composites_per_year": FAKE_COMPOSITES,
+        "first_doy": first_doy,
+        "extent": {
+            "spatial": {"bbox": FAKE_BBOX},
+            "temporal": {"start": start, "end": None},
+        },
+        "access": [{"type": "fake", "role": "primary"}],
+        "variables": {"RS.NDVI": {"source_name": "NDVI", "conversion": None}},
+    }
+
+
+FAKE_MODIS_TERRA_ENTRY = _fake_modis_entry("fake_mod", 1, "2000-02-18")
+FAKE_MODIS_AQUA_ENTRY = _fake_modis_entry("fake_myd", 9, "2002-07-04")
+
+
+def fake_modis_calls() -> list:
+    """The fetch log of the registered fake MODIS driver class."""
+    from agwise_data.drivers import _REGISTRY
+
+    return _REGISTRY["fake_modis"].calls
+
+
 def fake_seasonal_calls() -> list:
     """The fetch log of the registered fake seasonal driver class."""
     from agwise_data.drivers import _REGISTRY
@@ -223,7 +290,10 @@ def config(tmp_path):
     catalog.register_entry(FAKE_ENTRY)
     catalog.register_entry(FAKE_STATIC_ENTRY)
     catalog.register_entry(FAKE_SEASONAL_ENTRY)
+    catalog.register_entry(FAKE_MODIS_TERRA_ENTRY)
+    catalog.register_entry(FAKE_MODIS_AQUA_ENTRY)
     fake_calls().clear()
     fake_static_calls().clear()
     fake_seasonal_calls().clear()
+    fake_modis_calls().clear()
     return Config(root=tmp_path / "root", domain="africa")

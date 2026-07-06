@@ -204,6 +204,41 @@ ad_get_seasonal <- function(vars, init_month, years, country = NULL,
   paths
 }
 
+#' MODIS vegetation-index composites (planting-date phenology input).
+#'
+#' Terra (MOD13Q1) and Aqua (MYD13Q1) 16-day NDVI/EVI composites at ~250 m,
+#' interleaved into the 46-images-per-year series the phenology workflow
+#' smooths (satellite = "both", the default; "terra"/"aqua" keep one
+#' satellite, 23 images/year). Band labels carry the composite date
+#' ("2021_01_17"), so year-based layer selection keeps working.
+#' Needs Earth Engine credentials + a registered Cloud project — see
+#' docs/credentials_setup.md.
+#'
+#' @param vars      e.g. "NDVI" (default) or c("NDVI", "EVI")
+#' @param years     integer vector, e.g. 2020:2023
+#' @param satellite "both" (default), "terra" or "aqua"
+#' @return a named list of terra::SpatRaster (one per variable), or a single
+#'   SpatRaster when one variable is requested
+ad_get_modis <- function(vars = "NDVI", years, country = NULL, bbox = NULL,
+                         admin_level = 0, admin_name = NULL,
+                         satellite = "both", overwrite = FALSE) {
+  args <- c("get-modis",
+            "--vars", paste(vars, collapse = ","),
+            "--years", paste0(min(years), ":", max(years)),
+            "--satellite", satellite,
+            "--format", "nc,tif")
+  if (!is.null(country))    args <- c(args, "--country", country)
+  if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (overwrite)            args <- c(args, "--overwrite")
+
+  res <- ad_run(args)
+  rasters <- lapply(res$outputs, function(o) terra::rast(o$tif))
+  names(rasters) <- vapply(res$outputs, function(o) o$short, character(1))
+  if (length(rasters) == 1) rasters[[1]] else rasters
+}
+
 #' Soil/topography values at point locations (wide format).
 #'
 #' Returns the input data plus ELEV/SLOPE/... columns and one column per
