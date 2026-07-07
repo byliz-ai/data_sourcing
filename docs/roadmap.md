@@ -30,9 +30,9 @@ catalog YAML + a driver), so each addition is incremental.
    catalog and recorded in manifests). API `get_modis`/`get_ndvi`
    interleaves Terra+Aqua into the 46-composites-per-year phenology
    series; CLI `get-modis`; R `ad_get_modis`; STAC works (`RS.*` vars).
-   Live smoke test (Rwanda 2021, GEE project `moodle-sites-440814`) passed:
-   46 composites, 23+23 Terra/Aqua, NDVI [-0.2, 1], Lake Kivu fully masked,
-   62 s cold. The ESA WorldCover **crop-mask** layer is now **BUILT
+   Live smoke test (Rwanda 2021) passed: 46 composites, 23+23 Terra/Aqua,
+   NDVI [-0.2, 1], Lake Kivu fully masked, 62 s cold. The ESA WorldCover
+   **crop-mask** layer is now **BUILT
    (v0.5) and live-verified 2026-07-07**: `WorldCoverGeeDriver` (static,
    `esa_worldcover` catalog) aggregates class 40 to cropland fraction via
    `reduceResolution` and thresholds it (`crop_fraction_min`, in the

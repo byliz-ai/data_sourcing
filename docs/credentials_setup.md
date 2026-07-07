@@ -17,8 +17,12 @@ What each credential unlocks:
 | Provider | Needed for | What you place on the server |
 | --- | --- | --- |
 | Copernicus CDS | AgERA5 climate, SEAS5 forecasts | token in `~/.cdsapirc` |
-| Google Earth Engine (GEE) | `sentinel/script1`, future MODIS | file `~/.config/earthengine/credentials` |
+| Google Earth Engine (GEE) | MODIS NDVI/EVI (`get_ndvi`), crop mask (`get_cropmask`), `sentinel/script1` | file `~/.config/earthengine/credentials` |
 | CHIRPS, SoilGrids, DEM | nothing — no account needed | — |
+
+**Everyone uses their own GEE Cloud project and their own CDS account** —
+there is no shared project or token to ask anyone for. The steps below get
+you from zero to both.
 
 ---
 
@@ -47,12 +51,17 @@ is rotated in 2 minutes and affects only you; a shared one takes the whole
 team down. CDS download queues are also **per account** — sharing one
 token means the whole team waits in a single queue.
 
-**GEE as a team: one project, individual sign-ins.** The project owner
-adds each member once: <https://console.cloud.google.com> → *IAM* →
-*Grant access* → colleague's Gmail → role **Earth Engine Resource
-Writer**. Then everyone uses the same `gee_project="ee-<team-project>"`
-in scripts, but each authenticates with their own account and file.
-(Members added this way can skip step B3 below — jump straight to B4.)
+**GEE — the default is your own project.** Every member registers their
+own free EE Cloud project (Path B below) and signs in with their own
+Google account. Nobody needs anything from anyone else to start testing.
+
+**Optional shared project (only if your team prefers one billing/quota
+pool).** A project owner can instead add members once:
+<https://console.cloud.google.com> → *IAM* → *Grant access* →
+colleague's Gmail → role **Earth Engine Resource Writer**. Those members
+then set `AGWISE_GEE_PROJECT=<the-shared-project-id>` and can skip step B3
+(jump to B4), but still authenticate with their own account and file.
+Credentials stay personal either way.
 
 **Unattended/scheduled jobs only** (no human to sign in): use a GEE
 [service account](https://developers.google.com/earth-engine/guides/service_account)
@@ -65,7 +74,16 @@ account running the job. Not needed for interactive work.
 
 You already have: a **CDS Personal Access Token**, a **GEE credentials
 file** (from `earthengine authenticate` on any machine) and your **GEE
-project ID** (looks like `ee-yourname`).
+project ID**.
+
+> **What is my project ID?** It is the Google Cloud project you registered
+> for Earth Engine, spelled **exactly** as the Cloud/EE console shows it.
+> If you created it through the Earth Engine wizard it usually looks like
+> `ee-yourname`, but **it does not have to start with `ee-`** — an existing
+> Cloud project ID such as `my-project-440814` is equally valid. Guessing a
+> prefixed variant of a project that is not really yours just yields
+> "project not found" — use the real ID from the console
+> (<https://console.cloud.google.com> → project picker).
 
 ### A1. CDS token → `~/.cdsapirc`
 
@@ -89,7 +107,9 @@ chmod 600 ~/.cdsapirc
 mkdir -p ~/.config/earthengine
 mv ~/credentials ~/.config/earthengine/credentials
 chmod 600 ~/.config/earthengine/credentials
-pip install earthengine-api    # inside the agwise_data env, once
+# earthengine-api is already installed if you ran `pip install -e ".[all]"`
+# (or ".[gee]"); this line is only a fallback if you skipped that.
+pip install earthengine-api
 ```
 
 ### A3. Verify both (30 seconds)
@@ -98,15 +118,21 @@ pip install earthengine-api    # inside the agwise_data env, once
 # CDS — small real download:
 agwise-data get --vars TMAX --country Rwanda --years 2023:2023 --freq monthly
 
-# GEE — must print 2:
-python -c "import ee; ee.Initialize(project='ee-<yourname>'); print(ee.Number(1).add(1).getInfo())"
+# GEE — must print 2 (use YOUR project ID, exactly as the console shows it):
+python -c "import ee; ee.Initialize(project='<your-project-id>'); print(ee.Number(1).add(1).getInfo())"
 ```
 
 Both worked? Then tell `agwise-data` your project once (add to
-`~/.bashrc`), so `get_ndvi`/`get-modis` find it:
+`~/.bashrc`), so `get_ndvi`/`get-modis`/`get-cropmask` find it:
 
 ```bash
-export AGWISE_GEE_PROJECT=ee-<yourname>
+export AGWISE_GEE_PROJECT=<your-project-id>
+```
+
+Confirm the whole GEE path end to end with a tiny real fetch:
+
+```bash
+agwise-data get-cropmask --bbox 29.9,-2.1,30.4,-1.7 --format nc
 ```
 
 You are done. Anything failed → [Troubleshooting](#troubleshooting).
@@ -140,12 +166,14 @@ Downloads fail until you accept the terms of each dataset, once:
 2. Open <https://code.earthengine.google.com/register> and sign in.
 3. Click **"Register a Noncommercial or Commercial Cloud project"**.
 4. Choose **Unpaid usage** → **Academia & Research**.
-5. Choose **"Create a new Google Cloud Project"** → give it an ID like
-   `ee-yourname` (lowercase, no spaces).
+5. Choose **"Create a new Google Cloud Project"** → the wizard suggests an
+   ID like `ee-yourname` (lowercase, no spaces); keep it or type your own.
    - If a yellow banner asks you to accept the *Cloud Terms of Service*:
      click its link, accept, come back, continue.
 6. Click **Confirm**.
-7. 📝 **Write down the project ID** (`ee-yourname`) — scripts need it.
+7. 📝 **Write down the project ID exactly as shown** — scripts need it
+   verbatim. (It is often `ee-yourname`, but whatever the console shows is
+   the real ID; do not prepend or drop an `ee-` later.)
 
 ### B4. GEE sign-in — on your LAPTOP, not on CGLabs
 
@@ -222,10 +250,11 @@ is your own home on CGLabs (B5).
 
 - Windows path: `C:\Users\<you>\.config\earthengine\credentials`
 
-**Step 8.** Test — replace with your real project ID; must print `2`:
+**Step 8.** Test — replace with your real project ID (step B3.7); must
+print `2`:
 
 ```bash
-python -c "import ee; ee.Initialize(project='ee-<yourname>'); print(ee.Number(1).add(1).getInfo())"
+python -c "import ee; ee.Initialize(project='<your-project-id>'); print(ee.Number(1).add(1).getInfo())"
 ```
 
 Later sessions on the laptop only ever need Step 3 again — certificates
@@ -261,8 +290,11 @@ You now have a CDS token (B1) and a `credentials` file (B4) — follow
   env.
 - Prompt doesn't show `(ee-env)`, or `command not found: python` → the
   environment is not active. Run B4 Step 3 again.
-- `ee.Initialize: no project found` → pass `project="ee-yourname"`;
-  there is no default.
+- `ee.Initialize: no project found` → pass `project="<your-project-id>"`
+  (or set `AGWISE_GEE_PROJECT`); there is no default.
+- `Project not found / does not exist` → you invented or prefixed the ID.
+  Use it **exactly** as the Cloud console shows it — it need not start with
+  `ee-`, and a variant of someone else's project is not yours.
 - `Not signed up for Earth Engine` → registration (B3) was not finished
   for the account you signed in with; redo B3 with that account.
 - `Permission denied / quota project` → the Cloud project is not

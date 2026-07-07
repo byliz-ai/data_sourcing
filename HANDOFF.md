@@ -55,15 +55,16 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
-1. ~~**Unblock GEE project access.**~~ **DONE 2026-07-07.** The working
-   Cloud project is **`moodle-sites-440814`** (Lizeth supplied the real
-   ID). `ee.Initialize(project="moodle-sites-440814",
-   opt_url="https://earthengine-highvolume.googleapis.com")` succeeds with
-   the existing `~/.config/earthengine/credentials` token
-   (`llanoslizeth@gmail.com`) and reads MOD13Q1. The earlier failures were
-   just wrong names — `ee-moodle-sites` / `ee-moodle-sites-440814` do not
-   exist; `ee-pgd31792` still denies her but is no longer needed. Use
-   `export AGWISE_GEE_PROJECT=moodle-sites-440814` (or `gee_project:` in
+1. ~~**Unblock GEE project access.**~~ **DONE 2026-07-07.** Lizeth's own
+   working Cloud project is `moodle-sites-440814` (**an example — every
+   teammate uses their OWN project, see docs/credentials_setup.md; nobody
+   should try to use this ID**). `ee.Initialize(project="<your-project-id>",
+   opt_url="https://earthengine-highvolume.googleapis.com")` succeeds with a
+   valid `~/.config/earthengine/credentials` token and reads MOD13Q1. The
+   earlier failures were just wrong names — a prefixed guess like
+   `ee-moodle-sites` does not exist; use the project ID exactly as the Cloud
+   console shows it (it need not start with `ee-`). Set it via
+   `export AGWISE_GEE_PROJECT=<your-project-id>` (or `gee_project:` in
    `~/.config/agwise_data.yaml`).
 2. ~~**Live-verify the MODIS driver.**~~ **DONE 2026-07-07.** Ran
    `get_ndvi(years=2021, country="Rwanda", out_format=["nc","tif"])` on

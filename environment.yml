@@ -23,3 +23,4 @@ dependencies:
   - pip
   - pip:
       - cdsapi>=0.7.2
+      - earthengine-api

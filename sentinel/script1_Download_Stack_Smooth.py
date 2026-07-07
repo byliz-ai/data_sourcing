@@ -434,8 +434,8 @@ if __name__ == "__main__":
         crop_type_band   = None,
         crop_type_value  = None,
         overwrite        = False,
-        gee_project      = "ee-pgd31792",   
-        base_dir         = r"D:\Agwise\SAR\sar_pheno_python",
+        gee_project      = "<your-gee-project>",  # your own EE Cloud project id
+        base_dir         = "./sar_pheno",         # any writable output folder
         show_plots       = True,
         S2_indices       = ["EVI", "NDRE"],
         S1_bands         = ["VV", "VH", "VHVV", "RVI"],

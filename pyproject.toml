@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agwise-data"
-version = "0.4.0"
+version = "0.5.0"
 description = "AgWise data access layer: one call to fetch, harmonize and cache the climate, soil and terrain data every AgWise module needs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,10 +27,17 @@ dependencies = [
 [project.optional-dependencies]
 # Geometry clipping (country/admin masks) and GeoTIFF export
 geo = ["rioxarray", "rasterio", "geopandas", "shapely"]
-# AgERA5 downloads from the Copernicus Climate Data Store
+# AgERA5 / SEAS5 downloads from the Copernicus Climate Data Store
 cds = ["cdsapi>=0.7.2"]
+# MODIS NDVI/EVI (get_ndvi) and the WorldCover crop mask (get_cropmask)
+# via Google Earth Engine
+gee = ["earthengine-api"]
+# The network-free test suite (no CDS/GEE credentials needed)
 dev = ["pytest", "rioxarray", "rasterio", "geopandas", "shapely"]
-all = ["rioxarray", "rasterio", "geopandas", "shapely", "cdsapi>=0.7.2"]
+all = [
+    "rioxarray", "rasterio", "geopandas", "shapely",
+    "cdsapi>=0.7.2", "earthengine-api",
+]
 
 [project.scripts]
 agwise-data = "agwise_data.cli:main"

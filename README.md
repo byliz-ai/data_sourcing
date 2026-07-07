@@ -20,7 +20,15 @@ module and every person afterwards.
 git clone https://github.com/byliz-ai/data_sourcing.git
 cd data_sourcing
 conda env create -f environment.yml && conda activate agwise_data
-pip install -e ".[all]"
+pip install -e ".[all]"      # includes CDS + Earth Engine clients
+```
+
+**Verify your install with the test suite** — it needs no credentials and
+no network (drivers are mocked), so it is the fastest way to confirm the
+package works before you set up any accounts:
+
+```bash
+pip install -e ".[dev]" && pytest -q      # expect: all tests pass
 ```
 
 **Point at the shared cache** (add to `~/.bashrc`):
@@ -41,7 +49,7 @@ person. Nothing in the cache is ever modified, only added.
 | --- | --- | --- |
 | CHIRPS rainfall, SoilGrids, DEM/terrain | nothing | — |
 | AgERA5 (temp/radiation/etc.), SEAS5 forecasts | free [CDS account](https://cds.climate.copernicus.eu) | put your token in `~/.cdsapirc` (below), accept the dataset licence on its CDS page |
-| MODIS NDVI/EVI (`get_ndvi`), Sentinel stack (`sentinel/script1`) | Google Earth Engine credentials **plus** a Cloud project registered for EE | `earthengine authenticate` once, then `export AGWISE_GEE_PROJECT=ee-<yourproject>` |
+| MODIS NDVI/EVI (`get_ndvi`), crop mask (`get_cropmask`), Sentinel stack (`sentinel/script1`) | Google Earth Engine credentials **plus** your own Cloud project registered for EE | `earthengine authenticate` once, then `export AGWISE_GEE_PROJECT=<your-project-id>` |
 
 Step-by-step in [docs/credentials_setup.md](docs/credentials_setup.md):
 a 5-minute path if you already have the credentials, and a from-zero
