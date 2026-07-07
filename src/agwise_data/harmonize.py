@@ -202,6 +202,12 @@ STATIC_VARS = {
         "legacy": "WV1500",
         "depth": True,
     },
+    "LC.CROPLAND": {
+        "short": "CROPLAND",
+        "long_name": "Cropland mask (ESA WorldCover class 40, 1 = cropland)",
+        "units": "1",
+        "legacy": "cropmask",
+    },
 }
 
 _STATIC_SHORT = {v["short"]: k for k, v in STATIC_VARS.items()}
@@ -233,10 +239,15 @@ _RS_LEGACY = {v["legacy"].lower(): k for k, v in RS_VARS.items()}
 DEFAULT_SOURCE = {name: "agera5" for name in CANONICAL_VARS}
 DEFAULT_SOURCE["AGRO.PRCP"] = "chirps"
 
-DEFAULT_STATIC_SOURCE = {
-    name: ("cop_dem30" if name.startswith("TOPO.") else "soilgrids")
-    for name in STATIC_VARS
-}
+def _default_static_source(name: str) -> str:
+    if name.startswith("TOPO."):
+        return "cop_dem30"
+    if name.startswith("LC."):
+        return "esa_worldcover"
+    return "soilgrids"
+
+
+DEFAULT_STATIC_SOURCE = {name: _default_static_source(name) for name in STATIC_VARS}
 
 RAINY_DAY_THRESHOLD_MM = 2.0  # same threshold as the fertilizer ML pipeline
 

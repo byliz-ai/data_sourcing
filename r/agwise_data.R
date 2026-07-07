@@ -168,6 +168,15 @@ ad_get_soil <- function(vars = c("CLAY", "SAND", "SILT", "PH", "SOC",
   ad_get_static(vars, depths = depths, ...)
 }
 
+#' ESA WorldCover cropland mask, aligned to the MODIS NDVI/EVI grid.
+#'
+#' Returns a terra SpatRaster of 1 (cropland) / NA (non-cropland) on the
+#' same ~250 m grid as ad_get_modis(), so the phenology workflow can mask
+#' non-cropland by multiplying the composite stack by it.
+ad_get_cropmask <- function(...) {
+  ad_get_static("CROPLAND", source = "esa_worldcover", ...)
+}
+
 #' Seasonal forecast/hindcast cubes (SEAS5) for a region.
 #'
 #' One initialization month across a range of years (e.g. the 1993:2016

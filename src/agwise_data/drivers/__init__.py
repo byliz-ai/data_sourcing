@@ -30,4 +30,12 @@ def get_driver(entry: dict, config: Config):
 
 
 # Import concrete drivers so they self-register.
-from . import agera5, chirps, dem, modis, seasonal, soil  # noqa: E402,F401
+from . import (  # noqa: E402,F401
+    agera5,
+    chirps,
+    dem,
+    modis,
+    seasonal,
+    soil,
+    worldcover,
+)

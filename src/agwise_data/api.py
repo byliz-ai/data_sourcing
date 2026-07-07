@@ -691,6 +691,17 @@ def get_soil(
     return get_static(variables or SOIL_DEFAULT_VARS, **kwargs)
 
 
+def get_cropmask(**kwargs) -> Dict[str, dict]:
+    """ESA WorldCover cropland mask on the MODIS grid (1 = cropland, NaN else).
+
+    A static layer (no time axis) aligned pixel-for-pixel with the MODIS
+    NDVI/EVI composites, so the phenology workflow can mask non-cropland by
+    multiplying the composite stack by it. Returns the same
+    ``{canonical_variable: {...}}`` structure as :func:`get_static`.
+    """
+    return get_static("LC.CROPLAND", **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Seasonal forecasts/hindcasts (SEAS5): Jemal's standardization proposal.
 
@@ -1220,6 +1231,7 @@ __all__ = [
     "get_static",
     "get_dem",
     "get_soil",
+    "get_cropmask",
     "get_seasonal",
     "get_modis",
     "get_ndvi",

@@ -1,0 +1,54 @@
+# Catalog entry: ESA WorldCover 10 m global land cover (v200 / 2021 epoch).
+# Fetched from Google Earth Engine; needs personal EE credentials plus a
+# registered Cloud project (AGWISE_GEE_PROJECT or gee_project in
+# ~/.config/agwise_data.yaml) — see docs/credentials_setup.md.
+#
+# AgWise uses it as a static cropland mask for the planting-date phenology
+# workflow. The cropland decision below (class 40, fraction threshold) is
+# part of the product definition: changing it changes cached mask values,
+# so bump `version` if you touch it.
+id: esa_worldcover
+title: ESA WorldCover 10 m 2021 (v200) — cropland mask
+description: >
+  ESA WorldCover global land cover at 10 m for the 2021 epoch (v200),
+  produced from Sentinel-1 and Sentinel-2. AgWise derives a cropland mask
+  (WorldCover class 40) from it, aggregated to the MODIS ~250 m grid so it
+  aligns pixel-for-pixel with the NDVI/EVI composites the planting-date
+  phenology workflow masks. A cell is cropland (1.0) when at least
+  `crop_fraction_min` of its 10 m pixels are cropland, otherwise it is NaN.
+license: CC-BY 4.0
+citation: >
+  Zanaga, D., Van De Kerchove, R., Daems, D., et al. (2022). ESA WorldCover
+  10 m 2021 v200. https://doi.org/10.5281/zenodo.7254221
+version: "v200"   # bump if crop_class / crop_fraction_min below changes
+providers:
+  - name: ESA WorldCover Consortium
+    roles: [producer]
+    url: https://esa-worldcover.org
+  - name: Google Earth Engine
+    roles: [host]
+    url: https://developers.google.com/earth-engine/datasets/catalog/ESA_WorldCover_v200
+extent:
+  spatial:
+    bbox: [-180.0, -90.0, 180.0, 90.0]
+  temporal:
+    start: null
+    end: null   # static layer (2021 epoch), no time axis
+spatial_resolution_deg: 0.00208333   # aggregated to the MODIS 1/480 deg grid
+temporal_resolution: static
+
+driver: worldcover_gee
+access:
+  - type: gee
+    role: primary
+    collection: ESA/WorldCover/v200
+    scale_deg: 0.0020833333333333333   # 1/480 degree — matches mod13q1/myd13q1
+    crop_class: 40          # WorldCover "Cropland" class value
+    crop_fraction_min: 0.5  # cell is cropland when >= 50% of its 10 m pixels are
+    reduce_max_pixels: 4096 # reduceResolution input pixels per output cell
+
+variables:
+  LC.CROPLAND:
+    source_name: Map
+    source_units: "binary mask (1 = cropland)"
+    conversion: null

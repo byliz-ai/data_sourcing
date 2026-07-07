@@ -22,12 +22,10 @@ docs/credentials_setup.md. Never hardcode credentials in scripts.
 
 from __future__ import annotations
 
-import math
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -43,12 +41,16 @@ from ..harmonize import (
     standardize_composite,
 )
 from . import register
+from .gee import (  # noqa: F401  (plan_tiles re-exported for callers/tests)
+    GEE_TILE_PX,
+    ee_init,
+    fetch_image_grid,
+    grid_coords,
+    grid_shape,
+    plan_tiles,
+)
 
 COMPOSITE_CHUNKS = {"time": 23, "lat": 256, "lon": 256}
-
-# Keep each computePixels request well under the API's ~48 MB ceiling:
-# 2048 px squared at 2 int16 bands is ~17 MB.
-GEE_TILE_PX = 2048
 
 
 def composite_nc_encoding(da: xr.DataArray) -> dict:
@@ -58,21 +60,6 @@ def composite_nc_encoding(da: xr.DataArray) -> dict:
         if dim in da.dims
     )
     return {"zlib": True, "complevel": 1, "dtype": "float32", "chunksizes": chunks}
-
-
-def plan_tiles(width: int, height: int, tile: int = GEE_TILE_PX) -> List[tuple]:
-    """Split a raster window into <= tile x tile pixel blocks.
-
-    Returns ``[(x_off, y_off, block_w, block_h), ...]`` covering the full
-    window — the request plan for the per-composite GEE pixel pulls.
-    """
-    if width <= 0 or height <= 0:
-        raise ValueError(f"Empty window: {width} x {height}")
-    return [
-        (x, y, min(tile, width - x), min(tile, height - y))
-        for y in range(0, height, tile)
-        for x in range(0, width, tile)
-    ]
 
 
 def mask_invalid(
@@ -195,39 +182,10 @@ class ModisDriver:
         raise NotImplementedError
 
 
-# ---------------------------------------------------------------------------
-_EE_LOCK = threading.Lock()
-_EE_READY = False
-
-
-def _ee_init(project: Optional[str]):
-    """Initialize the Earth Engine client once per process.
-
-    Uses the high-volume endpoint, the one Google asks programmatic
-    pixel-pull workloads to use.
-    """
-    global _EE_READY
-    try:
-        import ee
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError(
-            "MODIS downloads need the 'earthengine-api' package: "
-            "pip install earthengine-api"
-        ) from exc
-    with _EE_LOCK:
-        if not _EE_READY:
-            ee.Initialize(
-                project=project or None,
-                url="https://earthengine-highvolume.googleapis.com",
-            )
-            _EE_READY = True
-    return ee
-
-
 @register("modis_gee")
 class ModisGeeDriver(ModisDriver):
     def _fetch_year(self, variable: str, year: int, domain: str):
-        ee = _ee_init(self.config.gee_project)
+        ee = ee_init(self.config.gee_project)
 
         access = primary_access(self.entry, "gee")
         spec = self.entry["variables"][variable]
@@ -235,12 +193,12 @@ class ModisGeeDriver(ModisDriver):
         qa_cfg = access.get("qa") or {}
         qa_band = qa_cfg.get("band")
         qa_keep = qa_cfg.get("keep")
-        bands = [spec["source_name"]] + ([qa_band] if qa_band else [])
+        data_band = spec["source_name"]
+        bands = [data_band] + ([qa_band] if qa_band else [])
 
-        w, s, e, n = self.config.bbox_for(domain)
+        bbox = self.config.bbox_for(domain)
         res = float(access.get("scale_deg", 1.0 / 480.0))
-        width = int(math.ceil((e - w) / res))
-        height = int(math.ceil((n - s) / res))
+        width, height = grid_shape(bbox, res)
 
         col = (
             ee.ImageCollection(collection)
@@ -259,32 +217,11 @@ class ModisGeeDriver(ModisDriver):
 
         def fetch_composite(item):
             index, t0 = item
-            img = ee.Image(f"{collection}/{index}").select(bands)
-            raw = np.empty((height, width), dtype="int16")
-            qa = np.empty((height, width), dtype="int16") if qa_band else None
-            for x0, y0, bw, bh in tiles:
-                block = ee.data.computePixels(
-                    {
-                        "expression": img,
-                        "fileFormat": "NUMPY_NDARRAY",
-                        "grid": {
-                            "dimensions": {"width": bw, "height": bh},
-                            "affineTransform": {
-                                "scaleX": res,
-                                "shearX": 0,
-                                "translateX": w + x0 * res,
-                                "shearY": 0,
-                                "scaleY": -res,
-                                "translateY": n - y0 * res,
-                            },
-                            "crsCode": "EPSG:4326",
-                        },
-                    }
-                )
-                raw[y0 : y0 + bh, x0 : x0 + bw] = block[spec["source_name"]]
-                if qa is not None:
-                    qa[y0 : y0 + bh, x0 : x0 + bw] = block[qa_band]
-            values = mask_invalid(raw, spec, qa, qa_keep)
+            img = ee.Image(f"{collection}/{index}")
+            arrays = fetch_image_grid(ee, img, bands, bbox, res, tiles, "int16")
+            values = mask_invalid(
+                arrays[data_band], spec, arrays.get(qa_band), qa_keep
+            )
             return pd.Timestamp(t0, unit="ms"), values
 
         workers = max(1, int(self.config.cog_workers))
@@ -297,8 +234,7 @@ class ModisGeeDriver(ModisDriver):
         times = [t for t, _ in results]
         stack = np.stack([v for _, v in results])
         # pixel-center coordinates, top row first (standardize sorts lat)
-        lats = n - res * (np.arange(height) + 0.5)
-        lons = w + res * (np.arange(width) + 0.5)
+        lats, lons = grid_coords(bbox, res)
         da = xr.DataArray(
             stack,
             coords={"time": times, "lat": lats, "lon": lons},

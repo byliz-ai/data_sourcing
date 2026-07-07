@@ -138,6 +138,49 @@ FAKE_STATIC_ENTRY = {
 
 
 # ---------------------------------------------------------------------------
+# Crop-mask counterpart: a synthetic WorldCover cropland mask (no GEE). A
+# regular subset of pixels is cropland (1.0), the rest NaN — enough to
+# assert the 1/NaN encoding and grid alignment through the whole pipeline.
+
+
+@register("fake_worldcover")
+class FakeWorldCoverDriver(StaticDriver):
+    calls: list = []  # class-level: records fetches to assert cache hits
+
+    def _fetch_static(self, variable: str, domain: str):
+        FakeWorldCoverDriver.calls.append((variable, domain))
+        w, s, e, n = self.config.bbox_for(domain)
+        lats = np.arange(s, n + 0.001, 0.1).round(4)
+        lons = np.arange(w, e + 0.001, 0.1).round(4)
+        rows = np.arange(len(lats))[:, None]
+        cols = np.arange(len(lons))[None, :]
+        mask = np.full((len(lats), len(lons)), np.nan, dtype="float32")
+        mask[(rows + cols) % 3 == 0] = 1.0  # ~1/3 of the cells are cropland
+        da = xr.DataArray(
+            mask,
+            coords={"lat": lats, "lon": lons},
+            dims=("lat", "lon"),
+            name="Map",
+        )
+        return da, {"access": "fake", "crop_class": 40, "crop_fraction_min": 0.5}
+
+
+FAKE_WORLDCOVER_ENTRY = {
+    "id": "fake_worldcover",
+    "title": "Synthetic cropland-mask test source",
+    "license": "none",
+    "version": "0",
+    "driver": "fake_worldcover",
+    "extent": {
+        "spatial": {"bbox": FAKE_BBOX},
+        "temporal": {"start": None, "end": None},
+    },
+    "access": [{"type": "fake", "role": "primary"}],
+    "variables": {"LC.CROPLAND": {"source_name": "Map", "conversion": None}},
+}
+
+
+# ---------------------------------------------------------------------------
 # Seasonal counterpart: synthetic ensemble forecasts. Values encode member
 # and lead (member*1000 + lead_day) for easy assertions.
 
@@ -273,6 +316,13 @@ def fake_static_calls() -> list:
     return _REGISTRY["fake_static"].calls
 
 
+def fake_worldcover_calls() -> list:
+    """The fetch log of the registered fake WorldCover driver class."""
+    from agwise_data.drivers import _REGISTRY
+
+    return _REGISTRY["fake_worldcover"].calls
+
+
 def fake_calls() -> list:
     """The fetch log of the *registered* fake driver class.
 
@@ -292,8 +342,10 @@ def config(tmp_path):
     catalog.register_entry(FAKE_SEASONAL_ENTRY)
     catalog.register_entry(FAKE_MODIS_TERRA_ENTRY)
     catalog.register_entry(FAKE_MODIS_AQUA_ENTRY)
+    catalog.register_entry(FAKE_WORLDCOVER_ENTRY)
     fake_calls().clear()
     fake_static_calls().clear()
     fake_seasonal_calls().clear()
     fake_modis_calls().clear()
+    fake_worldcover_calls().clear()
     return Config(root=tmp_path / "root", domain="africa")

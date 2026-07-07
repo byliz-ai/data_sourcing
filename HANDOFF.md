@@ -3,7 +3,8 @@
 Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
 Last updated: 2026-07-07 (GEE UNBLOCKED — project `moodle-sites-440814`;
-MODIS NDVI/EVI driver live-verified on CGLabs, Rwanda 2021 passed).
+MODIS NDVI/EVI driver live-verified; ESA WorldCover crop-mask layer BUILT
++ live-verified, v0.5.0).
 
 ## ⚠️ GROUND RULES ON CGLABS — read before touching anything
 
@@ -77,11 +78,9 @@ data each module consumes, nothing past it.
      layer selection in the phenology preproc keeps working).
    Product written to `~/agwise_data_test/cache/products/RWA/
    Composite_NDVI_2021_2021.{nc,tif}` (test root per Ground Rules).
-3. **Crop-mask layer** (ESA WorldCover via GEE, static) — the other half
-   of roadmap item 3; reuses the same GEE fetch machinery
-   (`drivers/modis.py::plan_tiles` + `computePixels`), enters as a
-   `StaticDriver` source. Needed by the phenology preproc (masks non-crop).
-   **This is now the next build.**
+3. ~~**Crop-mask layer** (ESA WorldCover via GEE, static).~~ **DONE
+   2026-07-07** — see the "Crop-mask layer" section below. Built,
+   live-verified on CGLabs, and on `origin/main` (v0.5.0).
 4. Housekeeping: rotate the leaked CDS key (see Backlog); rotate the
    GitHub PAT when convenient (pasted in chat 2026-07-04, now in
    `~/.git-credentials` chmod 600); NEW — rotate the **EOSDIS Earthdata
@@ -94,6 +93,39 @@ is on `origin/main`; CI runs on push.)
 passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
 1995-02-02, mean 3.0 mm/day, max 36.7, no negatives, no NaNs. CDS creds
 now in `~/.cdsapirc` on this machine.)
+
+## Crop-mask layer (ESA WorldCover, BUILT + LIVE-VERIFIED 2026-07-07)
+
+Roadmap item 3, second half. Reference studied:
+`agwise-planting-date-and-cultivar/main/RS/get_ESACropland_fromGEE.Rmd`
+(WorldCover class 40 → binary crop mask, reproject to 250 m) and the
+consumer `get_MODISts_PreProc.R` §2.4 (reclassify 40→1, others→NA,
+resample to the NDVI grid, multiply the composite stack).
+
+- `drivers/worldcover.py` — `WorldCoverGeeDriver(StaticDriver)`, registered
+  `worldcover_gee`. Server-side it takes `ESA/WorldCover/v200`, `.mosaic()`
+  (pins the native 10 m projection with `setDefaultProjection` first),
+  `.eq(40).unmask(0)`, `reduceResolution(mean)` to the **cropland
+  fraction** per cell, `reproject`s onto the MODIS 1/480° grid, then
+  thresholds at `crop_fraction_min` (catalog, default 0.5) → 1.0 cropland
+  / NaN otherwise (pure `cropland_mask`, unit-tested). Same grid as the
+  NDVI/EVI composites, so masking non-crop is a straight multiply.
+- **Shared GEE machinery**: `drivers/gee.py` now holds the client init,
+  request tiling (`plan_tiles`) and tiled `computePixels`
+  (`fetch_image_grid`); both `modis.py` and `worldcover.py` use it
+  (`modis.plan_tiles` still re-exported so nothing downstream broke).
+- Catalog `esa_worldcover.yaml`; new canonical static var `LC.CROPLAND`
+  (harmonize `STATIC_VARS`, `DEFAULT_STATIC_SOURCE` LC.* → esa_worldcover).
+- API `get_cropmask(country/bbox, ...)` (thin over `get_static`); CLI
+  `get-cropmask`; R `ad_get_cropmask` (returns a 1/NaN terra SpatRaster);
+  STAC export works (`LC.CROPLAND`, unit "1").
+- Version bumped to **0.5.0**. **71 network-free tests pass** (was 64).
+- **Live check (CGLabs, project `moodle-sites-440814`)**: Kigali bbox →
+  binary mask exactly {1.0, NaN}, 34% cropland (plausible), grid aligned
+  to the NDVI stack to 1e-9 in lat & lon; `NDVI*mask` drops non-crop to
+  NaN cleanly. Note: the crop-mask fetch took ~150 s (reduceResolution over
+  10 m WorldCover is heavy) but it is a static, cached-once layer, so
+  repeat calls are instant.
 
 ## MODIS NDVI/EVI layer (BUILT 2026-07-06, LIVE-VERIFIED on GEE 2026-07-07)
 
@@ -209,8 +241,8 @@ axis with real-date band labels.
   in this repo, now the source of truth).
 - ~~MODIS NDVI driver~~ — BUILT 2026-07-06, LIVE-VERIFIED 2026-07-07
   (Rwanda 2021 passed, see Immediate next step #2).
-- Crop-mask layer (ESA WorldCover via GEE) — **next build**; same GEE
-  machinery, enters as a static source.
+- ~~Crop-mask layer (ESA WorldCover via GEE)~~ — DONE 2026-07-07
+  (see "Crop-mask layer" section; v0.5.0, live-verified).
 - **Security**: rotate the EOSDIS Earthdata credentials hardcoded in the
   legacy `agwise-planting-date-and-cultivar/main/RS/get_MODISdata.R`
   (username+password in plain text in a shared repo, found 2026-07-06;
@@ -243,8 +275,8 @@ axis with real-date band labels.
 
 ```
 src/agwise_data/{__init__,api,cache,catalog,config,boundaries,harmonize,spatial,stac,terrain,cli}.py
-src/agwise_data/catalog/{chirps,agera5,dem,soil,seas5,mod13q1,myd13q1}.yaml
-src/agwise_data/drivers/{__init__,base,chirps,agera5,static,dem,soil,seasonal,modis}.py
+src/agwise_data/catalog/{chirps,agera5,dem,soil,seas5,mod13q1,myd13q1,esa_worldcover}.yaml
+src/agwise_data/drivers/{__init__,base,chirps,agera5,static,dem,soil,seasonal,gee,modis,worldcover}.py
 sentinel/{script1_Download_Stack_Smooth,agwise_phenology_utils}.py + README.md
 r/agwise_data.R          tests/            examples/
 docs/{architecture,cglabs_setup,credentials_setup,pipeline_map,roadmap,sentinel_integration}.md

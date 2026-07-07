@@ -32,8 +32,15 @@ catalog YAML + a driver), so each addition is incremental.
    series; CLI `get-modis`; R `ad_get_modis`; STAC works (`RS.*` vars).
    Live smoke test (Rwanda 2021, GEE project `moodle-sites-440814`) passed:
    46 composites, 23+23 Terra/Aqua, NDVI [-0.2, 1], Lake Kivu fully masked,
-   62 s cold. The ESA WorldCover **crop-mask** layer is still to do
-   (static GEE fetch, same machinery) — next build.
+   62 s cold. The ESA WorldCover **crop-mask** layer is now **BUILT
+   (v0.5) and live-verified 2026-07-07**: `WorldCoverGeeDriver` (static,
+   `esa_worldcover` catalog) aggregates class 40 to cropland fraction via
+   `reduceResolution` and thresholds it (`crop_fraction_min`, in the
+   catalog/manifests) to a 1/NaN mask on the *same 1/480° grid as the
+   composites*, so masking non-crop is a straight multiply. API
+   `get_cropmask` (`LC.CROPLAND`); CLI `get-cropmask`; R `ad_get_cropmask`.
+   The MODIS and WorldCover drivers now share one GEE fetch module
+   (`drivers/gee.py`: client init, request tiling, tiled `computePixels`).
 3b. **Sentinel-1/2 phenology driver** — fold the SAR/optical phenology
    pipeline in as a new *product type* (composite stacks, not daily cubes).
    Design + fix-mapping in [sentinel_integration.md](sentinel_integration.md);

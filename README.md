@@ -121,6 +121,26 @@ ndvi = get_ndvi(years=[2021, 2022], country="Rwanda",
 nd <- ad_get_modis("NDVI", years = 2021:2022, country = "Rwanda")
 ```
 
+### Planting date — cropland mask (mask out non-crop before smoothing)
+
+ESA WorldCover (class 40) aggregated to the **same ~250 m grid as the NDVI
+composites**, so masking non-cropland is a straight multiply. A cell is
+cropland (1.0) when at least half its 10 m pixels are cropland, otherwise
+NaN — the threshold is in the catalog and every manifest. Needs GEE
+credentials + project (table above).
+
+```python
+from agwise_data import get_ndvi, get_cropmask
+
+ndvi = get_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
+crop = get_cropmask(country="Rwanda")["LC.CROPLAND"]["data"]  # 1 / NaN
+ndvi_cropland = ndvi * crop                                   # non-crop → NaN
+```
+
+```r
+cm <- ad_get_cropmask(country = "Rwanda")   # SpatRaster, 1 = cropland
+```
+
 ### Phenology / planting-date detection — Sentinel-1/2 smoothed stack
 
 `sentinel/script1_Download_Stack_Smooth.py` (in this repo — the source of
@@ -157,6 +177,7 @@ Same from the shell (what the R wrapper calls under the hood):
 agwise-data get         --vars PRCP,TMAX --country Kenya --years 2015:2024 --freq monthly
 agwise-data get-seasonal --vars PRCP --init-month 2 --years 1993:2016 --country Rwanda
 agwise-data get-modis   --vars NDVI --years 2021:2022 --country Rwanda --format nc,tif
+agwise-data get-cropmask --country Rwanda --format nc,tif
 agwise-data get-static  --vars ELEV,SLOPE,CLAY --country Rwanda --format nc,tif
 agwise-data extract-static --points trials.csv --vars ELEV,CLAY --out out.csv
 agwise-data catalog list && agwise-data cache info
