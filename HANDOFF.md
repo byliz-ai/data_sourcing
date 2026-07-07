@@ -2,8 +2,8 @@
 
 Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
-Last updated: 2026-07-06 (MODIS NDVI/EVI driver built + tested, v0.4.0;
-GEE credential state diagnosed — see Immediate next step).
+Last updated: 2026-07-07 (GEE UNBLOCKED — project `moodle-sites-440814`;
+MODIS NDVI/EVI driver live-verified on CGLabs, Rwanda 2021 passed).
 
 ## ⚠️ GROUND RULES ON CGLABS — read before touching anything
 
@@ -54,34 +54,34 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
-1. **Unblock GEE project access (Lizeth — only she can do this).**
-   Diagnosed 2026-07-06 on CGLabs: `earthengine-api` 1.7.33 IS now
-   installed in `agwise_data`, and the refresh token in
-   `~/.config/earthengine/credentials` is valid and belongs to
-   `llanoslizeth@gmail.com` — but that account has **no usable EE
-   project**: `ee-moodle-sites` / `ee-moodle-sites-440814` come back
-   "not found or deleted" (never registered under this account, or
-   deleted), and the team project `ee-pgd31792` **exists but denies her**
-   ("caller does not have required permission"). Two ways out, either
-   works:
-   - *Fastest:* the owner of `ee-pgd31792` adds `llanoslizeth@gmail.com`
-     in Cloud Console IAM as **Earth Engine Resource Writer** +
-     **Service Usage Consumer** (the team flow in
-     `docs/credentials_setup.md`).
-   - *Own project:* register one at
-     https://code.earthengine.google.com/register with the gmail
-     (from-zero path, section B of the same doc).
-   Then `export AGWISE_GEE_PROJECT=<the-project-id>` (or `gee_project:` in
-   `~/.config/agwise_data.yaml`) and run the live smoke test below.
-2. **Live-verify the MODIS driver** (built 2026-07-06, see section below;
-   all network-free tests pass). Suggested smoke test on CGLabs:
-   `get_ndvi(years=2021, country="Rwanda", out_format=["nc","tif"])` →
-   expect 46 composites, NDVI in [-0.2, 1], NaN over Lake Kivu clouds,
-   ~23+23 dates interleaved Terra/Aqua.
+1. ~~**Unblock GEE project access.**~~ **DONE 2026-07-07.** The working
+   Cloud project is **`moodle-sites-440814`** (Lizeth supplied the real
+   ID). `ee.Initialize(project="moodle-sites-440814",
+   opt_url="https://earthengine-highvolume.googleapis.com")` succeeds with
+   the existing `~/.config/earthengine/credentials` token
+   (`llanoslizeth@gmail.com`) and reads MOD13Q1. The earlier failures were
+   just wrong names — `ee-moodle-sites` / `ee-moodle-sites-440814` do not
+   exist; `ee-pgd31792` still denies her but is no longer needed. Use
+   `export AGWISE_GEE_PROJECT=moodle-sites-440814` (or `gee_project:` in
+   `~/.config/agwise_data.yaml`).
+2. ~~**Live-verify the MODIS driver.**~~ **DONE 2026-07-07.** Ran
+   `get_ndvi(years=2021, country="Rwanda", out_format=["nc","tif"])` on
+   CGLabs → **PASSED** in 62 s (Terra cache-cold + Aqua cache-cold):
+   - **46 composites**, `time` 2021-01-01 … 2021-12-27, every gap = 8 days.
+   - **23 Terra-grid + 23 Aqua-grid** dates interleaved (DOY 1,9,17,25,…).
+   - NDVI range **[-0.200, 0.999]** (inside [-0.2, 1]); no fabricated fill.
+   - **Lake Kivu (-2.05, 29.2): 0/46 valid** — permanent water fully
+     QA-masked to NaN, exactly as intended (SG smoothing fills gaps
+     downstream). Kigali land pixel: 32/46 valid, mean NDVI 0.298.
+   - GeoTIFF: 46 bands labelled `2021_01_01` … `2021_12_27` (year-based
+     layer selection in the phenology preproc keeps working).
+   Product written to `~/agwise_data_test/cache/products/RWA/
+   Composite_NDVI_2021_2021.{nc,tif}` (test root per Ground Rules).
 3. **Crop-mask layer** (ESA WorldCover via GEE, static) — the other half
    of roadmap item 3; reuses the same GEE fetch machinery
    (`drivers/modis.py::plan_tiles` + `computePixels`), enters as a
    `StaticDriver` source. Needed by the phenology preproc (masks non-crop).
+   **This is now the next build.**
 4. Housekeeping: rotate the leaked CDS key (see Backlog); rotate the
    GitHub PAT when convenient (pasted in chat 2026-07-04, now in
    `~/.git-credentials` chmod 600); NEW — rotate the **EOSDIS Earthdata
@@ -95,7 +95,7 @@ passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
 1995-02-02, mean 3.0 mm/day, max 36.7, no negatives, no NaNs. CDS creds
 now in `~/.cdsapirc` on this machine.)
 
-## MODIS NDVI/EVI layer (BUILT 2026-07-06, live verification pending GEE project)
+## MODIS NDVI/EVI layer (BUILT 2026-07-06, LIVE-VERIFIED on GEE 2026-07-07)
 
 Roadmap item 3 (NDVI half). Sources studied: legacy
 `agwise-planting-date-and-cultivar/main/RS/get_MODISdata.R` (modisfast/
@@ -207,10 +207,10 @@ axis with real-date band labels.
 
 - ~~script1 real-date band labels~~ — DONE 2026-07-04 (in `sentinel/`
   in this repo, now the source of truth).
-- ~~MODIS NDVI driver~~ — BUILT 2026-07-06 (see section above); live
-  verification pending the GEE project unblock (Immediate next step #1).
-- Crop-mask layer (ESA WorldCover via GEE) — next after the MODIS live
-  check; same GEE machinery, enters as a static source.
+- ~~MODIS NDVI driver~~ — BUILT 2026-07-06, LIVE-VERIFIED 2026-07-07
+  (Rwanda 2021 passed, see Immediate next step #2).
+- Crop-mask layer (ESA WorldCover via GEE) — **next build**; same GEE
+  machinery, enters as a static source.
 - **Security**: rotate the EOSDIS Earthdata credentials hardcoded in the
   legacy `agwise-planting-date-and-cultivar/main/RS/get_MODISdata.R`
   (username+password in plain text in a shared repo, found 2026-07-06;
