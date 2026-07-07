@@ -64,6 +64,27 @@ key: <your-personal-access-token>
 
 **Never put keys inside scripts.** Details: [docs/cglabs_setup.md](docs/cglabs_setup.md).
 
+## Which function downloads which source
+
+Pick your data, call the function. Full parameters, variable lists and
+copy-paste Python/CLI/R examples for each are in
+**[docs/data_sources.md](docs/data_sources.md)** — start there if you are new.
+
+| I want… | Source | Function | Credentials |
+| --- | --- | --- | --- |
+| Rainfall | CHIRPS | `get_climate("PRCP", …)` | none |
+| Temperature / radiation / humidity / wind | AgERA5 | `get_climate("TMAX", …)` | CDS |
+| Seasonal forecast / hindcast | SEAS5 | `get_seasonal(…)` | CDS |
+| Soil (clay, pH, SOC, …) | SoilGrids | `get_soil(…)` | none |
+| Elevation + slope/aspect/TPI/TRI | Copernicus DEM | `get_dem(…)` | none |
+| Cropland mask | ESA WorldCover | `get_cropmask(…)` | GEE |
+| NDVI / EVI | MODIS | `get_ndvi(…)` / `get_modis(…)` | GEE |
+| Any of these **at point locations** | — | `extract_points` / `extract_growing_season` / `extract_static_points` | same as the layer |
+
+Every `get_*` takes the same region arguments (`country=` **or**
+`bbox=`, plus optional `admin_level`/`admin_name`) and returns
+`{variable: {"nc", "tif", "data", …}}`. Learn one, you know them all.
+
 ## How each module runs it
 
 ### Fertilizer — trial-point climate, soil and terrain
@@ -199,15 +220,16 @@ agwise-data catalog list && agwise-data cache info
   data hubs; catalog entries export as STAC (`agwise-data catalog stac chirps`).
 - Country-scale requests fetch **only that country's window**, in parallel;
   a new season is just `years=range(..., 2027)` — files are append-only.
-- 64 network-free tests run in CI on every push.
+- 71 network-free tests run in CI on every push.
 
 ## Documentation
 
 | Doc | What it covers |
 | --- | --- |
-| [docs/cglabs_setup.md](docs/cglabs_setup.md) | One-time CGLabs setup, credentials, shared root |
+| [docs/data_sources.md](docs/data_sources.md) | **Start here:** which function downloads each source, with parameters + examples |
 | [docs/credentials_setup.md](docs/credentials_setup.md) | GEE + CDS credentials: 5-min path (have them) and from-zero path (first time) |
+| [docs/cglabs_setup.md](docs/cglabs_setup.md) | One-time CGLabs setup, credentials, shared root |
 | [docs/architecture.md](docs/architecture.md) | Design, cache layout, Data Hub migration path |
 | [docs/pipeline_map.md](docs/pipeline_map.md) | Module-by-module data pipeline map |
-| [docs/roadmap.md](docs/roadmap.md) | What is done (climate, soil+DEM, SEAS5) and what is next (MODIS/GEE) |
+| [docs/roadmap.md](docs/roadmap.md) | What is done (climate, soil+DEM, SEAS5, MODIS, crop mask) and what is next |
 | [sentinel/README.md](sentinel/README.md) | The Sentinel-1/2 phenology input generator |
