@@ -18,68 +18,29 @@ everyone afterwards.
      CLI     agwise-data get | extract | to-dssat | bias-correct | …
 ```
 
-This is the **only documentation file** — everything you need to install,
-configure and use the module is below.
+**This is the function reference.** To install and configure the module,
+start with the **[README](README.md)** (what you need · how to get the
+credentials · how to install · how to use), with the detailed walkthroughs in
+[docs/credentials_setup.md](docs/credentials_setup.md) and
+[docs/cglabs_setup.md](docs/cglabs_setup.md). Below is every function with its
+parameters, output and an example.
 
 ---
 
-## 1. Install & set up from scratch
+## 1. Setup
 
-```bash
-git clone https://github.com/byliz-ai/data_sourcing.git
-cd data_sourcing
-conda env create -f environment.yml     # creates the 'agwise_data' env
-conda activate agwise_data
-pip install -e ".[all]"                  # package + CDS + Earth Engine clients
-```
+Install and credentials live in the **[README](README.md)** (concise) and:
 
-Optional install extras (instead of `all`): `.[geo]` (clipping + GeoTIFF),
-`.[cds]` (AgERA5/SEAS5), `.[gee]` (MODIS + crop mask), `.[dev]` (test suite).
+- **[docs/credentials_setup.md](docs/credentials_setup.md)** — CDS + Earth
+  Engine credentials, click-by-click, with troubleshooting.
+- **[docs/cglabs_setup.md](docs/cglabs_setup.md)** — shared-server (CGLabs)
+  install, the shared cache root, use from R, and performance tuning.
 
-**Verify the install** — the test suite is network-free and needs no
-credentials, so it is the fastest way to confirm everything works:
-
-```bash
-pytest -q
-```
-
-### 1a. Choose a cache root (required)
-
-All downloads and products go under `AGWISE_DATA_ROOT`. In production this is
-the shared folder so one download serves everyone; **for testing point it at
-your own folder** so you never write into the shared originals:
-
-```bash
-export AGWISE_DATA_ROOT=~/agwise_data_test/cache     # your own test root
-```
-
-> **Ground rule:** everything already on the shared disk (the shared
-> `common_data`, other repos, downloaded datasets) is **READ-ONLY**. Never let
-> `AGWISE_DATA_ROOT` point at the shared originals while testing.
-
-### 1b. Credentials (only for the sources you use)
-
-| Source (functions) | Needs | How to set up |
-| --- | --- | --- |
-| CHIRPS, SoilGrids, Copernicus DEM, geoBoundaries | nothing | — |
-| **AgERA5 & SEAS5** (`get_climate` temp/rad, `get_seasonal`) | a free CDS account | create `~/.cdsapirc` with two lines:<br>`url: https://cds.climate.copernicus.eu/api`<br>`key: <your-personal-access-token>` |
-| **MODIS & crop mask** (`get_modis`, `get_ndvi`, `get_cropmask`) | Earth Engine + a Cloud project | `earthengine authenticate` (writes `~/.config/earthengine/credentials`), then `export AGWISE_GEE_PROJECT=<your-project-id>` |
-
-Never hardcode keys in scripts. Each teammate uses their **own** GEE project id
-(use the id exactly as the Cloud console shows it; it need not start with `ee-`).
-
-### 1c. Optional config & tuning
-
-A `~/.config/agwise_data.yaml` can hold defaults, e.g. `gee_project: <id>`.
-Environment knobs:
-
-- `AGWISE_DATA_ROOT` — cache root (see above).
-- `AGWISE_GEE_PROJECT` — Earth Engine Cloud project id.
-- `AGWISE_DATA_WORKERS` — parallel download workers (default a few).
-- `AGWISE_DATA_SCOPE` — `region` (default; fetch only the requested window) or
-  `domain` (fetch a whole continental domain).
-
----
+In short: `conda env create -f environment.yml` → `conda activate
+agwise_data` → `pip install -e ".[all]"` → `pytest -q` to verify → set
+`AGWISE_DATA_ROOT` to your cache folder. Add `~/.cdsapirc` (CDS) and run
+`earthengine authenticate` + `export AGWISE_GEE_PROJECT=<id>` only for the
+sources you use.
 
 ## 2. Canonical variables & units
 

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "agwise-data"
 version = "0.9.1"
 description = "AgWise data access layer: one call to fetch, harmonize and cache the climate, soil and terrain data every AgWise module needs"
-readme = "HANDOFF.md"
+readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
