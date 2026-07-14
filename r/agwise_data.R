@@ -248,6 +248,142 @@ ad_get_modis <- function(vars = "NDVI", years, country = NULL, bbox = NULL,
   if (length(rasters) == 1) rasters[[1]] else rasters
 }
 
+#' Climate and/or NDVI already sliced to a growing season.
+#'
+#' The season-ready delivery: instead of fetching whole years and slicing
+#' them yourself, ask for exactly the planting->harvest window. `vars` may
+#' mix climate (PRCP, TMAX, ...) and remote-sensing (NDVI, EVI) names.
+#' Seasons that cross the calendar year (Sep -> Feb) are handled naturally.
+#' NOTE: this is distinct from ad_get_seasonal(), which fetches SEAS5
+#' seasonal *forecasts*.
+#'
+#' Two modes:
+#'  * Region: pass country/bbox + planting_date/harvest_date -> a named list
+#'    of terra::SpatRaster (one per variable), each sliced to the season.
+#'  * Points: pass `points` (data.frame/CSV with lon/lat) -> a data.frame in
+#'    long format (point, lon, lat, time, variable, value). Use
+#'    planting_col/harvest_col for per-row (per-trial) seasons, or the scalar
+#'    planting_date/harvest_date for every point.
+#'
+#' @param vars          e.g. c("PRCP", "TMAX", "NDVI")
+#' @param planting_date season start ISO date (scalar mode)
+#' @param harvest_date  season end ISO date (scalar mode)
+#' @param points        data.frame or CSV path (point mode); NULL = region
+#' @param planting_col,harvest_col per-row date columns (point mode)
+#' @return SpatRaster list (region) or a data.frame (points)
+ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
+                          country = NULL, bbox = NULL, admin_level = 0,
+                          admin_name = NULL, points = NULL,
+                          planting_col = NULL, harvest_col = NULL,
+                          lon_col = NULL, lat_col = NULL, freq = "daily",
+                          satellite = "both", source = NULL,
+                          overwrite = FALSE) {
+  args <- c("get-season",
+            "--vars", paste(vars, collapse = ","),
+            "--freq", freq,
+            "--satellite", satellite)
+  if (!is.null(planting_date)) args <- c(args, "--planting-date", planting_date)
+  if (!is.null(harvest_date))  args <- c(args, "--harvest-date", harvest_date)
+  if (!is.null(source))        args <- c(args, "--source", source)
+
+  if (!is.null(points)) {
+    points_csv <- points
+    if (is.data.frame(points)) {
+      points_csv <- tempfile(fileext = ".csv")
+      utils::write.csv(points, points_csv, row.names = FALSE)
+    }
+    out_csv <- tempfile(fileext = ".csv")
+    args <- c(args, "--points", points_csv, "--out", out_csv)
+    if (!is.null(planting_col)) args <- c(args, "--planting-col", planting_col)
+    if (!is.null(harvest_col))  args <- c(args, "--harvest-col", harvest_col)
+    if (!is.null(lon_col))      args <- c(args, "--lon-col", lon_col)
+    if (!is.null(lat_col))      args <- c(args, "--lat-col", lat_col)
+    res <- ad_run(args)
+    return(utils::read.csv(res$outputs[[1]]$csv))
+  }
+
+  args <- c(args, "--format", "nc,tif")
+  if (!is.null(country))    args <- c(args, "--country", country)
+  if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (overwrite)            args <- c(args, "--overwrite")
+
+  res <- ad_run(args)
+  rasters <- lapply(res$outputs, function(o) terra::rast(o$tif))
+  names(rasters) <- vapply(res$outputs, function(o) o$short, character(1))
+  if (length(rasters) == 1) rasters[[1]] else rasters
+}
+
+#' Write DSSAT weather (.WTH) + soil (.SOL) files for trial/AOI points.
+#'
+#' The "last mile" that retires the per-module readGeo_CM_zone.R: for each
+#' row of `points` (data.frame/CSV with lon/lat) it writes
+#' out_dir/EXTE<n>/WHTE<n>.WTH (season-sliced weather with TAV/AMP) and
+#' out_dir/EXTE<n>/SOIL.SOL (SoilGrids + Saxton-Rawls hydraulics). Use
+#' planting_col/harvest_col for per-row seasons or scalar planting_date/
+#' harvest_date for all points. Returns a data.frame of the files written.
+ad_to_dssat <- function(points, planting_date = NULL, harvest_date = NULL,
+                        out_dir = NULL, planting_col = NULL, harvest_col = NULL,
+                        lon_col = NULL, lat_col = NULL, id_col = NULL,
+                        station_col = NULL, country = NULL,
+                        weather_source = NULL, soil_source = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  args <- c("to-dssat", "--points", points_csv)
+  if (!is.null(out_dir))        args <- c(args, "--out-dir", out_dir)
+  if (!is.null(planting_date))  args <- c(args, "--planting-date", planting_date)
+  if (!is.null(harvest_date))   args <- c(args, "--harvest-date", harvest_date)
+  if (!is.null(planting_col))   args <- c(args, "--planting-col", planting_col)
+  if (!is.null(harvest_col))    args <- c(args, "--harvest-col", harvest_col)
+  if (!is.null(lon_col))        args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col))        args <- c(args, "--lat-col", lat_col)
+  if (!is.null(id_col))         args <- c(args, "--id-col", id_col)
+  if (!is.null(station_col))    args <- c(args, "--station-col", station_col)
+  if (!is.null(country))        args <- c(args, "--country", country)
+  if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
+  if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
+
+  res <- ad_run(args)
+  do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
+}
+
+#' Write APSIM weather (.met) + soil-layer table for trial/AOI points.
+#'
+#' APSIM counterpart of ad_to_dssat: writes out_dir/EXTE<n>/wth_loc_<n>.met
+#' and out_dir/EXTE<n>/soil_<n>.csv (the per-layer LL15/DUL/SAT/AirDry/KS/BD/
+#' Carbon/clay/silt/N/PH/CEC table the apsimx soil template needs, with
+#' Salb/CN2Bare in a header comment). Returns a data.frame of files written.
+ad_to_apsim <- function(points, planting_date = NULL, harvest_date = NULL,
+                        out_dir = NULL, planting_col = NULL, harvest_col = NULL,
+                        lon_col = NULL, lat_col = NULL, id_col = NULL,
+                        station_col = NULL,
+                        weather_source = NULL, soil_source = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  args <- c("to-apsim", "--points", points_csv)
+  if (!is.null(out_dir))        args <- c(args, "--out-dir", out_dir)
+  if (!is.null(planting_date))  args <- c(args, "--planting-date", planting_date)
+  if (!is.null(harvest_date))   args <- c(args, "--harvest-date", harvest_date)
+  if (!is.null(planting_col))   args <- c(args, "--planting-col", planting_col)
+  if (!is.null(harvest_col))    args <- c(args, "--harvest-col", harvest_col)
+  if (!is.null(lon_col))        args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col))        args <- c(args, "--lat-col", lat_col)
+  if (!is.null(id_col))         args <- c(args, "--id-col", id_col)
+  if (!is.null(station_col))    args <- c(args, "--station-col", station_col)
+  if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
+  if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
+
+  res <- ad_run(args)
+  do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
+}
+
 #' Soil/topography values at point locations (wide format).
 #'
 #' Returns the input data plus ELEV/SLOPE/... columns and one column per

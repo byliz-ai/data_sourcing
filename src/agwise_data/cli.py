@@ -221,6 +221,61 @@ def cmd_get_modis(args) -> dict:
     }
 
 
+def cmd_get_season(args) -> dict:
+    from .api import get_season
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    if args.points:
+        df = get_season(
+            variables=args.vars,
+            planting_date=args.planting_date,
+            harvest_date=args.harvest_date,
+            points=args.points,
+            planting_col=args.planting_col,
+            harvest_col=args.harvest_col,
+            lon_col=args.lon_col,
+            lat_col=args.lat_col,
+            freq=args.freq,
+            satellite=args.satellite,
+            source=args.source,
+        )
+        if not args.out:
+            raise SystemExit("point mode (--points) needs --out for the CSV")
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_path, index=False)
+        return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+
+    results = get_season(
+        variables=args.vars,
+        planting_date=args.planting_date,
+        harvest_date=args.harvest_date,
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        freq=args.freq,
+        satellite=args.satellite,
+        source=args.source,
+        out_format=[f.strip() for f in args.format.split(",")],
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        overwrite=args.overwrite,
+    )
+    return {
+        "ok": True,
+        "outputs": [
+            {
+                "variable": var,
+                "short": info["short"],
+                "kind": info["kind"],
+                "nc": str(info["nc"]) if info["nc"] else None,
+                "tif": str(info["tif"]) if info["tif"] else None,
+            }
+            for var, info in results.items()
+        ],
+    }
+
+
 def cmd_get_cropmask(args) -> dict:
     from .api import get_cropmask
 
@@ -271,6 +326,63 @@ def cmd_extract_static(args) -> dict:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
     return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+
+
+def cmd_to_dssat(args) -> dict:
+    from .api import to_dssat
+
+    res = to_dssat(
+        points=args.points,
+        planting_date=args.planting_date,
+        harvest_date=args.harvest_date,
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        planting_col=args.planting_col,
+        harvest_col=args.harvest_col,
+        lon_col=args.lon_col,
+        lat_col=args.lat_col,
+        id_col=args.id_col,
+        station_col=args.station_col,
+        country=args.country or "-99",
+        weather_source=args.weather_source,
+        soil_source=args.soil_source,
+    )
+    return {
+        "ok": True,
+        "n_points": len(res),
+        "outputs": [
+            {"point": str(r["point"]), "dir": str(r["dir"]),
+             "wth": str(r["wth"]), "sol": str(r["sol"])}
+            for r in res
+        ],
+    }
+
+
+def cmd_to_apsim(args) -> dict:
+    from .api import to_apsim
+
+    res = to_apsim(
+        points=args.points,
+        planting_date=args.planting_date,
+        harvest_date=args.harvest_date,
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        planting_col=args.planting_col,
+        harvest_col=args.harvest_col,
+        lon_col=args.lon_col,
+        lat_col=args.lat_col,
+        id_col=args.id_col,
+        station_col=args.station_col,
+        weather_source=args.weather_source,
+        soil_source=args.soil_source,
+    )
+    return {
+        "ok": True,
+        "n_points": len(res),
+        "outputs": [
+            {"point": str(r["point"]), "dir": str(r["dir"]),
+             "met": str(r["met"]), "soil": str(r["soil"])}
+            for r in res
+        ],
+    }
 
 
 def cmd_catalog(args) -> dict:
@@ -395,6 +507,40 @@ def build_parser() -> argparse.ArgumentParser:
     p_mo.add_argument("--overwrite", action="store_true")
     p_mo.set_defaults(func=cmd_get_modis)
 
+    p_sn = sub.add_parser(
+        "get-season",
+        help="Climate/NDVI sliced to a planting->harvest season (cross-year OK)",
+    )
+    p_sn.add_argument("--vars", required=True, help="e.g. PRCP,TMAX,NDVI (climate + RS)")
+    p_sn.add_argument(
+        "--planting-date", dest="planting_date",
+        help="Season start ISO date (region mode, or scalar point mode)",
+    )
+    p_sn.add_argument(
+        "--harvest-date", dest="harvest_date",
+        help="Season end ISO date (region mode, or scalar point mode)",
+    )
+    _add_region_args(p_sn)
+    p_sn.add_argument("--points", help="CSV with lon/lat columns (point mode)")
+    p_sn.add_argument("--out", help="Output CSV path (point mode)")
+    p_sn.add_argument(
+        "--planting-col", dest="planting_col",
+        help="Per-row planting date column (point mode; needs --harvest-col)",
+    )
+    p_sn.add_argument("--harvest-col", dest="harvest_col")
+    p_sn.add_argument("--lon-col", dest="lon_col")
+    p_sn.add_argument("--lat-col", dest="lat_col")
+    p_sn.add_argument("--freq", choices=["daily", "monthly"], default="daily")
+    p_sn.add_argument(
+        "--satellite", choices=["both", "terra", "aqua"], default="both",
+        help="MODIS satellite selection for NDVI/EVI variables",
+    )
+    p_sn.add_argument("--format", default="nc", help="nc, tif or nc,tif (region mode)")
+    p_sn.add_argument("--source", help="Override the default source for the variables")
+    p_sn.add_argument("--out-dir", dest="out_dir")
+    p_sn.add_argument("--overwrite", action="store_true")
+    p_sn.set_defaults(func=cmd_get_season)
+
     p_cm = sub.add_parser(
         "get-cropmask",
         help="Fetch the ESA WorldCover cropland mask (aligned to the MODIS grid)",
@@ -440,6 +586,40 @@ def build_parser() -> argparse.ArgumentParser:
         "this many meters; 0 disables (default: 1000)",
     )
     p_es.set_defaults(func=cmd_extract_static)
+
+    def _add_cropmodel_args(p, engine):
+        p.add_argument("--points", required=True, help="CSV with lon/lat columns")
+        p.add_argument("--out-dir", dest="out_dir",
+                       help=f"Output root (default: ./{engine})")
+        p.add_argument("--planting-date", dest="planting_date",
+                       help="Season start ISO date (scalar mode)")
+        p.add_argument("--harvest-date", dest="harvest_date",
+                       help="Season end ISO date (scalar mode)")
+        p.add_argument("--planting-col", dest="planting_col",
+                       help="Per-row planting date column")
+        p.add_argument("--harvest-col", dest="harvest_col")
+        p.add_argument("--lon-col", dest="lon_col")
+        p.add_argument("--lat-col", dest="lat_col")
+        p.add_argument("--id-col", dest="id_col", help="Point identifier column")
+        p.add_argument("--station-col", dest="station_col",
+                       help="Station/place-name column (used for the 4-char code)")
+        p.add_argument("--weather-source", dest="weather_source")
+        p.add_argument("--soil-source", dest="soil_source")
+
+    p_dssat = sub.add_parser(
+        "to-dssat",
+        help="Write DSSAT weather (.WTH) + soil (.SOL) files for trial/AOI points",
+    )
+    _add_cropmodel_args(p_dssat, "DSSAT")
+    p_dssat.add_argument("--country", help="Country name for the soil profile header")
+    p_dssat.set_defaults(func=cmd_to_dssat)
+
+    p_apsim = sub.add_parser(
+        "to-apsim",
+        help="Write APSIM weather (.met) + soil-layer table for trial/AOI points",
+    )
+    _add_cropmodel_args(p_apsim, "APSIM")
+    p_apsim.set_defaults(func=cmd_to_apsim)
 
     p_cat = sub.add_parser("catalog", help="Inspect the dataset catalog")
     p_cat.add_argument("action", choices=["list", "show", "stac"])

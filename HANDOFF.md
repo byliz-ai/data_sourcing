@@ -2,9 +2,14 @@
 
 Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
-Last updated: 2026-07-07 (GEE UNBLOCKED — project `moodle-sites-440814`;
-MODIS NDVI/EVI driver live-verified; ESA WorldCover crop-mask layer BUILT
-+ live-verified, v0.5.0).
+Last updated: 2026-07-14 (**scope-map #1 + #2 DONE, v0.7.0**): `get_season`
+(season-sliced climate/NDVI, cross-year aware) and the crop-model input
+writers `to_dssat`/`to_apsim` (DSSAT `.WTH`+`.SOL`, APSIM `.met`+soil table)
+BUILT + verified (round-tripped through the DSSAT/apsimx R readers; real
+SoilGrids end-to-end). Also fixed a latent AgERA5 driver bug (missing
+`cache` import) that broke every fresh AgERA5 download.
+Prior: 2026-07-07 (GEE unblocked `moodle-sites-440814`; MODIS + crop-mask
+live-verified, v0.5.0).
 
 ## ⚠️ GROUND RULES ON CGLABS — read before touching anything
 
@@ -55,6 +60,18 @@ data each module consumes, nothing past it.
 
 ## Immediate next step
 
+**DONE 2026-07-14: scope-map #1 (crop-model geo-input writer) and #2
+(`get_season`)** — see the "Crop-model inputs" section below. These retire
+the most duplicated module code (`readGeo_CM_zone`). v0.7.0, 101 network-free
+tests pass (was 71).
+
+**NEXT: scope-map #3 (seasonal-forecast bias correction)** — both halves are
+already here (`get_seasonal` + `get_climate`); add the hindcast-vs-obs
+correction + point-sampling to DSSAT inputs (`Forecast/03_bias_correction_
+forecast_multiVar.R`, `04_prepare_dssat_geo_inputs.R`). Then #4 (MODIS SG-
+smoothing/gap-fill — the Sentinel SG code in `sentinel/script1` extended to
+the MODIS stack) and #5 (RothC monthly-climate inputs incl. a PET layer).
+
 1. ~~**Unblock GEE project access.**~~ **DONE 2026-07-07.** Lizeth's own
    working Cloud project is `moodle-sites-440814` (**an example — every
    teammate uses their OWN project, see docs/credentials_setup.md; nobody
@@ -94,6 +111,150 @@ is on `origin/main`; CI runs on push.)
 passed: PRCP i02/1995, Rwanda bbox → 25 members, 215 valid days starting
 1995-02-02, mean 3.0 mm/day, max 36.7, no negatives, no NaNs. CDS creds
 now in `~/.cdsapirc` on this machine.)
+
+## Deliver analysis-ready, not raw — module data-processing to absorb (scope map, 2026-07-07)
+
+Direction from Lizeth (2026-07-07): the data module should hand each AgWise
+module inputs **ready to start its internal process** — no extra step for
+the user (no slicing a season, reformatting, or re-aggregating). And it must
+**maximize resources so download + processing time is minimal**.
+
+Audited every module repo for the data-*processing* they still do by hand
+(vs. their core method, which stays in the module). Finding: **every
+crop-model module re-implements the same data-prep scaffolding**, copied per
+use case — hundreds of near-identical `get_CM_geo_*` / `readGeo_CM_zone*` /
+`01_GetSoilandWeather` scripts (fertilizer 113, potentialyield ~200 use-case
+copies, cropping-innovation, planting-date). Removing that duplication is the
+point of this layer.
+
+**Boundary rule.** IN scope = anything that turns sourced data into the
+analysis-ready INPUT a module consumes: harmonize, aggregate, extract to
+points, mask, smooth, bias-correct, format to the engine's input files.
+OUT of scope = the module's method: DSSAT/APSIM/Oryza/WOFOST simulation,
+phenology/crop-type detection, RothC simulation, ML response functions,
+ONI/optimum-sowing summaries, plots.
+
+**Already delivered ready-to-use (done):**
+- Harmonized daily/monthly climate cubes — `get_climate` (replaces per-module
+  CHIRPS/AgERA5 download+stack+monthly aggregation).
+- Trial/point growing-season climate — `extract_growing_season`
+  (`Precipitation_m1..mN`, `totalRF`, `nrRainyDays`): the fertilizer ML input.
+- Soil/terrain at points w/ nearest-valid fill — `extract_static_points`.
+- SEAS5 hindcast/forecast cubes — `get_seasonal` (raw forecast half).
+- MODIS NDVI/EVI composites (46/yr) — `get_ndvi`; crop mask — `get_cropmask`.
+
+**Still done by the modules → candidates to absorb (ranked by how many
+modules re-do it / impact):**
+
+1. ~~**Crop-model geo-input assembly**~~ **DONE 2026-07-14** (`to_dssat`/
+   `to_apsim`, v0.7.0) — see "Crop-model inputs" section below.
+2. ~~**Season-ready delivery**~~ **DONE 2026-07-14** (`get_season`, v0.6.0) —
+   see "Crop-model inputs" section below.
+3. **Seasonal-forecast bias correction** — `Forecast/03_bias_correction_
+   forecast_multiVar.R` (planting-date): hindcast vs obs → "bias-adjusted,
+   analysis-ready fields". Both halves already here (`get_seasonal` +
+   `get_climate`); add the correction + point-sampling to DSSAT inputs
+   (`04_prepare_dssat_geo_inputs.R`).
+4. **MODIS/VIIRS NDVI SG-smoothing + gap-fill** — `get_MODISts_PreProc.R`:
+   the 46/yr stack, crop-masked (done) and Savitzky-Golay smoothed. SG code
+   already exists for Sentinel in `sentinel/script1`; extend it to the MODIS
+   stack so phenology gets the smoothed, masked NDVI directly. Add VIIRS as
+   an alt catalog source (`get_MODISData_VIIRS.R`).
+5. **RothC monthly-climate inputs** (soilhealth) — `calculate_monthlyClimate.R`
+   / `generate_monthlyClimate.R`: monthly rainfall/temp/PET + **historical
+   monthly climatology**. Monthly aggregation done; add (a) a **PET** layer
+   (`download_PET_function.R` — derive from AgERA5 or source it), (b) a
+   climatology helper (multi-year monthly means).
+6. **SoC covariate point extraction** — `extract_SocClayNDVI.R` (soilhealth):
+   SOC/clay covered by `extract_static_points`; add **NDVI-at-points**.
+7. **Weather QC/merge for crop models** — `cleaning_tmin_tmax_DSSAT_files.R`,
+   `merging_weather_data_time_series.R`, `download_wth.R`: gap-fill/QC and
+   splice of weather series, a QC step before the writer (#1).
+
+**Out of scope (stays in the modules):** `run_DSSAT_*` / `dssat_exec*` /
+APSIM `03_RunSim` / Oryza / WOFOST runs, `get_RS_Phenology` /
+`get_CM_Phenology` detection, RothC spin/warm/forward, `dssat_summary_ONI*`,
+optimum-sowing, response functions, all plots.
+
+## Performance / resource use — minimize download + processing time
+
+Already in place (keep leaning on these):
+- **Region-scoped caches** (`rg_*`): a country request fetches only its
+  window, not a continent (~0.03% of a global CHIRPS file for Rwanda).
+- **Download once, shared**: append-only per-year cache on the shared root;
+  the 2nd request (anyone) is a cache hit; cached years are never refetched.
+- **Parallel prefetch** across (variable, year) — `AGWISE_DATA_WORKERS`;
+  segmented HTTP range downloads (`download_parts`); per-composite GEE
+  parallelism (`cog_workers`); aligned NetCDF chunking.
+
+Next perf work (priority order):
+1. **Warm the cache** for the common use-case countries/years once
+   (`warm_cache(country, years, vars)`) so module runs are all cache hits.
+2. **Parallelize across sources** (climate + soil + NDVI concurrently for one
+   request), not just across (var, year).
+3. **MODIS/GEE**: crop-mask `reduceResolution` cold-fetch ≈150 s (cached
+   once/country, so amortized) — batch composite pulls and cache the EE
+   listing to cut MODIS cold time.
+4. Deliver the **season slice / crop-model files server-side** so modules
+   neither re-download whole years nor re-extract points (ties to #1–#2 above).
+
+## Crop-model inputs (scope-map #1 + #2, BUILT + VERIFIED 2026-07-14, v0.7.0)
+
+The "last mile" so modules start from analysis-ready inputs instead of
+re-running `readGeo_CM_zone`. Full docs: `docs/crop_model_inputs.md`. Adds no
+new data source — it is season-slicing + the engine file writers on top of
+`get_climate`/`extract_points`/`extract_static_points`/`get_modis`.
+
+**`get_season`** (`api.get_season`, CLI `get-season`, R `ad_get_season`) —
+climate + NDVI sliced to `[planting_date, harvest_date]`, **cross-year aware**
+(Sep→Feb is just `slice(pl, hv)` on the continuous axis). Two modes: region
+(cube per var → `Season_<SHORT>_<pl>_<hv>` product) and points (long df;
+`planting_col`/`harvest_col` give each trial its own season). Mixes AGRO.* and
+RS.* vars in one call (auto-routed). **NOT** `get_seasonal` (that is SEAS5
+forecasts) — names are close, meanings differ; documented in both docstrings.
+Live-verified: cross-year Rwanda NDVI from the cached `Composite_NDVI_2020_
+2021.nc` → 21 composites in-window (from 92), both years, plausible range.
+
+**`to_dssat` / `to_apsim`** (`api`, CLI `to-dssat`/`to-apsim`, R
+`ad_to_dssat`/`ad_to_apsim`) — per point `n`, write under `out_dir/EXTE<n>/`:
+DSSAT `WHTE<n>.WTH` + `SOIL.SOL`; APSIM `wth_loc_<n>.met` + `soil_<n>.csv`.
+Accept `weather=`/`soil=` to reuse already-extracted frames (skips the fetch;
+this is also how they are unit-tested network-free).
+
+**Writers live in `src/agwise_data/writers/`**:
+- `_common.py` — `prepare_weather` (PRCP→RAIN alias, TMIN≤TMAX swap, NaN drop)
+  and `tav_amp` (TAV = mean daily-mean temp; AMP = ½ the month-to-month
+  range), shared by both engines. `station_code` → 4-char INSI/site code.
+- `dssat.py` — `write_wth`: fixed-width `.WTH` matching `DSSAT::write_wth`
+  (`$WEATHER:`, `@ INSI…` GENERAL block, `@ DATE…` with `YYYYDDD` dates).
+- `apsim.py` — `write_met`: `year day radn maxt mint rain` + `tav`/`amp`
+  header, whole numbers bare (matches `apsimx::write_apsim_met`).
+- `soil.py` — the science: `saxton_rawls` (PWP/FC/SAT/KS, exact port of
+  `get_geoSpatialData_V2.R`), `texture_class` triangle + `texture_props`
+  (albedo/CN2), `slu1`, `root_growth_factor`; `write_sol` (DSSAT layered
+  profile) and `apsim_soil_table` (LL15/DUL/SAT/AirDry/KS/BD/Carbon/clay/
+  silt/N/PH/CEC + Salb/CN2Bare attrs). **Unit mapping** (our layer → .SOL):
+  SLOC=SOC(g/kg)/10, SLNI=N(g/kg)/10, SLCL=CLAY%, SLSI=SILT%, SBDM=BDOD,
+  SLHW=PH, SCEC=CEC; SOM% for Saxton = SOC/5. SoilGrids units are already
+  reconciled in `harmonize.STATIC_VARS`.
+
+**Verification (all passed):** file layouts matched byte-for-byte against
+reference files the R packages emit; every output round-tripped through the
+packages' own readers — `DSSAT::read_wth`/`read_sol` (correct header, layers,
+cross-year span, `PWP<FC<SAT` monotonic) and `apsimx::read_apsim_met` +
+`check_apsim_met` (no fatal issues). End-to-end `to_dssat` on **real
+SoilGrids** Rwanda points → `SOIL.SOL` that `read_sol` parses cleanly
+(texture "C"/clay, monotonic hydraulics). 101 network-free tests pass
+(`tests/test_season.py`, `tests/test_writers.py`).
+
+**Not included yet:** DSSAT phosphorus block (SLPX/SLPT… — layer has no P
+source; optional in DSSAT); `SLDR`/`SLNF`/`SLPF` are neutral metadata
+defaults a module can override.
+
+**Latent bug fixed:** `drivers/agera5.py` used `cache.NC_LOCK` without
+`from .. import cache` — every fresh AgERA5 download raised `NameError`
+(only surfaced now because a `to_dssat` weather fetch pulled an uncached
+year). One-line import added; all other drivers already had it.
 
 ## Crop-mask layer (ESA WorldCover, BUILT + LIVE-VERIFIED 2026-07-07)
 
@@ -257,6 +418,12 @@ axis with real-date band labels.
 - `replace_outliers` fabricates data
   (replaces ~13% of pixels with the regional mean — consider NaN; science
   decision for Lizeth, still open).
+- **R wrapper bug (pre-existing, found 2026-07-14):** `ad_extract_growing_
+  season` and `ad_extract_points` in `r/agwise_data.R` append
+  `--fill-nearest-m <fill_nearest_m>` but neither has that parameter and the
+  `extract` CLI has no such flag → both error at runtime. Drop those two
+  lines (only `extract-static`/`ad_extract_static_points` take fill-nearest).
+  Not touched this session to keep the crop-model change focused.
 - **Security**: rotate the CDS key hardcoded in the legacy
   `chirps_download 1.R` (cds.climate.copernicus.eu → regenerate token).
 - ~~CI~~ — DONE 2026-07-04: `.github/workflows/tests.yml` pushed (token
@@ -278,7 +445,12 @@ axis with real-date band labels.
 src/agwise_data/{__init__,api,cache,catalog,config,boundaries,harmonize,spatial,stac,terrain,cli}.py
 src/agwise_data/catalog/{chirps,agera5,dem,soil,seas5,mod13q1,myd13q1,esa_worldcover}.yaml
 src/agwise_data/drivers/{__init__,base,chirps,agera5,static,dem,soil,seasonal,gee,modis,worldcover}.py
+src/agwise_data/writers/{__init__,_common,dssat,apsim,soil}.py   # crop-model input files
 sentinel/{script1_Download_Stack_Smooth,agwise_phenology_utils}.py + README.md
 r/agwise_data.R          tests/            examples/
-docs/{architecture,cglabs_setup,credentials_setup,pipeline_map,roadmap,sentinel_integration}.md
+docs/{architecture,cglabs_setup,credentials_setup,pipeline_map,roadmap,sentinel_integration,crop_model_inputs}.md
 ```
+
+API surface now: get_climate, extract_points, extract_growing_season,
+get_static/get_dem/get_soil, extract_static_points, get_seasonal, get_modis/
+get_ndvi, get_cropmask, **get_season**, **to_dssat**, **to_apsim**.

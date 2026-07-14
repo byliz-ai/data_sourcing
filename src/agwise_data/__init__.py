@@ -25,13 +25,16 @@ from .api import (
     get_dem,
     get_modis,
     get_ndvi,
+    get_season,
     get_seasonal,
     get_soil,
     get_static,
+    to_apsim,
+    to_dssat,
 )
 from .config import Config
 
-__version__ = "0.5.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "get_climate",
@@ -44,7 +47,10 @@ __all__ = [
     "get_seasonal",
     "get_modis",
     "get_ndvi",
+    "get_season",
     "extract_static_points",
+    "to_dssat",
+    "to_apsim",
     "Config",
     "__version__",
 ]

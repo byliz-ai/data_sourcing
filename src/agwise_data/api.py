@@ -1058,6 +1058,298 @@ def get_ndvi(**kwargs) -> Dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# Season-ready delivery: climate + NDVI already sliced to a planting -> harvest
+# window (scope map #2). Not to be confused with get_seasonal (the SEAS5
+# forecast). A "season" here is any date range, including one that crosses the
+# calendar year (e.g. Rwanda season B, Sep -> Feb): because the underlying time
+# axis is continuous, a cross-year slice is just slice(planting, harvest).
+
+
+def _classify_season_var(variable: str):
+    """Return ('rs', canonical) for NDVI/EVI, else ('climate', canonical)."""
+    try:
+        return "rs", rs_canonical_name(variable)
+    except ValueError:
+        return "climate", canonical_name(variable)
+
+
+def _season_dates(planting_date, harvest_date):
+    pl = pd.Timestamp(planting_date)
+    hv = pd.Timestamp(harvest_date)
+    if pd.isna(pl) or pd.isna(hv):
+        raise ValueError("planting_date and harvest_date must be valid dates")
+    if pl > hv:
+        raise ValueError(
+            f"planting_date ({pl.date()}) is after harvest_date ({hv.date()})"
+        )
+    return pl, hv
+
+
+def _modis_stack_driverlevel(config, var, years, bbox, satellite, source):
+    """(time, lat, lon) NDVI/EVI stack from the MODIS drivers, no product write.
+
+    Mirrors the source selection and Terra+Aqua interleave of
+    :func:`get_modis` but stays at driver level so point-mode season slices
+    do not persist a whole-region composite product.
+    """
+    if source:
+        source_ids = [source] if isinstance(source, str) else list(source)
+    elif satellite == "both":
+        source_ids = list(_MODIS_SATELLITE_SOURCES.values())
+    elif satellite in _MODIS_SATELLITE_SOURCES:
+        source_ids = [_MODIS_SATELLITE_SOURCES[satellite]]
+    else:
+        raise ValueError(
+            f"satellite must be 'both', 'terra' or 'aqua', got '{satellite}'"
+        )
+    parts = []
+    tasks = []
+    for sid in source_ids:
+        driver = _modis_driver_for(var, sid, config)
+        dom = _effective_domain(
+            config, sid, var, years, bbox, None,
+            complete_fn=lambda name, s=sid: _modis_complete(
+                config, s, var, years, name
+            ),
+        )
+        parts.append((driver, dom))
+        tasks.extend((driver, var, y, dom) for y in years)
+    _prefetch_modis(config, tasks)
+    stacks = [driver.open_years(var, years, dom) for driver, dom in parts]
+    da = stacks[0] if len(stacks) == 1 else xr.concat(
+        stacks, dim="time", join="outer", combine_attrs="drop_conflicts"
+    )
+    return da.sortby("time")
+
+
+def _season_long_points(
+    config, variables, df, lon_col, lat_col, pl_v, hv_v, freq, satellite, source
+):
+    """Per-point season slice -> long DataFrame (point, lon, lat, time, variable, value).
+
+    ``pl_v``/``hv_v`` are per-row planting/harvest Timestamps (already
+    aligned to ``df``); each point keeps only the rows inside its own window,
+    so different rows can have different (even cross-year) seasons.
+    """
+    lons = df[lon_col].to_numpy(dtype=float)
+    lats = df[lat_col].to_numpy(dtype=float)
+    bbox = points_bbox(lons, lats)
+    years = list(range(int(pl_v.dt.year.min()), int(hv_v.dt.year.max()) + 1))
+    pl_np = pl_v.dt.normalize().to_numpy()
+    hv_np = hv_v.dt.normalize().to_numpy()
+
+    frames = []
+    for var in variables:
+        kind, canon = _classify_season_var(var)
+        if kind == "rs":
+            da = _modis_stack_driverlevel(
+                config, canon, years, bbox, satellite, source
+            )
+            da = subset_bbox(da, bbox, buffer=0.05)
+            label = rs_short_name(canon)
+        else:
+            driver, source_id = _driver_for(canon, source, config)
+            dom = _effective_domain(config, source_id, canon, years, bbox, None)
+            _prefetch(config, [(driver, canon, y, dom) for y in years])
+            da = driver.open_years(canon, years, dom)
+            da = subset_bbox(da, bbox)
+            if freq == "monthly":
+                da = to_monthly(da, canon)
+            label = short_name(canon)
+
+        series = _point_series(da, lons, lats).load()  # (time, point)
+        s_times = pd.DatetimeIndex(series["time"].values).normalize().to_numpy()
+        vals = series.values  # (time, point)
+        for p in range(len(df)):
+            in_window = (s_times >= pl_np[p]) & (s_times <= hv_np[p])
+            if not in_window.any():
+                continue
+            times_p = series["time"].values[in_window]
+            frames.append(
+                pd.DataFrame({
+                    "point": df.index[p],
+                    lon_col: lons[p],
+                    lat_col: lats[p],
+                    "time": times_p,
+                    "variable": label,
+                    "value": vals[in_window, p],
+                })
+            )
+    if not frames:
+        raise ValueError(
+            "No data fell inside any point's season window; check the "
+            "planting/harvest dates against the available years."
+        )
+    out = pd.concat(frames, ignore_index=True)
+    return out[["point", lon_col, lat_col, "time", "variable", "value"]]
+
+
+def get_season(
+    variables: Union[str, Sequence[str]],
+    planting_date: Optional[str] = None,
+    harvest_date: Optional[str] = None,
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    points=None,
+    planting_col: Optional[str] = None,
+    harvest_col: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    freq: str = "daily",
+    satellite: str = "both",
+    source: Union[str, Sequence[str], None] = None,
+    out_format: Union[str, Sequence[str]] = "nc",
+    out_dir: Optional[Path] = None,
+    overwrite: bool = False,
+    config: Optional[Config] = None,
+):
+    """Climate and/or NDVI already sliced to a growing season.
+
+    The scope-map deliverable so no module fetches whole years and slices
+    afterwards. ``variables`` may mix climate names (``PRCP``, ``TMAX``, ...)
+    and remote-sensing names (``NDVI``, ``EVI``); each is routed to the right
+    source automatically. Seasons that cross the calendar year (Sep -> Feb)
+    are handled naturally by the continuous time axis.
+
+    Two modes:
+
+    * **Region** (``country=`` or ``bbox=``): returns
+      ``{canonical_variable: {"nc": Path, "tif": Path|None, "data": DataArray}}``
+      with each cube sliced to ``[planting_date, harvest_date]`` and written
+      as a ``Season_<SHORT>_<plYYYYMMDD>_<hvYYYYMMDD>`` product.
+    * **Points** (``points=``): returns a long ``DataFrame`` (``point``,
+      lon, lat, ``time``, ``variable``, ``value``) restricted to the season.
+      With ``planting_col``/``harvest_col`` each row uses its own dates
+      (per-trial seasons); otherwise the scalar ``planting_date``/
+      ``harvest_date`` apply to every point.
+
+    ``freq`` (``"daily"``/``"monthly"``) aggregates the climate variables;
+    it does not affect the NDVI/EVI composite cadence. This is distinct from
+    :func:`get_seasonal`, which fetches SEAS5 seasonal *forecasts*.
+    """
+    config = config or Config.load()
+    if isinstance(variables, str):
+        variables = [v for v in variables.split(",") if v.strip()]
+    variables = list(variables)
+    if not variables:
+        raise ValueError("Provide at least one variable")
+    if freq not in ("daily", "monthly"):
+        raise ValueError("freq must be 'daily' or 'monthly'")
+
+    # ---- Point mode -------------------------------------------------------
+    if points is not None:
+        df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+        if planting_col or harvest_col:
+            if not (planting_col and harvest_col):
+                raise ValueError(
+                    "Provide both planting_col and harvest_col, or neither"
+                )
+            pl_v = pd.to_datetime(df[planting_col], errors="coerce")
+            hv_v = pd.to_datetime(df[harvest_col], errors="coerce")
+        else:
+            pl, hv = _season_dates(planting_date, harvest_date)
+            pl_v = pd.Series(pl, index=df.index)
+            hv_v = pd.Series(hv, index=df.index)
+        bad = (
+            pl_v.isna() | hv_v.isna() | (pl_v > hv_v)
+            | df[lon_col].isna() | df[lat_col].isna()
+        )
+        if bad.all():
+            raise ValueError(
+                "No valid rows (unparseable dates, planting after harvest, "
+                "or missing coordinates)"
+            )
+        if bad.any():
+            warnings.warn(
+                f"{int(bad.sum())}/{len(df)} rows skipped (unparseable dates, "
+                "planting after harvest, or missing coordinates)."
+            )
+        sub = df[~bad]
+        return _season_long_points(
+            config, variables, sub, lon_col, lat_col,
+            pl_v[~bad], hv_v[~bad], freq, satellite, source,
+        )
+
+    # ---- Region mode ------------------------------------------------------
+    pl, hv = _season_dates(planting_date, harvest_date)
+    formats = [out_format] if isinstance(out_format, str) else list(out_format)
+    for f in formats:
+        if f not in ("nc", "tif"):
+            raise ValueError(f"Unknown output format '{f}' (use 'nc' and/or 'tif')")
+    write_tif = "tif" in formats
+
+    _, _, tag = _resolve_region(config, country, bbox, admin_level, admin_name)
+    out_root = Path(out_dir) if out_dir else config.products_dir(tag)
+    years = list(range(pl.year, hv.year + 1))
+    tif_labels_freq = "monthly" if freq == "monthly" else "daily"
+    region_kwargs = dict(
+        country=country, bbox=bbox, admin_level=admin_level,
+        admin_name=admin_name, out_dir=out_dir, config=config,
+    )
+
+    results: Dict[str, dict] = {}
+    for var in variables:
+        kind, canon = _classify_season_var(var)
+        short = rs_short_name(canon) if kind == "rs" else short_name(canon)
+        stem = f"Season_{short}_{pl:%Y%m%d}_{hv:%Y%m%d}"
+        nc_path = out_root / f"{stem}.nc"
+        tif_path = out_root / f"{stem}.tif" if write_tif else None
+        need_nc = overwrite or not nc_path.exists()
+        need_tif = write_tif and (overwrite or not tif_path.exists())
+
+        if not need_nc and not need_tif:
+            logger.info("Product cache hit: %s", nc_path)
+            da = xr.open_dataarray(nc_path)
+        else:
+            # Fetch (and cache) the whole-year cubes once via the existing
+            # region calls, then slice to the season here.
+            if kind == "rs":
+                full = get_modis(
+                    variables=[canon], years=years, satellite=satellite,
+                    source=source, **region_kwargs,
+                )[canon]["data"]
+            else:
+                full = get_climate(
+                    variables=[canon], years=years, freq=freq,
+                    source=source, **region_kwargs,
+                )[canon]["data"]
+            da = full.sel(time=slice(pl, hv)).load()
+            if da.sizes.get("time", 0) == 0:
+                raise ValueError(
+                    f"No {short} time steps fell inside "
+                    f"{pl.date()}..{hv.date()}"
+                )
+            meta = {
+                "variable": canon,
+                "region": tag,
+                "planting_date": str(pl.date()),
+                "harvest_date": str(hv.date()),
+                "freq": freq if kind == "climate" else "composite",
+                "n_steps": int(da.sizes["time"]),
+            }
+            if need_nc:
+                nc_path.parent.mkdir(parents=True, exist_ok=True)
+                da.to_netcdf(nc_path, encoding={da.name: nc_encoding(da)})
+                write_manifest(nc_path, meta)
+            if need_tif:
+                from .spatial import write_geotiff
+
+                write_geotiff(da, tif_path, labels=time_labels(da, tif_labels_freq))
+                write_manifest(tif_path, meta)
+
+        results[canon] = {
+            "short": short,
+            "kind": kind,
+            "nc": nc_path if nc_path.exists() else None,
+            "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "data": da,
+        }
+    return results
+
+
+# ---------------------------------------------------------------------------
 # One trial-point extraction covers a small area, but a national trial set
 # can span a whole country; fetching one static window for all of it could
 # blow past memory at 30 m. Points are therefore grouped: one window when
@@ -1223,6 +1515,177 @@ def extract_static_points(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Crop-model input assembly (scope map #1): the "last mile" that writes the
+# files a crop model reads, so the modules stop re-implementing readGeo_CM.
+# The layer already produces the ingredients; these orchestrate season-sliced
+# weather (extract) + soil-at-points (extract) + the writers into the engine's
+# per-point folder layout.
+_CM_WEATHER_VARS = ["TMAX", "TMIN", "SRAD", "PRCP"]
+_CM_SOIL_VARS = ["CLAY", "SAND", "SILT", "SOC", "NITROGEN", "PH", "CEC", "BDOD"]
+
+
+def _cm_inputs(
+    points, planting_date, harvest_date, planting_col, harvest_col,
+    lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+):
+    """Resolve the per-point weather (long) and soil (wide) inputs for a writer.
+
+    Fetches them from the layer when not supplied, so a caller can either let
+    ``to_dssat``/``to_apsim`` source everything or pass pre-extracted frames.
+    """
+    df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+    if weather is None:
+        weather = get_season(
+            _CM_WEATHER_VARS, planting_date=planting_date,
+            harvest_date=harvest_date, points=df,
+            planting_col=planting_col, harvest_col=harvest_col,
+            lon_col=lon_col, lat_col=lat_col, source=weather_source, config=config,
+        )
+    if soil is None:
+        soil = extract_static_points(
+            df, _CM_SOIL_VARS, lon_col=lon_col, lat_col=lat_col,
+            source=soil_source, config=config,
+        )
+    return df, lon_col, lat_col, weather, soil
+
+
+def _point_weather_wide(weather_long: pd.DataFrame, point_id) -> pd.DataFrame:
+    """One point's long weather rows -> a wide daily DATE/TMAX/TMIN/SRAD/PRCP frame."""
+    grp = weather_long[weather_long["point"] == point_id]
+    if grp.empty:
+        return grp
+    wide = grp.pivot_table(index="time", columns="variable", values="value")
+    wide = wide.reset_index().rename(columns={"time": "DATE"})
+    wide.columns.name = None
+    return wide
+
+
+def to_dssat(
+    points,
+    planting_date: Optional[str] = None,
+    harvest_date: Optional[str] = None,
+    out_dir=None,
+    planting_col: Optional[str] = None,
+    harvest_col: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    id_col: Optional[str] = None,
+    station_col: Optional[str] = None,
+    country: str = "-99",
+    weather: Optional[pd.DataFrame] = None,
+    soil: Optional[pd.DataFrame] = None,
+    weather_source: Optional[str] = None,
+    soil_source: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> list:
+    """Write DSSAT weather + soil files for every point (retires readGeo_CM).
+
+    For each row of ``points`` (a CSV/DataFrame with lon/lat), writes
+    ``<out_dir>/EXTE<n>/WHTE<n>.WTH`` and ``<out_dir>/EXTE<n>/SOIL.SOL``.
+    Weather is the season slice ``[planting_date, harvest_date]`` (or per-row
+    ``planting_col``/``harvest_col``); soil is SoilGrids at the point plus the
+    Saxton-Rawls hydraulics. Pass ``weather``/``soil`` to reuse frames you have
+    already extracted instead of re-fetching. Returns a list of
+    ``{"point", "dir", "wth", "sol"}`` for the files written.
+    """
+    from .writers import dssat as dssat_w
+    from .writers import soil as soil_w
+    from .writers._common import station_code
+
+    config = config or Config.load()
+    out_dir = Path(out_dir) if out_dir else Path.cwd() / "DSSAT"
+    df, lon_col, lat_col, weather, soil = _cm_inputs(
+        points, planting_date, harvest_date, planting_col, harvest_col,
+        lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+    )
+
+    written = []
+    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+        wide = _point_weather_wide(weather, idx)
+        if wide.empty:
+            logger.warning("Point %s has no weather in season; skipped", idx)
+            continue
+        name = str(prow[station_col]) if station_col else (
+            str(prow[id_col]) if id_col else f"P{n:04d}"
+        )
+        insi = station_code(name)
+        d = out_dir / f"EXTE{n:04d}"
+        wth = dssat_w.write_wth(
+            wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+            path=d / f"WHTE{n:04d}.WTH", station=name,
+        )
+        sol = soil_w.write_sol(
+            soil.loc[idx], lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+            path=d / "SOIL.SOL", pedon=f"{insi}{n:05d}", site=name, country=country,
+        )
+        written.append({"point": idx, "dir": d, "wth": wth, "sol": sol})
+    return written
+
+
+def to_apsim(
+    points,
+    planting_date: Optional[str] = None,
+    harvest_date: Optional[str] = None,
+    out_dir=None,
+    planting_col: Optional[str] = None,
+    harvest_col: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    id_col: Optional[str] = None,
+    station_col: Optional[str] = None,
+    weather: Optional[pd.DataFrame] = None,
+    soil: Optional[pd.DataFrame] = None,
+    weather_source: Optional[str] = None,
+    soil_source: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> list:
+    """Write APSIM weather (.met) + soil-layer table for every point.
+
+    For each row of ``points`` writes ``<out_dir>/EXTE<n>/wth_loc_<n>.met`` and
+    ``<out_dir>/EXTE<n>/soil_<n>.csv`` (the per-layer LL15/DUL/SAT/AirDry/KS/
+    BD/Carbon/clay/silt/N/PH/CEC table, with Salb/CN2Bare in a header comment)
+    — the values ``01_readGeo_CM_zone_APSIM.R`` injects into its apsimx soil
+    template. Same weather/soil sourcing and reuse options as :func:`to_dssat`.
+    Returns a list of ``{"point", "dir", "met", "soil"}``.
+    """
+    from .writers import apsim as apsim_w
+    from .writers import soil as soil_w
+
+    config = config or Config.load()
+    out_dir = Path(out_dir) if out_dir else Path.cwd() / "APSIM"
+    df, lon_col, lat_col, weather, soil = _cm_inputs(
+        points, planting_date, harvest_date, planting_col, harvest_col,
+        lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+    )
+
+    written = []
+    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+        wide = _point_weather_wide(weather, idx)
+        if wide.empty:
+            logger.warning("Point %s has no weather in season; skipped", idx)
+            continue
+        name = str(prow[station_col]) if station_col else (
+            str(prow[id_col]) if id_col else f"P{n:04d}"
+        )
+        d = out_dir / f"EXTE{n:04d}"
+        met = apsim_w.write_met(
+            wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+            path=d / f"wth_loc_{n}.met", site=name,
+        )
+        table = soil_w.apsim_soil_table(soil.loc[idx])
+        soil_csv = d / f"soil_{n}.csv"
+        soil_csv.parent.mkdir(parents=True, exist_ok=True)
+        with open(soil_csv, "w") as fh:
+            fh.write(
+                f"# Salb={table.attrs['Salb']} CN2Bare={table.attrs['CN2Bare']} "
+                f"texture={table.attrs['texture']}\n"
+            )
+            table.to_csv(fh, index=False)
+        written.append({"point": idx, "dir": d, "met": met, "soil": soil_csv})
+    return written
+
+
 __all__ = [
     "get_climate",
     "extract_points",
@@ -1235,5 +1698,8 @@ __all__ = [
     "get_seasonal",
     "get_modis",
     "get_ndvi",
+    "get_season",
     "extract_static_points",
+    "to_dssat",
+    "to_apsim",
 ]
