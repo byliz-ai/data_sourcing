@@ -12,6 +12,7 @@ dependencies:
   - xarray
   - dask
   - netcdf4
+  - scipy
   - rioxarray
   - rasterio
   - geopandas

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agwise-data"
-version = "0.9.0"
+version = "0.9.1"
 description = "AgWise data access layer: one call to fetch, harmonize and cache the climate, soil and terrain data every AgWise module needs"
 readme = "HANDOFF.md"
 requires-python = ">=3.10"
@@ -18,6 +18,7 @@ dependencies = [
     "xarray>=2023.1",
     "dask",
     "netCDF4",
+    "scipy",
     "requests",
     "PyYAML",
     "filelock",
