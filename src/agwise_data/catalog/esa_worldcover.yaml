@@ -1,7 +1,7 @@
 # Catalog entry: ESA WorldCover 10 m global land cover (v200 / 2021 epoch).
 # Fetched from Google Earth Engine; needs personal EE credentials plus a
 # registered Cloud project (AGWISE_GEE_PROJECT or gee_project in
-# ~/.config/agwise_data.yaml) — see docs/credentials_setup.md.
+# ~/.config/agwise_data.yaml) — see HANDOFF.md.
 #
 # AgWise uses it as a static cropland mask for the planting-date phenology
 # workflow. The cropland decision below (class 40, fraction threshold) is

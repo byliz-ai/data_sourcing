@@ -1,7 +1,7 @@
 # Catalog entry: MODIS/Terra vegetation indices, 16-day 250 m composites.
 # Fetched from Google Earth Engine; needs personal EE credentials plus a
 # registered Cloud project (AGWISE_GEE_PROJECT or gee_project in
-# ~/.config/agwise_data.yaml) — see docs/credentials_setup.md.
+# ~/.config/agwise_data.yaml) — see HANDOFF.md.
 #
 # The QA policy below is part of the product definition: changing it
 # changes cached pixel values, so bump `version` if you touch it.

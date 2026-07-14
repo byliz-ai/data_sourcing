@@ -1,7 +1,7 @@
 # Catalog entry: CHIRPS v2.0 daily precipitation.
 # Field names follow the CGIAR Climate Data Hub metadata core (id, title,
 # description, license, providers, extent, version) plus AgWise extensions
-# (variables, access, driver). See docs/architecture.md for the migration
+# (variables, access, driver). See HANDOFF.md for the migration
 # path to the Hub's STAC/OGC Records catalog.
 id: chirps
 title: CHIRPS v2.0 daily precipitation

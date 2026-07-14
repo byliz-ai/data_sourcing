@@ -1,6 +1,6 @@
 # Catalog entry: AgERA5 daily agrometeorological indicators.
 # Downloaded from the Copernicus Climate Data Store (CDS). Requires a free
-# CDS account and a ~/.cdsapirc file — see docs/cglabs_setup.md. Never put
+# CDS account and a ~/.cdsapirc file — see HANDOFF.md. Never put
 # API keys in code.
 id: agera5
 title: AgERA5 daily agrometeorological indicators

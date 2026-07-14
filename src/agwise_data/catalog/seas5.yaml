@@ -1,7 +1,7 @@
 # Catalog entry: ECMWF SEAS5 daily seasonal forecasts/hindcasts.
 # Downloaded from the Copernicus Climate Data Store (CDS) dataset
 # "seasonal-original-single-levels". Requires a free CDS account and a
-# ~/.cdsapirc file — see docs/cglabs_setup.md. Never put API keys in code.
+# ~/.cdsapirc file — see HANDOFF.md. Never put API keys in code.
 id: seas5
 title: ECMWF SEAS5 daily seasonal forecasts and hindcasts
 description: >
