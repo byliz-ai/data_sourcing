@@ -66,12 +66,14 @@ data each module consumes, nothing past it.
 the most duplicated module code (`readGeo_CM_zone`). v0.7.0, 101 network-free
 tests pass (was 71).
 
-**NEXT: scope-map #3 (seasonal-forecast bias correction)** — both halves are
-already here (`get_seasonal` + `get_climate`); add the hindcast-vs-obs
-correction + point-sampling to DSSAT inputs (`Forecast/03_bias_correction_
-forecast_multiVar.R`, `04_prepare_dssat_geo_inputs.R`). Then #4 (MODIS SG-
-smoothing/gap-fill — the Sentinel SG code in `sentinel/script1` extended to
-the MODIS stack) and #5 (RothC monthly-climate inputs incl. a PET layer).
+**NEXT: finish the remaining P1 items** (see the prioritized queue below,
+"Still done by the modules"): (a) `to_wofost` then `to_oryza` crop-model
+writers — start with the WOFOST weather+soil CSV (cleanest, most reuse; exact
+formats + conversions are in that queue's Oryza/WOFOST bullet), and (b) expose
+soil hydraulics (Saxton, already in `writers/soil.py`) + Mehlich-3→Olsen P via
+an `extract_static_points(derive=...)` option / the DSSAT P block. Then the P2
+items (MODIS SG-smoothing, bias correction, RothC inputs, covariates).
+Approved plan: `~/.claude/plans/delightful-forging-peach.md`.
 
 1. ~~**Unblock GEE project access.**~~ **DONE 2026-07-07.** Lizeth's own
    working Cloud project is `moodle-sites-440814` (**an example — every
@@ -178,10 +180,36 @@ duplication × #modules × leverage.**
   below. Was the single biggest duplication (~105 `get_geoSpatialData*` /
   `get_GridCoordinates` copies).
 - **Oryza + WOFOST input writers** — extend the `to_dssat`/`to_apsim`
-  pattern: `to_oryza` (potentialyield `generic/Oryza/OryzaDataFiles.R` +
-  `SoilGrids.R`) and `to_wofost` (potentialyield `generic/WOFOST/grid/
-  5a–5d_prepare_list_{weather,crop,soil,control}.r`; season-slice + rh→vapr
-  unit conversion; ~26 duplicated files). Same ingredients we already produce.
+  pattern: `to_oryza` and `to_wofost`. Same ingredients we already produce
+  (season weather + soil + Saxton hydraulics). **Implementation notes (read
+  the refs 2026-07-14, so the next session need not re-read):**
+  - Ref paths: `agwise-potentialyield/dataops/potentialyield/Script/generic/
+    {Oryza,WOFOST/grid}` (NOT the elided paths the audit printed).
+  - **WOFOST** (`5a–5d_prepare_list_*.r`, `3_define_functions.r`) builds
+    **in-memory R lists**, not text files → portable deliverable = CSV tables
+    (like the APSIM soil table). (a) *weather* (`5a`): columns
+    `date, srad, tmin, tmax, vapr, wind, prec`, season-sliced
+    (`complete.cases`); conversions `tmean=(tmin+tmax)/2`,
+    `vapr = 1000*rh*0.01*esat(tmean)` (esat = Tetens sat. vapour pressure —
+    implement in Python), `srad_kJ = srad_MJ*1000`. Needs **RHUM + WIND**
+    (we have `AGRO.RHUM`/`AGRO.WIND` from AgERA5) on top of the usual four.
+    (b) *soil* (`5c`): WOFOST `SMW`/`SMFCF`/`SM0` = Saxton PWP/FC/SAT →
+    reuse `writers/soil.build_profile`. crop/control (`5b`/`5d`) are
+    scenario/method (leave in module). Start here — cleanest, most reuse.
+  - **Oryza** (`OryzaDataFiles.R`) writes **portable text**: `CONTROL.DAT`
+    (fixed template referencing exp/crop/soil/rerun files) + a `.sol` file:
+    `SCODE='PADDY'` (rice), `NL=8`, `TKL=c(0.05×6, 0.3, 0.4)`; per-layer
+    `CLAYX`/`SANDX` (fractions = %÷100), `BD`, `SOC`, `SON`, `KST`(=KS),
+    `WCST`(=SAT), `WCFC`(=FC), `WCWP`(=PWP), `WCAD`(=PWP−0.02),
+    `WCLI`(=WCST−0.02) + constant paddy/groundwater switches. **Caveat:**
+    ORYZA uses **8 layers** vs our 6 SoilGrids depths → interpolate/remap to
+    the 8-layer TKL before writing. The `.exp`/`.rer` files are
+    experiment/rerun scenario params (method side). ORYZA weather format is
+    NOT in `OryzaDataFiles.R` — check `Utilities.R`/`Setup.r` (per-year
+    station files with radn/tmin/tmax/vapr/wind/rain) before writing weather.
+  - **Verification:** neither has a clean R reader like DSSAT/apsimx —
+    assert file/CSV structure + the unit conversions; optionally run
+    `ORYZA3.exe` (in the Oryza dir) on a sample for Oryza.
 - **Soil hydraulic PTFs + Mehlich-3→Olsen P, exposed as soil enrichment** —
   the Saxton-Rawls hydraulics now live in `writers/soil.py` (used by
   to_dssat/to_apsim); expose them (and the DSSAT P block) as an
