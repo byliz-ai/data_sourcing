@@ -561,12 +561,11 @@ axis with real-date band labels.
 - `replace_outliers` fabricates data
   (replaces ~13% of pixels with the regional mean — consider NaN; science
   decision for Lizeth, still open).
-- **R wrapper bug (pre-existing, found 2026-07-14):** `ad_extract_growing_
-  season` and `ad_extract_points` in `r/agwise_data.R` append
-  `--fill-nearest-m <fill_nearest_m>` but neither has that parameter and the
-  `extract` CLI has no such flag → both error at runtime. Drop those two
-  lines (only `extract-static`/`ad_extract_static_points` take fill-nearest).
-  Not touched this session to keep the crop-model change focused.
+- ~~**R wrapper bug** (`ad_extract_growing_season`/`ad_extract_points`
+  appended `--fill-nearest-m <fill_nearest_m>` — undefined var, no such CLI
+  flag → both errored at runtime)~~ **FIXED 2026-07-14**: dropped the two
+  stray lines; `r/agwise_data.R` parses clean. Only `ad_extract_static_points`
+  legitimately uses `fill_nearest_m` (the `extract-static` CLI accepts it).
 - **Security**: rotate the CDS key hardcoded in the legacy
   `chirps_download 1.R` (cds.climate.copernicus.eu → regenerate token).
 - ~~CI~~ — DONE 2026-07-04: `.github/workflows/tests.yml` pushed (token

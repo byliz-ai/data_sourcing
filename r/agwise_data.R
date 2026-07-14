@@ -95,7 +95,6 @@ ad_extract_growing_season <- function(points, vars, planting_col, harvest_col,
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!legacy_names)     args <- c(args, "--agwise-names")
   if (!is.null(source))  args <- c(args, "--source", source)
-  args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
@@ -119,7 +118,6 @@ ad_extract_points <- function(points, vars, start, end, freq = "daily",
   if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!is.null(source))  args <- c(args, "--source", source)
-  args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
