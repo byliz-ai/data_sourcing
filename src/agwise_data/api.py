@@ -1686,6 +1686,141 @@ def to_apsim(
     return written
 
 
+# ---------------------------------------------------------------------------
+# Spatial scaffolding (scope-map P1): the AOI point-grid generator and the
+# field<->geospatial admin-name linker that every module re-implements
+# (~105 copies of get_GridCoordinates / extract_geoSpatialPointData). Both are
+# thin wrappers over the boundaries the layer already caches (geoBoundaries).
+_KM_PER_DEG_LAT = 111.32
+
+
+def _grid_points(bbox, res_km: float):
+    """Regular lon/lat grid over a bbox at ~res_km spacing (cos-lat scaled)."""
+    w, s, e, n = bbox
+    if res_km <= 0:
+        raise ValueError("res_km must be > 0")
+    mean_lat = (s + n) / 2.0
+    dlat = res_km / _KM_PER_DEG_LAT
+    dlon = res_km / (_KM_PER_DEG_LAT * max(np.cos(np.radians(mean_lat)), 1e-6))
+    lats = np.arange(s, n + 1e-9, dlat)
+    lons = np.arange(w, e + 1e-9, dlon)
+    glon, glat = np.meshgrid(lons, lats)
+    return glon.ravel(), glat.ravel()
+
+
+def _admin_names_for_points(config, country, lons, lats, max_level: int):
+    """point-in-polygon admin names per point: {'NAME_1': [...], 'NAME_2': [...]}.
+
+    Each level is an independent geoBoundaries lookup (ADM1 -> NAME_1,
+    ADM2 -> NAME_2); a missing/unavailable level yields an all-None column
+    with a warning rather than failing the whole call.
+    """
+    import geopandas as gpd
+
+    pts = gpd.GeoDataFrame(
+        {"_i": np.arange(len(lons))},
+        geometry=gpd.points_from_xy(lons, lats),
+        crs="EPSG:4326",
+    )
+    out: Dict[str, np.ndarray] = {}
+    for lvl in range(1, max_level + 1):
+        col = f"NAME_{lvl}"
+        try:
+            gdf = boundaries.load_geometry(config, country, level=lvl)
+        except Exception as exc:  # missing level, network, no shapeName
+            warnings.warn(f"Could not load ADM{lvl} for {country} ({exc}); "
+                          f"{col} left empty.")
+            out[col] = np.array([None] * len(lons), dtype=object)
+            continue
+        right = gdf[["shapeName", "geometry"]].rename(columns={"shapeName": col})
+        joined = gpd.sjoin(pts, right, how="left", predicate="within")
+        # overlapping polygons can duplicate a point; keep its first match
+        joined = joined[~joined["_i"].duplicated(keep="first")].sort_values("_i")
+        out[col] = joined[col].to_numpy()
+    return out
+
+
+def make_grid(
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    res_km: float = 5.0,
+    tag_admin_level: int = 2,
+    config: Optional[Config] = None,
+) -> pd.DataFrame:
+    """Regular point grid clipped to a country/admin boundary (or a bbox).
+
+    Replaces the per-module ``get_GridCoordinates`` / ``getCoordinates``: builds
+    a ~``res_km`` grid (default 5 km; use 1.0 or 0.25 for finer AOIs), keeps the
+    points inside the requested geometry, and tags each with its admin unit
+    names. Returns a DataFrame with ``lon``, ``lat``, ``country`` and (when a
+    country is given) ``NAME_1``/``NAME_2`` up to ``tag_admin_level``. With
+    ``bbox`` only, returns the full rectangular grid (no clip, no admin tags).
+    """
+    config = config or Config.load()
+    geom = None
+    if country:
+        gdf = boundaries.load_geometry(config, country, admin_level, admin_name)
+        region_bbox = boundaries.geometry_bbox(gdf)
+        geom = gdf.geometry.union_all() if hasattr(gdf.geometry, "union_all") \
+            else gdf.geometry.unary_union
+    elif bbox is not None:
+        region_bbox = tuple(float(v) for v in bbox)
+        if len(region_bbox) != 4:
+            raise ValueError("bbox must be (west, south, east, north)")
+    else:
+        raise ValueError("Provide either country=... or bbox=(w, s, e, n)")
+
+    lons, lats = _grid_points(region_bbox, res_km)
+    if geom is not None:
+        import geopandas as gpd
+
+        pts = gpd.GeoSeries(gpd.points_from_xy(lons, lats), crs="EPSG:4326")
+        inside = pts.within(geom).to_numpy()
+        lons, lats = lons[inside], lats[inside]
+    if len(lons) == 0:
+        raise ValueError("Grid is empty (boundary smaller than res_km?)")
+
+    out = pd.DataFrame({"lon": lons, "lat": lats})
+    if country:
+        out.insert(0, "country", boundaries.iso3(country))
+        if tag_admin_level >= 1:
+            names = _admin_names_for_points(
+                config, country, lons, lats, tag_admin_level
+            )
+            for col, vals in names.items():
+                out[col] = vals
+    return out
+
+
+def tag_admin(
+    points,
+    country: str,
+    admin_level: int = 2,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> pd.DataFrame:
+    """Assign admin unit names to points (the field<->geospatial link).
+
+    The reusable half of the modules' ``extract_geoSpatialPointData``: given
+    trial/point coordinates, tag each with ``country`` and ``NAME_1`` (and
+    ``NAME_2`` when ``admin_level >= 2``) via point-in-polygon against
+    geoBoundaries. Returns the input frame with those columns added.
+    """
+    config = config or Config.load()
+    df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+    lons = df[lon_col].to_numpy(dtype=float)
+    lats = df[lat_col].to_numpy(dtype=float)
+    names = _admin_names_for_points(config, country, lons, lats, admin_level)
+    out = df.copy()
+    out["country"] = boundaries.iso3(country)
+    for col, vals in names.items():
+        out[col] = vals
+    return out
+
+
 __all__ = [
     "get_climate",
     "extract_points",
@@ -1702,4 +1837,6 @@ __all__ = [
     "extract_static_points",
     "to_dssat",
     "to_apsim",
+    "make_grid",
+    "tag_admin",
 ]

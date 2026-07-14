@@ -29,12 +29,14 @@ from .api import (
     get_seasonal,
     get_soil,
     get_static,
+    make_grid,
+    tag_admin,
     to_apsim,
     to_dssat,
 )
 from .config import Config
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "get_climate",
@@ -51,6 +53,8 @@ __all__ = [
     "extract_static_points",
     "to_dssat",
     "to_apsim",
+    "make_grid",
+    "tag_admin",
     "Config",
     "__version__",
 ]

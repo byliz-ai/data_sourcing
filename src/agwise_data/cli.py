@@ -385,6 +385,40 @@ def cmd_to_apsim(args) -> dict:
     }
 
 
+def cmd_make_grid(args) -> dict:
+    from .api import make_grid
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    df = make_grid(
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        res_km=args.res_km,
+        tag_admin_level=args.tag_admin_level,
+    )
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+    return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+
+
+def cmd_tag_admin(args) -> dict:
+    from .api import tag_admin
+
+    df = tag_admin(
+        points=args.points,
+        country=args.country,
+        admin_level=args.admin_level,
+        lon_col=args.lon_col,
+        lat_col=args.lat_col,
+    )
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+    return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+
+
 def cmd_catalog(args) -> dict:
     from . import catalog
     from .stac import to_stac_collection
@@ -620,6 +654,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_cropmodel_args(p_apsim, "APSIM")
     p_apsim.set_defaults(func=cmd_to_apsim)
+
+    p_grid = sub.add_parser(
+        "make-grid",
+        help="Regular AOI point grid clipped to a country/admin boundary",
+    )
+    _add_region_args(p_grid)
+    p_grid.add_argument("--out", required=True, help="Output CSV path")
+    p_grid.add_argument("--res-km", dest="res_km", type=float, default=5.0,
+                        help="Grid spacing in km (default 5; 1 or 0.25 for AOIs)")
+    p_grid.add_argument("--tag-admin-level", dest="tag_admin_level", type=int,
+                        default=2, help="Tag NAME_1..NAME_<n> (0 = none)")
+    p_grid.set_defaults(func=cmd_make_grid)
+
+    p_tag = sub.add_parser(
+        "tag-admin",
+        help="Assign country/NAME_1/NAME_2 admin names to points (field↔geo link)",
+    )
+    p_tag.add_argument("--points", required=True, help="CSV with lon/lat columns")
+    p_tag.add_argument("--country", required=True, help="Country name or ISO3")
+    p_tag.add_argument("--out", required=True, help="Output CSV path")
+    p_tag.add_argument("--admin-level", dest="admin_level", type=int, default=2,
+                       help="Deepest admin level to tag (1 or 2)")
+    p_tag.add_argument("--lon-col", dest="lon_col")
+    p_tag.add_argument("--lat-col", dest="lat_col")
+    p_tag.set_defaults(func=cmd_tag_admin)
 
     p_cat = sub.add_parser("catalog", help="Inspect the dataset catalog")
     p_cat.add_argument("action", choices=["list", "show", "stac"])

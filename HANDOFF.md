@@ -2,12 +2,13 @@
 
 Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
-Last updated: 2026-07-14 (**scope-map #1 + #2 DONE, v0.7.0**): `get_season`
-(season-sliced climate/NDVI, cross-year aware) and the crop-model input
-writers `to_dssat`/`to_apsim` (DSSAT `.WTH`+`.SOL`, APSIM `.met`+soil table)
-BUILT + verified (round-tripped through the DSSAT/apsimx R readers; real
-SoilGrids end-to-end). Also fixed a latent AgERA5 driver bug (missing
-`cache` import) that broke every fresh AgERA5 download.
+Last updated: 2026-07-14 (**scope-map #1 + #2 + P1 spatial scaffolding DONE,
+v0.8.0**): `get_season` (season-sliced climate/NDVI, cross-year aware),
+crop-model input writers `to_dssat`/`to_apsim` (DSSAT `.WTH`+`.SOL`, APSIM
+`.met`+soil table), and `make_grid`/`tag_admin` (AOI grid + field↔geo admin
+linking) BUILT + verified (writers round-tripped through the DSSAT/apsimx R
+readers; grid/admin live-verified on real Rwanda). Also fixed a latent AgERA5
+driver bug (missing `cache` import) that broke every fresh AgERA5 download.
 Prior: 2026-07-07 (GEE unblocked `moodle-sites-440814`; MODIS + crop-mask
 live-verified, v0.5.0).
 
@@ -148,10 +149,10 @@ For the **DSSAT & APSIM crop-model modules** (the largest duplication —
 `readGeo_CM`/`get_CM_geo` appears **139×** in potentialyield alone, 113 in
 fertilizer): YES — `get_climate`/`extract_growing_season`/
 `extract_static_points`/`get_season`/`to_dssat`/`to_apsim` now produce the
-season-sliced weather+soil files directly. Remaining gaps to full
-"no-extra-step" coverage are queued below (Oryza/WOFOST writers, the DSSAT P
-block, bias correction, NDVI smoothing, RothC inputs, PET, AOI-grid/field
-linking, extra covariates).
+season-sliced weather+soil files directly. AOI-grid/field linking is now done too
+(`make_grid`/`tag_admin`, v0.8.0). Remaining gaps to full "no-extra-step"
+coverage are queued below (Oryza/WOFOST writers, the DSSAT P block, bias
+correction, NDVI smoothing, RothC inputs, PET, extra covariates).
 
 **Audit basis (2026-07-14).** Inventoried the data-*processing* steps across
 every module repo (fertilizer, fertilizerrequirement, potentialyield,
@@ -172,14 +173,10 @@ duplication × #modules × leverage.**
 - ✅ **Crop-model geo-input assembly (DSSAT/APSIM)** — DONE 2026-07-14
   (`to_dssat`/`to_apsim`, v0.7.0), see "Crop-model inputs" below.
 - ✅ **Season-ready delivery** — DONE 2026-07-14 (`get_season`, v0.6.0).
-- **AOI point-grid generation + field↔geospatial admin linking** — the
-  single biggest duplication (embedded in ~105 `get_geoSpatialData*` copies).
-  `datasourcing/Scripts/generic/get_GridCoordinates.R` (`getCoordinates()`:
-  5 km/1 km/250 m grid over a GADM boundary, filtered by admin-1/admin-2) and
-  the field-trial linker that assigns NAME_1/NAME_2 via `gadm(level=2)` and
-  extracts layers at trial GPS (`extract_geoSpatialPointData`, per-usecase
-  `prep_inputs.R`). Add `make_grid(country, admin, res)` + admin tagging to
-  the boundaries/points API — nearly every module needs it first.
+- ✅ **AOI point-grid generation + field↔geospatial admin linking** — DONE
+  2026-07-14 (`make_grid`/`tag_admin`, v0.8.0), see "Spatial scaffolding"
+  below. Was the single biggest duplication (~105 `get_geoSpatialData*` /
+  `get_GridCoordinates` copies).
 - **Oryza + WOFOST input writers** — extend the `to_dssat`/`to_apsim`
   pattern: `to_oryza` (potentialyield `generic/Oryza/OryzaDataFiles.R` +
   `SoilGrids.R`) and `to_wofost` (potentialyield `generic/WOFOST/grid/
@@ -288,6 +285,30 @@ Next perf work (priority order):
 7. **Windowed/point-native soil**: for a handful of trial points prefer the
    SoilGrids point/WCS path over caching a whole regional soil cube (the
    Oryza `SoilGrids.R` REST-per-point approach) when the point count is small.
+
+## Spatial scaffolding (scope-map P1, BUILT + VERIFIED 2026-07-14, v0.8.0)
+
+The AOI grid + field↔geospatial admin linker every module re-implements
+(~105 copies). Thin wrappers over the cached geoBoundaries; no new source.
+
+- **`make_grid`** (`api`, CLI `make-grid`, R `ad_make_grid`) — regular
+  ~`res_km` point grid (default 5 km; 1.0/0.25 for AOIs) clipped to a
+  country/admin boundary (or a bbox), each point tagged `country` +
+  `NAME_1`/`NAME_2` up to `tag_admin_level`. Replaces
+  `get_GridCoordinates.R`/`getCoordinates()`.
+- **`tag_admin`** (`api`, CLI `tag-admin`, R `ad_tag_admin`) — assign
+  `country`/`NAME_1`/`NAME_2` to arbitrary points via point-in-polygon
+  (geoBoundaries per level). The reusable half of the modules'
+  `extract_geoSpatialPointData` field↔geo link.
+- Helpers in `api.py`: `_grid_points` (cos-lat degree spacing),
+  `_admin_names_for_points` (per-level `gpd.sjoin` within; missing level →
+  all-None column + warning, never fails the call).
+- **8 tests** (`tests/test_grid.py`, network-free via synthetic polygons).
+  **Live-verified**: `make_grid("Rwanda", res_km=10)` → 238 points, all
+  tagged (5 provinces incl. City of Kigali + districts); `tag_admin` correct
+  (Kigali→City of Kigali/Nyarugenge, etc.). 108 network-free tests pass.
+- Note: geoBoundaries has no built-in NAME_1↔NAME_2 hierarchy, so each level
+  is an independent point-in-polygon lookup (both correct for the point).
 
 ## Crop-model inputs (scope-map #1 + #2, BUILT + VERIFIED 2026-07-14, v0.7.0)
 

@@ -315,6 +315,48 @@ ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
   if (length(rasters) == 1) rasters[[1]] else rasters
 }
 
+#' Regular AOI point grid clipped to a country/admin boundary.
+#'
+#' Replaces per-module get_GridCoordinates: a ~res_km grid over the boundary,
+#' clipped to it, each point tagged with country/NAME_1/NAME_2. Returns a
+#' data.frame (lon, lat, country, NAME_1, NAME_2). With bbox only, returns the
+#' full rectangular grid (no clip, no admin tags).
+ad_make_grid <- function(country = NULL, bbox = NULL, admin_level = 0,
+                         admin_name = NULL, res_km = 5, tag_admin_level = 2) {
+  out_csv <- tempfile(fileext = ".csv")
+  args <- c("make-grid", "--out", out_csv,
+            "--res-km", as.character(res_km),
+            "--tag-admin-level", as.character(tag_admin_level))
+  if (!is.null(country))    args <- c(args, "--country", country)
+  if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  res <- ad_run(args)
+  utils::read.csv(res$outputs[[1]]$csv)
+}
+
+#' Assign admin unit names to points (field↔geospatial link).
+#'
+#' The reusable half of the modules' extract_geoSpatialPointData: tag each
+#' trial/point coordinate with country and NAME_1 (and NAME_2 when
+#' admin_level >= 2) via point-in-polygon against geoBoundaries. Returns the
+#' input data.frame with those columns added.
+ad_tag_admin <- function(points, country, admin_level = 2,
+                         lon_col = NULL, lat_col = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  out_csv <- tempfile(fileext = ".csv")
+  args <- c("tag-admin", "--points", points_csv, "--country", country,
+            "--out", out_csv, "--admin-level", as.character(admin_level))
+  if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
+  res <- ad_run(args)
+  utils::read.csv(res$outputs[[1]]$csv)
+}
+
 #' Write DSSAT weather (.WTH) + soil (.SOL) files for trial/AOI points.
 #'
 #' The "last mile" that retires the per-module readGeo_CM_zone.R: for each
