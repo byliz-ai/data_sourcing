@@ -17,6 +17,7 @@ Public API::
 """
 
 from .api import (
+    bias_correct,
     extract_growing_season,
     extract_points,
     extract_static_points,
@@ -36,7 +37,7 @@ from .api import (
 )
 from .config import Config
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "get_climate",
@@ -55,6 +56,7 @@ __all__ = [
     "to_apsim",
     "make_grid",
     "tag_admin",
+    "bias_correct",
     "Config",
     "__version__",
 ]

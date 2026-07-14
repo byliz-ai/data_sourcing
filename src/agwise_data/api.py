@@ -1687,6 +1687,110 @@ def to_apsim(
 
 
 # ---------------------------------------------------------------------------
+# Seasonal-forecast bias correction (scope-map #3): QDM the raw SEAS5 forecast
+# against the hindcast-vs-observation bias, producing analysis-ready fields.
+# Both input halves already exist (get_seasonal + get_climate); this adds the
+# correction. The QDM maths live in forecast.py.
+def bias_correct(
+    variables: Union[str, Sequence[str]],
+    init_month: int,
+    forecast_year: int,
+    calib_years: Sequence[int],
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    window_days: Optional[int] = None,
+    obs: Optional[dict] = None,
+    hind: Optional[dict] = None,
+    fcst: Optional[dict] = None,
+    source: Optional[str] = None,
+    out_format: Union[str, Sequence[str]] = "nc",
+    out_dir=None,
+    overwrite: bool = False,
+    config: Optional[Config] = None,
+) -> Dict[str, dict]:
+    """Bias-correct a SEAS5 seasonal forecast (QDM) — scope-map #3.
+
+    Learns the model bias from the **hindcast vs observations** over
+    ``calib_years`` and applies Quantile Delta Mapping to the ``forecast_year``
+    forecast (init month ``init_month``), per variable (additive for
+    temperatures, multiplicative for PRCP/SRAD). Returns
+    ``{canonical_variable: {"short", "kind", "nc", "data"}}`` with the
+    corrected cube ``(member, time, lat, lon)`` on the observation grid, written
+    as ``Seasonal_<SHORT>_i<MM>_<fy>_BC``.
+
+    Fetches the three inputs itself (``get_climate`` for obs, ``get_seasonal``
+    for hindcast + forecast) unless ``obs``/``hind``/``fcst`` dicts (keyed by
+    canonical variable) are supplied — the latter is how it is tested offline.
+    ``window_days`` restricts QDM calibration to +/- that many days-of-year of
+    each step (``None`` pools the whole season).
+    """
+    from . import forecast as _fc
+
+    config = config or Config.load()
+    variables = _as_variables(variables)
+    calib_years = _as_years(calib_years)
+    formats = [out_format] if isinstance(out_format, str) else list(out_format)
+    for f in formats:
+        if f not in ("nc",):
+            raise ValueError("bias_correct writes NetCDF only (ensemble cube)")
+
+    _, _, tag = _resolve_region(config, country, bbox, admin_level, admin_name)
+    out_root = Path(out_dir) if out_dir else config.products_dir(tag)
+    region = dict(country=country, bbox=bbox, admin_level=admin_level,
+                  admin_name=admin_name, config=config)
+
+    results: Dict[str, dict] = {}
+    for var in variables:
+        short = short_name(var)
+        if short not in _fc.DEFAULT_KIND:
+            raise ValueError(
+                f"No bias-correction transform defined for {var} "
+                f"(known: {sorted(_fc.DEFAULT_KIND)})"
+            )
+        kind = _fc.DEFAULT_KIND[short]
+        obs_da = (obs or {}).get(var)
+        if obs_da is None:
+            obs_da = get_climate(var, calib_years, freq="daily", source=source,
+                                 **region)[var]["data"]
+        hind_da = (hind or {}).get(var)
+        if hind_da is None:
+            hind_da = get_seasonal(var, init_month, calib_years,
+                                   ensemble="members", source=source,
+                                   **region)[var]["data"]
+        fcst_da = (fcst or {}).get(var)
+        if fcst_da is None:
+            fcst_da = get_seasonal(var, init_month, forecast_year,
+                                   ensemble="members", source=source,
+                                   **region)[var]["data"]
+
+        corrected = _fc.bias_correct_cube(obs_da, hind_da, fcst_da, kind,
+                                          window_days).load()
+        corrected.name = corrected.name or short
+        stem = f"Seasonal_{short}_i{init_month:02d}_{forecast_year}_BC"
+        nc_path = out_root / f"{stem}.nc"
+        if overwrite or not nc_path.exists():
+            from .drivers.seasonal import seasonal_nc_encoding
+
+            nc_path.parent.mkdir(parents=True, exist_ok=True)
+            corrected.to_netcdf(
+                nc_path, encoding={corrected.name: seasonal_nc_encoding(corrected)}
+            )
+            write_manifest(nc_path, {
+                "variable": var, "region": tag, "method": f"qdm-{kind}",
+                "init_month": init_month, "forecast_year": forecast_year,
+                "calib_years": [calib_years[0], calib_years[-1]],
+                "window_days": window_days,
+            })
+        results[var] = {
+            "short": short, "kind": kind,
+            "nc": nc_path if nc_path.exists() else None, "data": corrected,
+        }
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Spatial scaffolding (scope-map P1): the AOI point-grid generator and the
 # field<->geospatial admin-name linker that every module re-implements
 # (~105 copies of get_GridCoordinates / extract_geoSpatialPointData). Both are
@@ -1839,4 +1943,5 @@ __all__ = [
     "to_apsim",
     "make_grid",
     "tag_admin",
+    "bias_correct",
 ]

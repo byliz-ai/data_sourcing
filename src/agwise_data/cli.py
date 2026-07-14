@@ -385,6 +385,34 @@ def cmd_to_apsim(args) -> dict:
     }
 
 
+def cmd_bias_correct(args) -> dict:
+    from .api import bias_correct
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    results = bias_correct(
+        variables=args.vars,
+        init_month=args.init_month,
+        forecast_year=args.forecast_year,
+        calib_years=_parse_years(args.calib_years),
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        window_days=args.window_days,
+        source=args.source,
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        overwrite=args.overwrite,
+    )
+    return {
+        "ok": True,
+        "outputs": [
+            {"variable": var, "short": info["short"], "kind": info["kind"],
+             "nc": str(info["nc"]) if info["nc"] else None}
+            for var, info in results.items()
+        ],
+    }
+
+
 def cmd_make_grid(args) -> dict:
     from .api import make_grid
 
@@ -654,6 +682,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_cropmodel_args(p_apsim, "APSIM")
     p_apsim.set_defaults(func=cmd_to_apsim)
+
+    p_bc = sub.add_parser(
+        "bias-correct",
+        help="QDM bias-correct a SEAS5 forecast against hindcast-vs-obs",
+    )
+    p_bc.add_argument("--vars", required=True, help="e.g. PRCP,TMAX,TMIN,SRAD")
+    p_bc.add_argument("--init-month", dest="init_month", type=int, required=True,
+                      help="Forecast initialization month (1-12)")
+    p_bc.add_argument("--forecast-year", dest="forecast_year", type=int,
+                      required=True, help="Target forecast year to correct")
+    p_bc.add_argument("--calib-years", dest="calib_years", required=True,
+                      help="Hindcast calibration years, e.g. 1993:2016")
+    _add_region_args(p_bc)
+    p_bc.add_argument("--window-days", dest="window_days", type=int, default=None,
+                      help="DOY half-window for calibration (default: whole season)")
+    p_bc.add_argument("--source", help="Override the seasonal source (default seas5)")
+    p_bc.add_argument("--out-dir", dest="out_dir")
+    p_bc.add_argument("--overwrite", action="store_true")
+    p_bc.set_defaults(func=cmd_bias_correct)
 
     p_grid = sub.add_parser(
         "make-grid",

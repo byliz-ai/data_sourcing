@@ -2,13 +2,14 @@
 
 Session state for `agwise-data` (repo: `byliz-ai/data_sourcing`). Read this
 first; it is written so the next session does not have to re-derive anything.
-Last updated: 2026-07-14 (**scope-map #1 + #2 + P1 spatial scaffolding DONE,
-v0.8.0**): `get_season` (season-sliced climate/NDVI, cross-year aware),
-crop-model input writers `to_dssat`/`to_apsim` (DSSAT `.WTH`+`.SOL`, APSIM
-`.met`+soil table), and `make_grid`/`tag_admin` (AOI grid + field↔geo admin
-linking) BUILT + verified (writers round-tripped through the DSSAT/apsimx R
-readers; grid/admin live-verified on real Rwanda). Also fixed a latent AgERA5
-driver bug (missing `cache` import) that broke every fresh AgERA5 download.
+Last updated: 2026-07-14 (**v0.9.0**): this session added `get_season`
+(season slice), `to_dssat`/`to_apsim` (crop-model files), `make_grid`/
+`tag_admin` (AOI grid + field↔geo admin linking), and now **`bias_correct`**
+(QDM seasonal-forecast bias correction, scope-map #3a — cubes). All verified
+(writers round-tripped through DSSAT/apsimx R readers; grid/admin live on real
+Rwanda; QDM offline). Also fixed a latent AgERA5 bug (missing `cache` import)
+and the R `--fill-nearest-m` wrapper bug, and made `replace_outliers`
+configurable (default `nan`). **Next: #3b — forecast → DSSAT point inputs.**
 Prior: 2026-07-07 (GEE unblocked `moodle-sites-440814`; MODIS + crop-mask
 live-verified, v0.5.0).
 
@@ -229,10 +230,15 @@ duplication × #modules × leverage.**
   gap-fill + Savitzky-Golay `sgolayfilt(p=3, n=9)`** per pixel. Port to a
   `smooth_ndvi()` on the MODIS stack (SG code exists in `sentinel/script1`).
   Add VIIRS as an alt source (`get_MODISData_VIIRS.R`).
-- **Seasonal-forecast bias correction** — planting-date `Forecast/
-  03_bias_correction_forecast_multiVar.R`: hindcast-vs-obs → bias-adjusted
-  fields; both halves here (`get_seasonal`+`get_climate`); add the correction
-  + point-sampling to DSSAT inputs (`04_prepare_dssat_geo_inputs.R`).
+- **Seasonal-forecast bias correction** (#3) — *cubes half* **DONE
+  2026-07-14** (`bias_correct`, v0.9.0): QDM (Cannon 2015) hindcast-vs-obs →
+  bias-adjusted forecast cubes, per-var (additive temps, multiplicative
+  PRCP/SRAD), reproducing `03_bias_correction_forecast_multiVar.R`'s method
+  (climate4R `biasCorrection(method="qdm")`). See "Forecast bias correction"
+  section below. **STILL PENDING (#3b): point-sampling to DSSAT inputs**
+  (`04_prepare_dssat_geo_inputs.R`) — sample the corrected cube at points and
+  write DSSAT weather via the existing writers; ensemble handling
+  (per-member vs reduced). This is the next task.
 - **RothC inputs (soilhealth pipeline)** — beyond monthly climate (delivered):
   `calculate_socStock.R` (SOC stock 0–30 cm from OC/BDOD/CFVO + AfSIS),
   `calculate_NPP.R` (Miami-model NPP from monthly climate), `download_PET_
@@ -316,6 +322,36 @@ Next perf work (priority order):
 7. **Windowed/point-native soil**: for a handful of trial points prefer the
    SoilGrids point/WCS path over caching a whole regional soil cube (the
    Oryza `SoilGrids.R` REST-per-point approach) when the point count is small.
+
+## Forecast bias correction (scope-map #3a, BUILT + VERIFIED 2026-07-14, v0.9.0)
+
+QDM correction of the SEAS5 forecast — the missing step between `get_seasonal`
+(raw forecast) and analysis-ready fields. No new source; uses `get_seasonal`
+(hindcast + target forecast) + `get_climate` (observations).
+
+- **`bias_correct(variables, init_month, forecast_year, calib_years,
+  country/bbox, window_days=None, ...)`** (`api`, CLI `bias-correct`, R
+  `ad_bias_correct`) → `{var: {short, kind, nc, data}}`, corrected cube
+  `(member, time, lat, lon)` on the **obs grid**, written
+  `Seasonal_<SHORT>_i<MM>_<fy>_BC.nc`. Fetches obs/hind/fcst itself, or accepts
+  `obs=`/`hind=`/`fcst=` dicts (keyed by canonical var) to skip the fetch —
+  the offline-test path (mirrors `to_dssat`'s `weather=`/`soil=`).
+- **Method** in `forecast.py`: `quantile_delta_map(values, obs, hind, kind)` —
+  QDM (Cannon et al. 2015), preserves the model's own delta at each quantile;
+  `kind` from `DEFAULT_KIND` (additive TMAX/TMIN/TEMP, multiplicative
+  PRCP/SRAD, matching the reference's `scaling.type`). `bias_correct_cube`
+  interpolates the coarse forecast onto the obs grid (downscaling, as the ref's
+  `interpGrid` does), pools hindcast members into the model climatology, and
+  QDM-maps per pixel; optional `window_days` for a day-of-year moving window
+  (default = whole-season pooling). Reproduces the *method* of climate4R's
+  `biasCorrection(method="qdm", window=c(30,7))`; not a byte-clone.
+- **9 tests** (`tests/test_forecast.py`, offline synthetic): additive removes a
+  +3 bias while keeping the forecast's +1 anomaly (24→21); multiplicative
+  handles a 1.5×/1.2× precip case with no negatives; cube regrid + API
+  injection. **Live verify deferred** (needs a real SEAS5 hindcast pull via
+  CDS + CHIRPS/AgERA5; note the CHIRPS windowed-COG/403 caveat in Performance).
+- **Perf note**: the per-pixel QDM loop is fine for tests/moderate grids but
+  should be vectorized before large-country live runs.
 
 ## Spatial scaffolding (scope-map P1, BUILT + VERIFIED 2026-07-14, v0.8.0)
 

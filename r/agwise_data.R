@@ -313,6 +313,38 @@ ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
   if (length(rasters) == 1) rasters[[1]] else rasters
 }
 
+#' Bias-correct a SEAS5 seasonal forecast (QDM) against hindcast-vs-obs.
+#'
+#' Scope-map #3: learns the model bias from hindcast vs observations over
+#' `calib_years` and applies Quantile Delta Mapping to the `forecast_year`
+#' forecast (additive for temperatures, multiplicative for PRCP/SRAD). Both
+#' input halves come from the layer (`get_seasonal` + `get_climate`). Returns
+#' a named list of bias-corrected NetCDF cube paths (member,time,lat,lon).
+#' NOTE: distinct from `get_seasonal` (raw forecast) — this is the corrected,
+#' analysis-ready output.
+ad_bias_correct <- function(vars, init_month, forecast_year, calib_years,
+                            country = NULL, bbox = NULL, admin_level = 0,
+                            admin_name = NULL, window_days = NULL,
+                            source = NULL, overwrite = FALSE) {
+  args <- c("bias-correct",
+            "--vars", paste(vars, collapse = ","),
+            "--init-month", as.character(init_month),
+            "--forecast-year", as.character(forecast_year),
+            "--calib-years", paste0(min(calib_years), ":", max(calib_years)))
+  if (!is.null(country))     args <- c(args, "--country", country)
+  if (!is.null(bbox))        args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)       args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name))  args <- c(args, "--admin-name", admin_name)
+  if (!is.null(window_days)) args <- c(args, "--window-days", as.character(window_days))
+  if (!is.null(source))      args <- c(args, "--source", source)
+  if (overwrite)             args <- c(args, "--overwrite")
+
+  res <- ad_run(args)
+  paths <- lapply(res$outputs, function(o) o$nc)
+  names(paths) <- vapply(res$outputs, function(o) o$short, character(1))
+  paths
+}
+
 #' Regular AOI point grid clipped to a country/admin boundary.
 #'
 #' Replaces per-module get_GridCoordinates: a ~res_km grid over the boundary,
