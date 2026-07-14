@@ -18,6 +18,7 @@ Public API::
 
 from .api import (
     bias_correct,
+    forecast_to_dssat,
     extract_growing_season,
     extract_points,
     extract_static_points,
@@ -57,6 +58,7 @@ __all__ = [
     "make_grid",
     "tag_admin",
     "bias_correct",
+    "forecast_to_dssat",
     "Config",
     "__version__",
 ]

@@ -5,11 +5,13 @@ first; it is written so the next session does not have to re-derive anything.
 Last updated: 2026-07-14 (**v0.9.0**): this session added `get_season`
 (season slice), `to_dssat`/`to_apsim` (crop-model files), `make_grid`/
 `tag_admin` (AOI grid + field↔geo admin linking), and now **`bias_correct`**
-(QDM seasonal-forecast bias correction, scope-map #3a — cubes). All verified
-(writers round-tripped through DSSAT/apsimx R readers; grid/admin live on real
-Rwanda; QDM offline). Also fixed a latent AgERA5 bug (missing `cache` import)
-and the R `--fill-nearest-m` wrapper bug, and made `replace_outliers`
-configurable (default `nan`). **Next: #3b — forecast → DSSAT point inputs.**
+(seasonal-forecast bias correction, scope-map #3 — QDM cubes `bias_correct`
++ forecast→DSSAT `forecast_to_dssat`). All verified (writers round-tripped
+through DSSAT/apsimx R readers; grid/admin live on real Rwanda; QDM +
+forecast→DSSAT offline). Also fixed a latent AgERA5 bug (missing `cache`
+import) and the R `--fill-nearest-m` wrapper bug, and made `replace_outliers`
+configurable (default `nan`). **Forecast (#3) fully done; P1 Oryza/WOFOST
+writers + soil-hydraulics/P and P2 remainder stay paused per Lizeth.**
 Prior: 2026-07-07 (GEE unblocked `moodle-sites-440814`; MODIS + crop-mask
 live-verified, v0.5.0).
 
@@ -230,15 +232,12 @@ duplication × #modules × leverage.**
   gap-fill + Savitzky-Golay `sgolayfilt(p=3, n=9)`** per pixel. Port to a
   `smooth_ndvi()` on the MODIS stack (SG code exists in `sentinel/script1`).
   Add VIIRS as an alt source (`get_MODISData_VIIRS.R`).
-- **Seasonal-forecast bias correction** (#3) — *cubes half* **DONE
-  2026-07-14** (`bias_correct`, v0.9.0): QDM (Cannon 2015) hindcast-vs-obs →
-  bias-adjusted forecast cubes, per-var (additive temps, multiplicative
-  PRCP/SRAD), reproducing `03_bias_correction_forecast_multiVar.R`'s method
-  (climate4R `biasCorrection(method="qdm")`). See "Forecast bias correction"
-  section below. **STILL PENDING (#3b): point-sampling to DSSAT inputs**
-  (`04_prepare_dssat_geo_inputs.R`) — sample the corrected cube at points and
-  write DSSAT weather via the existing writers; ensemble handling
-  (per-member vs reduced). This is the next task.
+- ✅ **Seasonal-forecast bias correction** (#3) — **DONE 2026-07-14**
+  (v0.9.0): both halves. #3a `bias_correct` (QDM cubes) + #3b
+  `forecast_to_dssat` (sample corrected cube at points, reduce ensemble
+  mean/median, write DSSAT `.WTH`+`.SOL` via the existing writers). Reproduces
+  `03_bias_correction_forecast_multiVar.R` + `04_prepare_dssat_geo_inputs.R` +
+  `readGeo_CM`. See "Forecast bias correction" section below.
 - **RothC inputs (soilhealth pipeline)** — beyond monthly climate (delivered):
   `calculate_socStock.R` (SOC stock 0–30 cm from OC/BDOD/CFVO + AfSIS),
   `calculate_NPP.R` (Miami-model NPP from monthly climate), `download_PET_
@@ -323,7 +322,7 @@ Next perf work (priority order):
    SoilGrids point/WCS path over caching a whole regional soil cube (the
    Oryza `SoilGrids.R` REST-per-point approach) when the point count is small.
 
-## Forecast bias correction (scope-map #3a, BUILT + VERIFIED 2026-07-14, v0.9.0)
+## Forecast bias correction (scope-map #3, BUILT + VERIFIED 2026-07-14, v0.9.0)
 
 QDM correction of the SEAS5 forecast — the missing step between `get_seasonal`
 (raw forecast) and analysis-ready fields. No new source; uses `get_seasonal`
@@ -350,6 +349,15 @@ QDM correction of the SEAS5 forecast — the missing step between `get_seasonal`
   handles a 1.5×/1.2× precip case with no negatives; cube regrid + API
   injection. **Live verify deferred** (needs a real SEAS5 hindcast pull via
   CDS + CHIRPS/AgERA5; note the CHIRPS windowed-COG/403 caveat in Performance).
+- **`forecast_to_dssat(points, init_month, forecast_year, calib_years, ...)`**
+  (#3b; `api`, CLI `forecast-to-dssat`, R `ad_forecast_to_dssat`) — chains
+  `bias_correct` (PRCP/TMAX/TMIN/SRAD) into `to_dssat`: samples the corrected
+  cube at each point, reduces the ensemble (`mean`/`median`, matching the
+  reference's single-series output), writes `EXTE<n>/WHTE<n>.WTH` + `SOIL.SOL`.
+  Accepts `corrected=` (a `bias_correct` result) + `soil=` to skip fetches
+  (offline-test path). Replaces `04_prepare_dssat_geo_inputs.R` + `readGeo_CM`
+  for the forecast case. 2 offline tests. (Per-member DSSAT folders are a
+  future option; currently reduces to one series per point.)
 - **Perf note**: the per-pixel QDM loop is fine for tests/moderate grids but
   should be vectorized before large-country live runs.
 

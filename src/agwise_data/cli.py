@@ -413,6 +413,41 @@ def cmd_bias_correct(args) -> dict:
     }
 
 
+def cmd_forecast_to_dssat(args) -> dict:
+    from .api import forecast_to_dssat
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    res = forecast_to_dssat(
+        points=args.points,
+        init_month=args.init_month,
+        forecast_year=args.forecast_year,
+        calib_years=_parse_years(args.calib_years),
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        ensemble=args.ensemble,
+        window_days=args.window_days,
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        lon_col=args.lon_col,
+        lat_col=args.lat_col,
+        id_col=args.id_col,
+        station_col=args.station_col,
+        country_name=args.country_name or "-99",
+        soil_source=args.soil_source,
+        weather_source=args.weather_source,
+    )
+    return {
+        "ok": True,
+        "n_points": len(res),
+        "outputs": [
+            {"point": str(r["point"]), "dir": str(r["dir"]),
+             "wth": str(r["wth"]), "sol": str(r["sol"])}
+            for r in res
+        ],
+    }
+
+
 def cmd_make_grid(args) -> dict:
     from .api import make_grid
 
@@ -701,6 +736,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_bc.add_argument("--out-dir", dest="out_dir")
     p_bc.add_argument("--overwrite", action="store_true")
     p_bc.set_defaults(func=cmd_bias_correct)
+
+    p_f2d = sub.add_parser(
+        "forecast-to-dssat",
+        help="Bias-corrected SEAS5 forecast -> DSSAT weather+soil files at points",
+    )
+    p_f2d.add_argument("--points", required=True, help="CSV with lon/lat columns")
+    p_f2d.add_argument("--init-month", dest="init_month", type=int, required=True)
+    p_f2d.add_argument("--forecast-year", dest="forecast_year", type=int, required=True)
+    p_f2d.add_argument("--calib-years", dest="calib_years", required=True,
+                       help="Hindcast calibration years, e.g. 1993:2016")
+    _add_region_args(p_f2d)
+    p_f2d.add_argument("--out-dir", dest="out_dir", help="Output root (default ./DSSAT)")
+    p_f2d.add_argument("--ensemble", choices=["mean", "median"], default="mean",
+                       help="Reduce the forecast ensemble to one weather series")
+    p_f2d.add_argument("--window-days", dest="window_days", type=int, default=None)
+    p_f2d.add_argument("--lon-col", dest="lon_col")
+    p_f2d.add_argument("--lat-col", dest="lat_col")
+    p_f2d.add_argument("--id-col", dest="id_col")
+    p_f2d.add_argument("--station-col", dest="station_col")
+    p_f2d.add_argument("--country-name", dest="country_name",
+                       help="Country label for the soil profile header")
+    p_f2d.add_argument("--soil-source", dest="soil_source")
+    p_f2d.add_argument("--weather-source", dest="weather_source")
+    p_f2d.set_defaults(func=cmd_forecast_to_dssat)
 
     p_grid = sub.add_parser(
         "make-grid",

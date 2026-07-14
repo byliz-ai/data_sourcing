@@ -1790,6 +1790,81 @@ def bias_correct(
     return results
 
 
+_FORECAST_WEATHER_VARS = ["PRCP", "TMAX", "TMIN", "SRAD"]
+
+
+def forecast_to_dssat(
+    points,
+    init_month: int,
+    forecast_year: int,
+    calib_years: Sequence[int],
+    out_dir=None,
+    ensemble: str = "mean",
+    window_days: Optional[int] = None,
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    id_col: Optional[str] = None,
+    station_col: Optional[str] = None,
+    country_name: str = "-99",
+    corrected: Optional[dict] = None,
+    soil: Optional[pd.DataFrame] = None,
+    soil_source: Optional[str] = None,
+    weather_source: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> list:
+    """Bias-corrected seasonal forecast -> DSSAT weather+soil files (#3b).
+
+    Chains :func:`bias_correct` (QDM the PRCP/TMAX/TMIN/SRAD forecast) into the
+    :func:`to_dssat` writer: samples the corrected cube at each point, reduces
+    the ensemble (``"mean"``/``"median"``, as the reference's single-series
+    output does), and writes ``EXTE<n>/WHTE<n>.WTH`` + ``SOIL.SOL``. The
+    weather is the forecast season; soil comes from ``extract_static_points``
+    (or a provided ``soil`` frame). Pass ``corrected`` (the
+    :func:`bias_correct` result) to skip the QDM step — the offline-test path.
+    Returns the :func:`to_dssat` manifest.
+    """
+    config = config or Config.load()
+    if ensemble not in ("mean", "median"):
+        raise ValueError("ensemble must be 'mean' or 'median'")
+    df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+
+    if corrected is None:
+        corrected = bias_correct(
+            _FORECAST_WEATHER_VARS, init_month, forecast_year, calib_years,
+            country=country, bbox=bbox, admin_level=admin_level,
+            admin_name=admin_name, window_days=window_days,
+            source=weather_source, config=config,
+        )
+
+    lons = df[lon_col].to_numpy(dtype=float)
+    lats = df[lat_col].to_numpy(dtype=float)
+    frames = []
+    for var, info in corrected.items():
+        cube = info["data"] if isinstance(info, dict) else info
+        short = cube.name or short_name(var)
+        if "member" in cube.dims:
+            cube = cube.mean("member") if ensemble == "mean" else cube.median("member")
+        series = _point_series(cube, lons, lats).load()  # (time, point)
+        long = series.to_pandas()
+        long.columns = df.index
+        long = long.reset_index().melt(
+            id_vars="time", var_name="point", value_name="value"
+        )
+        long["variable"] = short
+        frames.append(long)
+    weather = pd.concat(frames, ignore_index=True)
+
+    return to_dssat(
+        df, out_dir=out_dir, weather=weather, soil=soil, soil_source=soil_source,
+        lon_col=lon_col, lat_col=lat_col, id_col=id_col, station_col=station_col,
+        country=country_name, config=config,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Spatial scaffolding (scope-map P1): the AOI point-grid generator and the
 # field<->geospatial admin-name linker that every module re-implements
@@ -1944,4 +2019,5 @@ __all__ = [
     "make_grid",
     "tag_admin",
     "bias_correct",
+    "forecast_to_dssat",
 ]

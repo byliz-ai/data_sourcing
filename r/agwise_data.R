@@ -345,6 +345,46 @@ ad_bias_correct <- function(vars, init_month, forecast_year, calib_years,
   paths
 }
 
+#' Bias-corrected seasonal forecast -> DSSAT weather+soil files at points.
+#'
+#' Scope-map #3b: QDM-corrects the SEAS5 forecast (bias_correct), samples it at
+#' each point, reduces the ensemble (mean/median), and writes EXTE<n>/WHTE<n>.WTH
+#' + SOIL.SOL via the DSSAT writer. Returns a data.frame of the files written.
+ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
+                                 out_dir = NULL, ensemble = "mean",
+                                 window_days = NULL, country = NULL, bbox = NULL,
+                                 admin_level = 0, admin_name = NULL,
+                                 lon_col = NULL, lat_col = NULL, id_col = NULL,
+                                 station_col = NULL, country_name = NULL,
+                                 soil_source = NULL, weather_source = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  args <- c("forecast-to-dssat", "--points", points_csv,
+            "--init-month", as.character(init_month),
+            "--forecast-year", as.character(forecast_year),
+            "--calib-years", paste0(min(calib_years), ":", max(calib_years)),
+            "--ensemble", ensemble)
+  if (!is.null(out_dir))        args <- c(args, "--out-dir", out_dir)
+  if (!is.null(window_days))    args <- c(args, "--window-days", as.character(window_days))
+  if (!is.null(country))        args <- c(args, "--country", country)
+  if (!is.null(bbox))           args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)          args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name))     args <- c(args, "--admin-name", admin_name)
+  if (!is.null(lon_col))        args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col))        args <- c(args, "--lat-col", lat_col)
+  if (!is.null(id_col))         args <- c(args, "--id-col", id_col)
+  if (!is.null(station_col))    args <- c(args, "--station-col", station_col)
+  if (!is.null(country_name))   args <- c(args, "--country-name", country_name)
+  if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
+  if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
+
+  res <- ad_run(args)
+  do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
+}
+
 #' Regular AOI point grid clipped to a country/admin boundary.
 #'
 #' Replaces per-module get_GridCoordinates: a ~res_km grid over the boundary,

@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from agwise_data.api import bias_correct
+from agwise_data.api import bias_correct, forecast_to_dssat
 from agwise_data.forecast import bias_correct_cube, quantile_delta_map
 
 
@@ -112,3 +112,65 @@ def test_bias_correct_unknown_variable_raises(config):
         bias_correct(["RHUM"], init_month=2, forecast_year=2021,
                      calib_years=[2001], bbox=[30.0, -2.0, 30.1, -1.9],
                      obs={}, hind={}, fcst={}, config=config)
+
+
+# --------------------------------------------------------------------------
+# forecast_to_dssat (#3b) — corrected-cube injection, no network
+# --------------------------------------------------------------------------
+def _soil_frame(index):
+    import pandas as pd
+    depths = ["0_5cm", "5_15cm", "15_30cm", "30_60cm", "60_100cm", "100_200cm"]
+    clay = [34, 43, 49, 54, 40, 39]; sand = [43, 34, 28, 27, 40, 41]
+    silt = [23, 23, 21, 19, 20, 20]; soc = [36, 20, 16, 12, 3, 2]
+    nit = [2.8, 2, 1.6, .9, .8, .7]; ph = [6.1, 6.1, 6.1, 6.1, 7.4, 7.6]
+    cec = [29, 27, 27, 28, 28, 28]; bd = [1.3, 1.3, 1.3, 1.4, 1.45, 1.46]
+    row = {}
+    for i, d in enumerate(depths):
+        row[f"CLAY_{d}"] = clay[i]; row[f"SAND_{d}"] = sand[i]
+        row[f"SILT_{d}"] = silt[i]; row[f"SOC_{d}"] = soc[i]
+        row[f"NITROGEN_{d}"] = nit[i]; row[f"PH_{d}"] = ph[i]
+        row[f"CEC_{d}"] = cec[i]; row[f"BDOD_{d}"] = bd[i]
+    return pd.DataFrame([row for _ in index], index=index)
+
+
+def _corrected_weather():
+    rng = np.random.default_rng(3)
+    t = pd.date_range("2021-02-02", periods=90, freq="D")
+    lat = np.array([-2.0, -1.9]); lon = np.array([30.0, 30.1])
+    dims = ("member", "time", "lat", "lon"); shape = (4, 90, 2, 2)
+    coords = {"member": np.arange(4), "time": t, "lat": lat, "lon": lon}
+    means = {"PRCP": (0, 15), "TMAX": (26, 31), "TMIN": (13, 17), "SRAD": (15, 22)}
+    out = {}
+    for short, (lo, hi) in means.items():
+        da = xr.DataArray(rng.uniform(lo, hi, shape), coords=coords, dims=dims,
+                          name=short)
+        out[f"AGRO.{short}"] = {"data": da, "short": short}
+    return out
+
+
+def test_forecast_to_dssat_injection(tmp_path):
+    import pandas as pd
+    pts = pd.DataFrame({"lon": [30.02, 30.08], "lat": [-1.98, -1.92],
+                        "site": ["A", "B"]})
+    res = forecast_to_dssat(
+        pts, init_month=2, forecast_year=2021, calib_years=[2001],
+        out_dir=tmp_path / "FC_DSSAT", ensemble="mean", station_col="site",
+        corrected=_corrected_weather(), soil=_soil_frame(pts.index),
+    )
+    assert len(res) == 2
+    for n, r in enumerate(res, start=1):
+        assert r["wth"].name == f"WHTE{n:04d}.WTH" and r["wth"].exists()
+        assert r["sol"].exists()
+    # the .WTH carries the forecast season dates (2021, DOY 33 = Feb 2)
+    data = [ln for ln in res[0]["wth"].read_text().splitlines() if ln[:2].isdigit()]
+    assert data[0].startswith("2021")
+
+
+def test_forecast_to_dssat_bad_ensemble(tmp_path):
+    import pandas as pd
+    pts = pd.DataFrame({"lon": [30.02], "lat": [-1.98]})
+    with pytest.raises(ValueError, match="ensemble must be"):
+        forecast_to_dssat(pts, init_month=2, forecast_year=2021,
+                          calib_years=[2001], ensemble="members",
+                          corrected=_corrected_weather(),
+                          soil=_soil_frame(pts.index), out_dir=tmp_path / "x")
