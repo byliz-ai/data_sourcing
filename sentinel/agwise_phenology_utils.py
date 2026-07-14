@@ -1019,10 +1019,26 @@ def select_index_bands(stack, descs, index):
 # 9. OUTLIER REPLACEMENT  (mean ± 1.5 SD → mean)
 # =============================================================================
 
-def replace_outliers(arr, factor=1.5):
-    mn = np.nanmean(arr); sd = np.nanstd(arr) * factor
-    out = arr.copy()
-    out[(arr < mn - sd) | (arr > mn + sd)] = mn
+def replace_outliers(arr, factor=1.5, mode="nan"):
+    """Flag values beyond mean +/- factor*std in ``arr``.
+
+    ``mode`` controls what happens to those outliers:
+      * ``"nan"`` (default) -- set them to NaN. No fabricated values, matching
+        the layer's masking philosophy (bad pixels become gaps, not invented
+        numbers); downstream must tolerate NaNs.
+      * ``"mean"`` -- replace them with the regional mean (the legacy
+        behaviour): smooths the field but fabricates ~13% of pixels.
+      * ``"keep"`` -- return the array unchanged (no-op; for comparison).
+    """
+    if mode not in ("nan", "mean", "keep"):
+        raise ValueError(f"mode must be 'nan', 'mean' or 'keep', got '{mode}'")
+    if mode == "keep":
+        return arr.copy()
+    mn = np.nanmean(arr)
+    sd = np.nanstd(arr) * factor
+    out = arr.astype(float, copy=True)  # float so NaN assignment is safe
+    outliers = (arr < mn - sd) | (arr > mn + sd)
+    out[outliers] = mn if mode == "mean" else np.nan
     return out
 
 

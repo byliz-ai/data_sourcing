@@ -558,9 +558,14 @@ axis with real-date band labels.
   DONE 2026-07-04: 87 unreachable lines after the closing `raise` removed
   (old pre-chunking implementation); smoke-tested both combine methods and
   the error path; `sentinel_scripts/` working copy synced.
-- `replace_outliers` fabricates data
-  (replaces ~13% of pixels with the regional mean — consider NaN; science
-  decision for Lizeth, still open).
+- ~~`replace_outliers` fabricates data (replaced ~13% of pixels with the
+  regional mean)~~ **RESOLVED 2026-07-14** (Lizeth's call): now
+  `replace_outliers(arr, factor=1.5, mode="nan"|"mean"|"keep")`, **default
+  `nan`** (no fabricated values; matches the layer's masking philosophy).
+  Callers wanting the old smoothing pass `mode="mean"`. In
+  `sentinel/agwise_phenology_utils.py` (phenology-method code, technically
+  out of the data-layer scope, but tracked here). Smoke-tested all 3 modes +
+  int-input NaN safety.
 - ~~**R wrapper bug** (`ad_extract_growing_season`/`ad_extract_points`
   appended `--fill-nearest-m <fill_nearest_m>` — undefined var, no such CLI
   flag → both errored at runtime)~~ **FIXED 2026-07-14**: dropped the two
