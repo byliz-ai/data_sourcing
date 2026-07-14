@@ -21,6 +21,7 @@ from pathlib import Path
 
 import xarray as xr
 
+from .. import cache
 from ..catalog import primary_access, variable_spec
 from ..harmonize import apply_conversion
 from ..spatial import subset_bbox
