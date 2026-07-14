@@ -190,8 +190,11 @@ duplication × #modules × leverage.**
     (like the APSIM soil table). (a) *weather* (`5a`): columns
     `date, srad, tmin, tmax, vapr, wind, prec`, season-sliced
     (`complete.cases`); conversions `tmean=(tmin+tmax)/2`,
-    `vapr = 1000*rh*0.01*esat(tmean)` (esat = Tetens sat. vapour pressure —
-    implement in Python), `srad_kJ = srad_MJ*1000`. Needs **RHUM + WIND**
+    `vapr = 1000*rh*0.01*esat(tmean)` (esat = sat. vapour pressure; the R uses
+    `meteor::esat` — **confirm its unit (kPa) and WOFOST's expected vapour-
+    pressure unit (hPa) before trusting the ×1000 factor; it is unit-
+    sensitive and there is no WOFOST reader to round-trip against**),
+    `srad_kJ = srad_MJ*1000`. Needs **RHUM + WIND**
     (we have `AGRO.RHUM`/`AGRO.WIND` from AgERA5) on top of the usual four.
     (b) *soil* (`5c`): WOFOST `SMW`/`SMFCF`/`SM0` = Saxton PWP/FC/SAT →
     reuse `writers/soil.build_profile`. crop/control (`5b`/`5d`) are
