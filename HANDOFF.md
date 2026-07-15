@@ -209,6 +209,25 @@ to_wofost(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
 > `(RH/100)·esat/1000`); `to_wofost` emits the physically-correct kPa vapour
 > pressure.
 
+**`to_oryza(points, ...)`** — same arguments, for the ORYZA v3 rice model.
+Under `EXTE<n>/` it writes the CABO weather files `<code><n>.<yyy>` (**one per
+calendar year** the season spans, so a cross-New-Year season yields two —
+columns `station, year, day, srad, tmin, tmax, vapr, wind, rain`, SRAD in
+kJ m⁻² day⁻¹, `vapr` the FAO-56 actual vapour pressure in kPa, missing values
+`-99`) and the **8-layer PADDY** `soil_<n>.sol`. SoilGrids' six depths are
+remapped onto ORYZA's fixed 8 layers (0.05 m ×6, 0.30, 0.40) and the
+Saxton-Rawls hydraulics fill the retention/conductivity block (WCST/WCFC/WCWP/
+WCAD m³ m⁻³, KST cm day⁻¹, CLAYX/SANDX fractions, BD g cm⁻³, SOC/SON kg ha⁻¹);
+the water-balance switches follow the non-puddled template with overridable
+defaults (`zrtms`, `wl0mx`, `wcli`=field capacity, `satav`, …). Sources relative
+humidity + wind on top of the crop-model four.
+```python
+from agwise_data import to_oryza
+to_oryza(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
+         out_dir="ORYZA", station_col="site")
+# -> [{"point", "dir", "weather": [.../AGWS1.021, ...], "soil": .../soil_1.sol}, ...]
+```
+
 ### 3.4 Spatial scaffolding (return DataFrames)
 
 **`make_grid(country=|bbox=, admin_level=0, admin_name=None, res_km=5, tag_admin_level=2)`**
@@ -262,8 +281,9 @@ threshold (the metric behind `nrRainyDays`).
 with the same arguments — `ad_get_climate`, `ad_extract_points`,
 `ad_extract_growing_season`, `ad_get_static`/`ad_get_dem`/`ad_get_soil`,
 `ad_get_seasonal`, `ad_get_modis`, `ad_get_cropmask`, `ad_get_season`,
-`ad_extract_static_points`, `ad_to_dssat`/`ad_to_apsim`/`ad_to_wofost`,
-`ad_make_grid`/`ad_tag_admin`, `ad_bias_correct`/`ad_forecast_to_dssat`.
+`ad_extract_static_points`, `ad_to_dssat`/`ad_to_apsim`/`ad_to_wofost`/
+`ad_to_oryza`, `ad_make_grid`/`ad_tag_admin`,
+`ad_bias_correct`/`ad_forecast_to_dssat`.
 Gridded wrappers return `terra::SpatRaster`s; point/writer wrappers return
 data.frames.
 ```r
@@ -274,8 +294,8 @@ soil <- ad_extract_static_points(trials, c("CLAY", "PH", "SOC"))
 
 **CLI** (`agwise-data <subcommand>`): `get`, `extract`, `get-static`,
 `get-seasonal`, `get-modis`, `get-cropmask`, `get-season`, `extract-static`,
-`to-dssat`, `to-apsim`, `to-wofost`, `make-grid`, `tag-admin`, `bias-correct`,
-`forecast-to-dssat`, plus `catalog` and `cache` for inspection. Each prints a
+`to-dssat`, `to-apsim`, `to-wofost`, `to-oryza`, `make-grid`, `tag-admin`,
+`bias-correct`, `forecast-to-dssat`, plus `catalog` and `cache` for inspection. Each prints a
 JSON line describing the outputs.
 ```bash
 agwise-data get --vars PRCP,TMAX --country Rwanda --years 2015:2024 --freq monthly

@@ -413,6 +413,34 @@ def cmd_to_wofost(args) -> dict:
     }
 
 
+def cmd_to_oryza(args) -> dict:
+    from .api import to_oryza
+
+    res = to_oryza(
+        points=args.points,
+        planting_date=args.planting_date,
+        harvest_date=args.harvest_date,
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        planting_col=args.planting_col,
+        harvest_col=args.harvest_col,
+        lon_col=args.lon_col,
+        lat_col=args.lat_col,
+        id_col=args.id_col,
+        station_col=args.station_col,
+        weather_source=args.weather_source,
+        soil_source=args.soil_source,
+    )
+    return {
+        "ok": True,
+        "n_points": len(res),
+        "outputs": [
+            {"point": str(r["point"]), "dir": str(r["dir"]),
+             "weather": [str(w) for w in r["weather"]], "soil": str(r["soil"])}
+            for r in res
+        ],
+    }
+
+
 def cmd_bias_correct(args) -> dict:
     from .api import bias_correct
 
@@ -752,6 +780,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_cropmodel_args(p_wofost, "WOFOST")
     p_wofost.set_defaults(func=cmd_to_wofost)
+
+    p_oryza = sub.add_parser(
+        "to-oryza",
+        help="Write ORYZA v3 weather (CABO) + PADDY soil files for trial/AOI points",
+    )
+    _add_cropmodel_args(p_oryza, "ORYZA")
+    p_oryza.set_defaults(func=cmd_to_oryza)
 
     p_bc = sub.add_parser(
         "bias-correct",

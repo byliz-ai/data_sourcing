@@ -3,6 +3,17 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.11.0 — ORYZA v3 crop-model inputs
+- `to_oryza(...)` — write ORYZA v3 weather + soil files per point. Weather is
+  the CABO format, one file per calendar year (`EXTE<n>/<code><n>.<yyy>`;
+  `station, year, day, srad[kJ], tmin, tmax, vapr[kPa], wind, rain`; vapour
+  pressure via FAO-56; missing `-99`). Soil is the 8-layer PADDY `.sol`
+  (`soil_<n>.sol`): SoilGrids' six depths remapped onto ORYZA's fixed 8 layers
+  and filled with the Saxton-Rawls hydraulics (WCST/WCFC/WCWP/WCAD, KST cm/day,
+  CLAYX/SANDX fractions, BD, SOC/SON kg/ha), non-puddled template with
+  overridable water-balance defaults. Also a `to-oryza` CLI subcommand and an
+  `ad_to_oryza` R wrapper.
+
 ## 0.10.0 — WOFOST crop-model inputs
 - `to_wofost(...)` — write WOFOST weather + soil-parameter CSVs per point
   (`EXTE<n>/weather_<n>.csv` with `date, srad, tmin, tmax, vapr, wind, prec`;

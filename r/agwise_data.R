@@ -531,6 +531,46 @@ ad_to_wofost <- function(points, planting_date = NULL, harvest_date = NULL,
   do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
 }
 
+#' Write ORYZA v3 weather + PADDY soil files for trial/AOI points.
+#'
+#' ORYZA counterpart of ad_to_dssat: for each row of `points` writes, under
+#' out_dir/EXTE<n>/, the CABO weather files <code><n>.<yyy> (one per calendar
+#' year the season spans; columns station, year, day, srad[kJ], tmin, tmax,
+#' vapr[kPa], wind, rain) and the 8-layer PADDY soil_<n>.sol (SoilGrids
+#' remapped to ORYZA's fixed layers with the Saxton-Rawls hydraulics).
+#' Returns a data.frame with one row per point (weather = the per-year files,
+#' ';'-separated).
+ad_to_oryza <- function(points, planting_date = NULL, harvest_date = NULL,
+                        out_dir = NULL, planting_col = NULL, harvest_col = NULL,
+                        lon_col = NULL, lat_col = NULL, id_col = NULL,
+                        station_col = NULL,
+                        weather_source = NULL, soil_source = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  args <- c("to-oryza", "--points", points_csv)
+  if (!is.null(out_dir))        args <- c(args, "--out-dir", out_dir)
+  if (!is.null(planting_date))  args <- c(args, "--planting-date", planting_date)
+  if (!is.null(harvest_date))   args <- c(args, "--harvest-date", harvest_date)
+  if (!is.null(planting_col))   args <- c(args, "--planting-col", planting_col)
+  if (!is.null(harvest_col))    args <- c(args, "--harvest-col", harvest_col)
+  if (!is.null(lon_col))        args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col))        args <- c(args, "--lat-col", lat_col)
+  if (!is.null(id_col))         args <- c(args, "--id-col", id_col)
+  if (!is.null(station_col))    args <- c(args, "--station-col", station_col)
+  if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
+  if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
+
+  res <- ad_run(args)
+  do.call(rbind, lapply(res$outputs, function(o) {
+    data.frame(point = o$point, dir = o$dir,
+               weather = paste(unlist(o$weather), collapse = ";"),
+               soil = o$soil, stringsAsFactors = FALSE)
+  }))
+}
+
 #' Soil/topography values at point locations (wide format).
 #'
 #' Returns the input data plus ELEV/SLOPE/... columns and one column per

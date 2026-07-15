@@ -10,7 +10,8 @@ reference with parameters, outputs and examples):
 * **Point extraction** → ``pandas.DataFrame``: :func:`extract_points`,
   :func:`extract_growing_season`, :func:`extract_static_points`.
 * **Crop-model input files** → ``list`` of written files: :func:`to_dssat`,
-  :func:`to_apsim`, :func:`to_wofost`, :func:`forecast_to_dssat`.
+  :func:`to_apsim`, :func:`to_wofost`, :func:`to_oryza`,
+  :func:`forecast_to_dssat`.
 * **Spatial scaffolding** → ``pandas.DataFrame``: :func:`make_grid`,
   :func:`tag_admin`.
 * **Seasonal-forecast bias correction** → corrected cubes:
@@ -1757,6 +1758,66 @@ def to_wofost(
     return written
 
 
+def to_oryza(
+    points,
+    planting_date: Optional[str] = None,
+    harvest_date: Optional[str] = None,
+    out_dir=None,
+    planting_col: Optional[str] = None,
+    harvest_col: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    id_col: Optional[str] = None,
+    station_col: Optional[str] = None,
+    weather: Optional[pd.DataFrame] = None,
+    soil: Optional[pd.DataFrame] = None,
+    weather_source: Optional[str] = None,
+    soil_source: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> list:
+    """Write ORYZA v3 weather + PADDY soil files for every point.
+
+    For each row of ``points`` writes, under ``<out_dir>/EXTE<n>/``, the CABO
+    weather files ``<code><n>.<yyy>`` (one per calendar year the season spans —
+    columns ``station, year, day, srad[kJ], tmin, tmax, vapr[kPa], wind, rain``)
+    and the 8-layer PADDY ``soil_<n>.sol`` (SoilGrids remapped to ORYZA's fixed
+    layers with the Saxton-Rawls hydraulics). Retires ``Oryza/OryzaDataFiles.R``.
+    Sources relative humidity + wind on top of the crop-model four. Same per-row/
+    scalar season and reuse options as :func:`to_dssat`. Returns a list of
+    ``{"point", "dir", "weather": [paths], "soil"}``.
+    """
+    from .writers import oryza as oryza_w
+    from .writers._common import station_code
+
+    config = config or Config.load()
+    out_dir = Path(out_dir) if out_dir else Path.cwd() / "ORYZA"
+    df, lon_col, lat_col, weather, soil = _cm_inputs(
+        points, planting_date, harvest_date, planting_col, harvest_col,
+        lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+        weather_vars=_WOFOST_WEATHER_VARS,
+    )
+
+    written = []
+    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+        wide = _point_weather_wide(weather, idx)
+        if wide.empty:
+            logger.warning("Point %s has no weather in season; skipped", idx)
+            continue
+        name = str(prow[station_col]) if station_col else (
+            str(prow[id_col]) if id_col else f"P{n:04d}"
+        )
+        d = out_dir / f"EXTE{n:04d}"
+        wth = oryza_w.write_weather(
+            wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+            out_dir=d, id_name=name, stn=n,
+        )
+        sol = oryza_w.write_soil(
+            soil.loc[idx], path=d / f"soil_{n}.sol", id_name=station_code(name),
+        )
+        written.append({"point": idx, "dir": d, "weather": wth, "soil": sol})
+    return written
+
+
 # ---------------------------------------------------------------------------
 # Seasonal-forecast bias correction (scope-map #3): QDM the raw SEAS5 forecast
 # against the hindcast-vs-observation bias, producing analysis-ready fields.
@@ -2088,6 +2149,7 @@ __all__ = [
     "to_dssat",
     "to_apsim",
     "to_wofost",
+    "to_oryza",
     "make_grid",
     "tag_admin",
     "bias_correct",

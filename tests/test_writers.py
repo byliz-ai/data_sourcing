@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from agwise_data.writers import apsim, dssat, soil, wofost
+from agwise_data.writers import apsim, dssat, oryza, soil, wofost
 from agwise_data.writers._common import prepare_weather, station_code, tav_amp
 
 
@@ -437,3 +437,108 @@ def test_to_wofost_writes_per_point_files(tmp_path):
     assert soil_txt.splitlines()[0] == "parameter,value,units,note"
     for key in ("SMW", "SMFCF", "SM0", "K0", "RDMSOL"):
         assert key in soil_txt
+
+
+# --------------------------------------------------------------------------
+# ORYZA v3 writer (CABO weather + 8-layer PADDY soil)
+# --------------------------------------------------------------------------
+def _oryza_series():
+    """Daily frame with the six weather inputs, straddling the New Year."""
+    dates = pd.date_range("2020-12-30", "2021-01-03", freq="D")
+    return pd.DataFrame({
+        "DATE": dates,
+        "TMAX": [26.0, 26.0, 10.0, 26.0, 26.0],  # day 3 crossed
+        "TMIN": [14.0, 14.0, 20.0, 14.0, 14.0],
+        "SRAD": [19.0, 19.0, 19.0, 19.0, 19.0],
+        "RHUM": [65.0, 65.0, 65.0, 65.0, 65.0],
+        "WIND": [1.5, 1.5, 1.5, 1.5, 1.5],
+        "PRCP": [3.0, 0.0, 0.0, 0.0, 2.0],
+    })
+
+
+def test_oryza_year_ext():
+    assert oryza._year_ext(1998) == "998"
+    assert oryza._year_ext(2021) == "021"
+    assert oryza._year_ext(2000) == "000"
+
+
+def test_oryza_prepare_weather_units_and_vapr():
+    df = oryza.prepare_weather(_oryza_series())
+    assert list(df.columns) == ["date", "srad", "tmin", "tmax", "vapr", "wind", "rain"]
+    assert (df["srad"] == 19000.0).all()          # MJ -> kJ
+    assert (df["tmin"] <= df["tmax"]).all()        # crossed day swapped
+    assert len(df) == 5                            # rows kept (no drop)
+    # FAO-56: vapr = 0.5*(esat(tmax)+esat(tmin)) * RH/100; day1 26/14, RH65%.
+    exp = 0.5 * (float(wofost.esat_kpa(26.0)) + float(wofost.esat_kpa(14.0))) * 0.65
+    assert round(float(df["vapr"].iloc[0]), 4) == round(exp, 4)
+
+
+def test_oryza_write_weather_splits_by_year(tmp_path):
+    paths = oryza.write_weather(
+        _oryza_series(), lat=-1.9, lon=30.1, out_dir=tmp_path,
+        id_name="Musanze", stn=1, elev=1850,
+    )
+    names = sorted(p.name for p in paths)
+    assert names == ["MUSA1.020", "MUSA1.021"]     # one file per calendar year
+    txt = [p for p in paths if p.name.endswith(".020")][0].read_text().splitlines()
+    # station line: lon,lat,elev,angstromA,angstromB
+    station = [ln for ln in txt if ln.startswith("30.1,")][0]
+    assert station == "30.1,-1.9,1850,0.25,0.5"
+    # data line: stn,year,day,srad,tmin,tmax,vapr,wind,rain — Dec 30 2020 = doy 365
+    data = [ln for ln in txt if ln.startswith("1,2020,")][0].split(",")
+    assert data[:3] == ["1", "2020", "365"] and data[3] == "19000.0"
+
+
+def test_oryza_soil_layers_remap_and_units():
+    L = oryza.soil_layers(_soil_row())
+    assert L["n_layers"] == 8
+    assert list(L["tkl_m"]) == [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.30, 0.40]
+    # 6 SoilGrids depths remapped onto 8 layers via [0,1,1,2,2,2,3,4]:
+    # layers 2 and 3 share SoilGrids depth 1, so their clay is equal.
+    assert L["clayx"][1] == L["clayx"][2]
+    assert L["clayx"][3] == L["clayx"][4] == L["clayx"][5]
+    # CLAYX/SANDX are fractions (0-1); retention ordering holds.
+    assert (L["clayx"] <= 1.0).all() and (L["sandx"] <= 1.0).all()
+    assert (L["wcst"] >= L["wcfc"]).all()
+    assert (L["wcfc"] >= L["wcwp"]).all()
+    assert (L["wcwp"] >= L["wcad"]).all()
+    # KST = Saxton ks (mm/h) * 2.4 -> cm/day
+    prof = soil.build_profile(_soil_row())
+    assert round(float(L["kst"][0]), 4) == round(float(prof["ks"][0] * 2.4), 4)
+    # SOC kg/ha = 1000 * thickness(cm) * BD * OC%
+    exp_soc0 = 1000.0 * 5.0 * prof["bdod"][0] * prof["sloc"][0]
+    assert round(float(L["soc"][0]), 1) == round(exp_soc0, 1)
+
+
+def test_oryza_write_soil_structure(tmp_path):
+    path = oryza.write_soil(_soil_row(), tmp_path / "soil.sol", id_name="TEST")
+    txt = path.read_text()
+    assert "SCODE = 'PADDY'" in txt
+    assert "NL = 8" in txt
+    for key in ("TKL =", "CLAYX =", "SANDX =", "BD =", "SOC =", "SON =",
+                "KST =", "WCST =", "WCFC =", "WCWP =", "WCAD =", "WCLINT ="):
+        assert key in txt
+    # every per-layer vector must have 8 comma-separated values
+    for line in txt.splitlines():
+        if line.startswith(("CLAYX =", "KST =", "WCST =", "TKL =")):
+            vals = line.split("=", 1)[1].split("!")[0].split(",")
+            assert len([v for v in vals if v.strip()]) == 8
+
+
+def test_to_oryza_writes_per_point_files(tmp_path):
+    from agwise_data.api import to_oryza
+
+    pts = pd.DataFrame({"lon": [30.06], "lat": [-1.95], "site": ["Kigali"]})
+    res = to_oryza(
+        pts, out_dir=tmp_path / "ORYZA", station_col="site",
+        weather=_wofost_weather_long(pts), soil=_soil_frame(pts),
+    )
+    assert len(res) == 1
+    r = res[0]
+    assert r["dir"].name == "EXTE0001"
+    assert r["soil"].name == "soil_1.sol" and r["soil"].exists()
+    # cross-year season (2020-09..2021-02) -> two weather files
+    assert len(r["weather"]) == 2
+    assert all(w.exists() for w in r["weather"])
+    exts = sorted(w.suffix for w in r["weather"])
+    assert exts == [".020", ".021"]

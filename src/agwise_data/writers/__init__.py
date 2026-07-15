@@ -9,7 +9,8 @@ soil-parameter CSVs, no on-disk model format) is in ``wofost.py``.
 
 from __future__ import annotations
 
-from . import apsim, dssat, soil, wofost
+from . import apsim, dssat, oryza, soil, wofost
 from ._common import prepare_weather, tav_amp
 
-__all__ = ["dssat", "apsim", "soil", "wofost", "prepare_weather", "tav_amp"]
+__all__ = ["dssat", "apsim", "soil", "wofost", "oryza", "prepare_weather",
+           "tav_amp"]
