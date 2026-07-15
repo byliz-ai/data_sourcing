@@ -62,3 +62,59 @@ def test_local_missing_file_falls_back(tmp_path, config):
     config.local_root = tmp_path / "empty_landing"
     entry = get_entry("agera5")
     assert fetch_local_year(config, entry, "agera5", "AGRO.TMAX", 1999, "africa") is None
+
+
+def _write_tif(path, data, west=28.0, north=1.0, res=0.1, nodata=None):
+    import rasterio
+    from rasterio.transform import from_origin
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    h, w = data.shape
+    with rasterio.open(
+        path, "w", driver="GTiff", height=h, width=w, count=1, dtype="float32",
+        crs="EPSG:4326", transform=from_origin(west, north, res, res), nodata=nodata,
+    ) as dst:
+        dst.write(data.astype("float32"), 1)
+
+
+def test_local_static_soil_reads_depth_stack_preconverted(tmp_path, config):
+    from agwise_data.drivers.local import fetch_local_static
+
+    landing = tmp_path / "landing"
+    entry = get_entry("soilgrids")
+    depths = entry["depths"]
+    # One physical-units GeoTIFF per depth (clay ~30 %, NOT the raw x10 WCS int).
+    for i, depth in enumerate(depths):
+        _write_tif(
+            landing / "Soil" / "soilGrids" / "profile" / f"clay_{depth}_mean_30s.tif",
+            np.full((5, 5), 30.0 + i),
+        )
+    config.local_root = landing
+    config.register_domain("rw", [28.0, -0.5, 29.0, 1.0])
+
+    da, meta = fetch_local_static(config, entry, "soilgrids", "SOIL.CLAY", "rw")
+    assert meta["access"] == "local"
+    assert da.sizes["depth"] == len(depths)
+    # preconverted: value stays ~30 (no /10 conversion applied)
+    assert abs(float(da.isel(depth=0).mean()) - 30.0) < 0.5
+
+
+def test_local_composite_modis_stacks_scales_and_masks(tmp_path, config):
+    from agwise_data.drivers.local import fetch_local_composite
+
+    landing = tmp_path / "landing"
+    entry = get_entry("mod13q1")
+    # Per-composite NDVI tifs, domain-tagged; raw int16*1e4. One fill pixel.
+    raw = np.full((5, 5), 5000.0)   # -> NDVI 0.5
+    raw[0, 0] = -3000               # fill_value -> NaN
+    for doy in (1, 17, 9):          # out of order on purpose
+        _write_tif(landing / "modis" / "rw" / f"NDVI_2021_{doy:03d}.tif", raw)
+    config.local_root = landing
+    config.register_domain("rw", [28.0, -0.5, 29.0, 1.0])
+
+    da, meta = fetch_local_composite(config, entry, "mod13q1", "RS.NDVI", 2021, "rw")
+    assert meta["access"] == "local" and meta["n_composites"] == 3
+    tt = da["time"].values.astype("datetime64[ns]").astype("int64")
+    assert bool((np.diff(tt) > 0).all())          # sorted by composite date
+    assert abs(float(da.max()) - 0.5) < 1e-6        # d10000 applied (5000 -> 0.5)
+    assert bool(np.isnan(da.isel(time=0, lat=0, lon=0)))  # fill -> NaN

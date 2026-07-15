@@ -47,6 +47,16 @@ access:
     qa:
       band: SummaryQA
       keep: [0, 1]   # 0 = good, 1 = marginal; 2 (snow/ice) and 3 (cloud) -> NaN
+  - type: local
+    role: alternative
+    # Per-composite GeoTIFFs staged locally, read instead of Earth Engine when
+    # AGWISE_LOCAL_ROOT is set. The path is DOMAIN-TAGGED on purpose: MODIS
+    # composites are region-specific, so keying on {domain} prevents ever
+    # serving one region's tiles for another region. {doy} is a wildcard.
+    # (Legacy Landing/MODISdata files are region-baked to a single AOI/year and
+    # do NOT carry the domain tag, so they are not auto-matched — stage cubes in
+    # this layout to reuse them.)
+    composite_path: "modis/{domain}/{short}_{year}_{doy}.tif"
 
 variables:
   RS.NDVI:

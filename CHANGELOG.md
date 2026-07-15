@@ -3,6 +3,26 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.13.0 — Local source extended to soil (SoilGrids) and MODIS
+- The `AGWISE_LOCAL_ROOT` local source (0.12.0) now also covers the **soil**
+  (`StaticDriver`) and **MODIS** (`ModisDriver`) code paths, not just the daily
+  climate drivers.
+  - **Soil:** `fetch_local_static` reads the SoilGrids depth rasters in
+    `Soil/soilGrids/profile/{var}_{depth}_mean_30s.tif`, windowed to the region
+    and stacked into the depth cube. These legacy tifs are already in physical
+    units, so the `local` block is marked `preconverted: true` and the catalog
+    conversion is skipped. Only the properties present locally are served; the
+    rest fall back to the WCS. Verified live on Rwanda points (CLAY/SAND/SILT/
+    SOC/PH/BDOD correct; urban points reflect the legacy tifs' per-property
+    nodata gaps).
+  - **MODIS:** `fetch_local_composite` assembles a composite year from
+    per-composite GeoTIFFs at a **domain-tagged** `composite_path`
+    (`modis/{domain}/{short}_{year}_{doy}.tif`) — the domain tag prevents ever
+    serving one region's tiles for another. Legacy `Landing/MODISdata` files are
+    region-baked to a single AOI/year and are *not* auto-matched; stage cubes in
+    this layout to reuse them (MODIS otherwise stays on Earth Engine).
+- New network-free tests for both paths.
+
 ## 0.12.0 — Local source: reuse already-downloaded geodata (no re-download)
 - **New:** point `AGWISE_LOCAL_ROOT` at the AgWise `Global_GeoData/Landing`
   tree and the daily drivers read the matching legacy yearly file

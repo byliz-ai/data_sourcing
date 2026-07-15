@@ -39,6 +39,17 @@ access:
     role: primary
     version: "2.0.1"
     url: "https://maps.isric.org/mapserv?map=/map/{property}.map"
+  - type: local
+    role: alternative
+    # Already-downloaded SoilGrids depth rasters in the AgWise
+    # Global_GeoData/Landing tree (read + region-clipped instead of the WCS
+    # download when AGWISE_LOCAL_ROOT is set). One GeoTIFF per property+depth.
+    # Only the properties that exist locally are served; the rest fall back to
+    # WCS. preconverted: these tifs are already in physical units (clay %, pH,
+    # SOC g/kg, ...) unlike the raw WCS integers, so the catalog `conversion`
+    # is NOT applied.
+    path: "Soil/soilGrids/profile/{var}_{depth}_mean_30s.tif"
+    preconverted: true
 
 variables:
   SOIL.CLAY:    {source_name: clay,     source_units: g/kg,      conversion: d10,  nodata: 0}

@@ -123,7 +123,14 @@ class ModisDriver:
             ):
                 return dest
 
-            da, fetch_meta = self._fetch_year(variable, year, domain)
+            from .local import fetch_local_composite
+
+            local = fetch_local_composite(
+                self.config, self.entry, self.source_id, variable, year, domain
+            )
+            da, fetch_meta = local if local is not None else self._fetch_year(
+                variable, year, domain
+            )
             da = standardize_composite(da, variable, self.source_id)
 
             # A fully covered past year must have all its composites: caching

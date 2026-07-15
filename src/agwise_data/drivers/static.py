@@ -65,8 +65,15 @@ class StaticDriver:
             if dest.exists():
                 return dest
 
+            from .local import fetch_local_static
+
+            local = fetch_local_static(
+                self.config, self.entry, self.source_id, canonical, domain
+            )
             parent = static_derived_from(canonical)
-            if parent:
+            if local is not None:
+                da, fetch_meta = local
+            elif parent:
                 da, fetch_meta = self._derive(canonical, parent, domain)
             else:
                 da, fetch_meta = self._fetch_static(canonical, domain)

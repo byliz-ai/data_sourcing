@@ -95,12 +95,17 @@ export AGWISE_DATA_WORKERS=6
 export AGWISE_DATA_SCOPE=domain     # default: auto
 
 # reuse already-downloaded legacy geodata instead of downloading: point this
-# at the AgWise Global_GeoData/Landing tree. When set, the daily drivers
-# (CHIRPS, AgERA5) read the matching <Variable>/<Source>/<year>.nc file,
-# clip it to the region, and cache it — no network request. Read-only and
-# opt-in; unset it to always download. A Rwanda year reads in seconds instead
-# of minutes on the CDS queue.
+# at the AgWise Global_GeoData/Landing tree. When set, the drivers read the
+# matching local file, clip it to the region, and cache it — no network:
+#   - CHIRPS / AgERA5 (daily): <Variable>/<Source>/<year>.nc
+#   - SoilGrids (soil):        Soil/soilGrids/profile/<var>_<depth>_mean_30s.tif
+#   - MODIS (composites):      modis/<domain>/<short>_<year>_<doy>.tif (staged;
+#     the region-baked legacy Landing/MODISdata files are not auto-matched)
+# Read-only and opt-in; unset it to always download. A Rwanda year reads in
+# seconds instead of minutes. NB: Landing is an NFS share — export
+# HDF5_USE_FILE_LOCKING=FALSE so the NetCDF reads don't fail with an HDF error.
 export AGWISE_LOCAL_ROOT=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data/Global_GeoData/Landing
+export HDF5_USE_FILE_LOCKING=FALSE
 ```
 
 With the default `auto` scope, a country-scale CHIRPS request reads only
