@@ -18,8 +18,7 @@ each goal to the call that does it.
 
 ## Contents
 
-- [1. Setup](#1-setup) — install, credentials (see also
-  [credentials_setup](docs/credentials_setup.md) · [cglabs_setup](docs/cglabs_setup.md))
+- [1. Setup](#1-setup) — where install / credentials / folders are documented
 - [2. Canonical variables & units](#2-canonical-variables--units)
 - [3. Function reference](#3-function-reference) —
   [gridded cubes](#31-gridded-cubes) ·
@@ -34,28 +33,11 @@ each goal to the call that does it.
 
 ## 1. Setup
 
-Install and credentials live in the **[README](README.md)** (concise) and:
+This page is the **function catalogue**. Setup is documented once, elsewhere:
 
-- **[docs/credentials_setup.md](docs/credentials_setup.md)** — CDS + Earth
-  Engine credentials, click-by-click, with troubleshooting.
-- **[docs/cglabs_setup.md](docs/cglabs_setup.md)** — shared-server (CGLabs)
-  install, the shared cache root, use from R, and performance tuning.
-
-In short: `conda env create -f environment.yml` → `conda activate
-agwise_data` → `pip install -e ".[all]"` → `pytest -q` to verify → set the data
-roots (AgWise convention: `AGWISE_LOCAL_ROOT` = shared `Global_GeoData/Landing`
-raw inputs, `AGWISE_DATA_ROOT` = shared `Global_GeoData/Processed` download
-cache, and each writer's `out_dir` under your `Data/useCase_<name>` folder — see
-[cglabs_setup](docs/cglabs_setup.md)). Add `~/.cdsapirc` (CDS) and run
-`earthengine authenticate` + `export AGWISE_GEE_PROJECT=<id>` only for the
-sources you use.
-
-**Reuse already-downloaded data (skip the download):** set
-`AGWISE_LOCAL_ROOT` to the AgWise `Global_GeoData/Landing` tree and the drivers
-read the matching legacy file (CHIRPS/AgERA5 yearly NetCDFs, SoilGrids depth
-rasters, staged MODIS composites), clip it to your region and cache it — no
-network request. Opt-in; unset to always download. See
-[docs/cglabs_setup.md](docs/cglabs_setup.md#performance-tuning-optional).
+- **Install, credentials & the [three data folders](README.md#where-your-data-lives--three-folders-three-jobs)** → **[README](README.md)** (§1–§3).
+- **Credentials, click-by-click + troubleshooting** → **[docs/credentials_setup.md](docs/credentials_setup.md)**.
+- **Shared server (CGLabs): env, R, performance, data reuse** → **[docs/cglabs_setup.md](docs/cglabs_setup.md)**.
 
 ## 2. Canonical variables & units
 

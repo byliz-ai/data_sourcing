@@ -1,89 +1,40 @@
 # CGLabs setup (one time per server, then one line per user)
 
-## 1. Shared installation (once, by whoever goes first)
+## 1. Install (once per server)
 
-```bash
-cd /home/jovyan
-git clone https://github.com/byliz-ai/data_sourcing.git
-cd data_sourcing
-conda env create -f environment.yml
-conda activate agwise_data
-pip install -e ".[all]"
-```
+Install the package + env once, in a location everyone can reach — same commands
+as the [README install](../README.md#3-install) (`git clone` → `conda env create
+-f environment.yml` → `conda activate agwise_data` → `pip install -e ".[all]"`).
 
-## 2. Data roots — the AgWise folder convention
+## 2. Data roots (once per user)
 
-Three folders, each with one job, so the whole team shares data but keeps its
-own outputs:
-
-* **Shared raw inputs** (read-only) — the *global* geodata everyone consumes,
-  already staged in `.../datasourcing/Data/Global_GeoData/Landing`. Point
-  `AGWISE_LOCAL_ROOT` here and the drivers **read + region-clip** these instead
-  of downloading. Treat as read-only.
-* **Shared download cache** (read/write) — `.../Global_GeoData/Processed`. When
-  something is *not* in Landing, the layer downloads only that **region** and
-  caches the harmonized result here, keyed by region (`rg_<bbox>`). Point
-  `AGWISE_DATA_ROOT` here so the first person to fetch a region pays for it and
-  everyone else gets a cache hit — writes are `FileLock`-guarded, so concurrent
-  users are safe.
-* **Your use-case outputs** (per project) — `.../Data/useCase_<Country>_<Name>/`.
-  The files *you* produce (DSSAT/APSIM/… inputs, extracted CSVs) go here via each
-  writer's `out_dir`, following the existing `useCase_*` layout
-  (`Landing/raw/result/transform`).
-
-Each user adds to their `~/.bashrc` (or R `.Renviron`):
+The **three data folders** — and *why* there are three — are explained in the
+[README](../README.md#where-your-data-lives--three-folders-three-jobs). On the
+shared server, persist the two roots in your `~/.bashrc` (R users: `.Renviron`)
+and create your use-case folder:
 
 ```bash
 DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
-export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing     # shared raw inputs (read-only)
+export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing     # raw inputs (read-only)
 export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed    # shared download cache (read/write)
 export HDF5_USE_FILE_LOCKING=FALSE                                # Landing/Processed are on NFS
+mkdir -p "$DATASOURCING/useCase_<Country>_<Name>/result"          # your outputs (writer out_dir)
 ```
 
-So a request first tries Landing (no download), else downloads just your region
-into the shared `Processed` cache (reused by everyone next time), and you write
-your own outputs under your use-case folder — e.g.
+Reuse is maximised by requesting stable regions (`country=`/`admin_level=`) or,
+on a bulk server, `AGWISE_DATA_SCOPE=domain` (fetch the whole continent once —
+see [performance tuning](#performance-tuning-optional)). Off CGLabs (laptop),
+leave `AGWISE_LOCAL_ROOT` unset and use a personal `AGWISE_DATA_ROOT`.
 
-```python
-to_dssat(points, planting_date="2023-01-01", harvest_date="2023-06-30",
-         out_dir=f"{DATASOURCING}/useCase_Rwanda_MyProject/result/DSSAT", ...)
-```
+## 3. Credentials (per user)
 
-Maximise reuse by requesting stable regions (`country=`/`admin_level=`, which
-give a stable region key everyone shares) or, for a bulk server, set
-`AGWISE_DATA_SCOPE=domain` to fetch the whole continent once (see
-[performance tuning](#performance-tuning-optional)).
-
-Not on CGLabs (laptop / other server)? Leave `AGWISE_LOCAL_ROOT` unset and set
-`AGWISE_DATA_ROOT` to a personal folder like `~/agwise_data/cache`; the layer
-downloads from source as usual.
-
-## 3. CDS credentials (per user, for AgERA5)
-
-(First time on Copernicus or Google Earth Engine? There is a from-zero,
-click-by-click guide in [credentials_setup.md](credentials_setup.md) —
-including the shared-server rules: data is shared via the `Global_GeoData`
-folders, credentials are personal and live only in your own home.)
-
-1. Create a free account at <https://cds.climate.copernicus.eu>.
-2. Accept the license of the *"Agrometeorological indicators"* dataset
-   (one click on its download page).
-3. Put your Personal Access Token in `~/.cdsapirc`:
-
-```
-url: https://cds.climate.copernicus.eu/api
-key: <your-personal-access-token>
-```
-
-```bash
-chmod 600 ~/.cdsapirc
-```
-
-⚠️ **Never hardcode the token in a script.** A previous module script
-committed a CDS key in plain text — that key should be considered
-compromised and rotated (log in to CDS → your profile → regenerate token).
-
-CHIRPS needs no credentials.
+Personal, never shared. The full click-by-click (CDS + Earth Engine, from zero,
+with troubleshooting) is in **[credentials_setup.md](credentials_setup.md)**. On
+the shared server, each person keeps their own `~/.cdsapirc` and
+`~/.config/earthengine/credentials` (`chmod 600`) and sets `AGWISE_GEE_PROJECT`
+— never commit a token or put one in a shared folder. Note: while the UCSB host
+is 403-blocked, even CHIRPS rainfall routes through Earth Engine, so `PRCP`
+needs GEE set up too.
 
 ## 4. Use from R (no reticulate needed)
 
@@ -122,20 +73,11 @@ export AGWISE_DATA_WORKERS=6
 # one cache serves every country (small requests otherwise fetch only
 # their own window, which is much faster for one-off runs):
 export AGWISE_DATA_SCOPE=domain     # default: auto
-
-# reuse already-downloaded legacy geodata instead of downloading: point this
-# at the AgWise Global_GeoData/Landing tree. When set, the drivers read the
-# matching local file, clip it to the region, and cache it — no network:
-#   - CHIRPS / AgERA5 (daily): <Variable>/<Source>/<year>.nc
-#   - SoilGrids (soil):        Soil/soilGrids/profile/<var>_<depth>_mean_30s.tif
-#   - MODIS (composites):      modis/<domain>/<short>_<year>_<doy>.tif (staged;
-#     the region-baked legacy Landing/MODISdata files are not auto-matched)
-# Read-only and opt-in; unset it to always download. A Rwanda year reads in
-# seconds instead of minutes. NB: Landing is an NFS share — export
-# HDF5_USE_FILE_LOCKING=FALSE so the NetCDF reads don't fail with an HDF error.
-export AGWISE_LOCAL_ROOT=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data/Global_GeoData/Landing
-export HDF5_USE_FILE_LOCKING=FALSE
 ```
+
+The biggest speed-up is **not downloading at all**: `AGWISE_LOCAL_ROOT`
+(§2) reads already-staged data from `Landing` — a region-year then loads in
+seconds instead of minutes on the CDS queue.
 
 With the default `auto` scope, a country-scale CHIRPS request reads only
 that country's window from UCSB's daily COGs (a Rwanda year stores ~1 MB);
@@ -146,7 +88,6 @@ driver falls back to a gentler path automatically.
 
 ## Portability
 
-Nothing here is CGLabs-specific: on a laptop or another server, set
-`AGWISE_DATA_ROOT` to any local path (default `~/agwise_data`). When a
-shared bucket exists, mount it and point the root there — the code does not
-change.
+Nothing here is CGLabs-specific: the roots are just paths. On a laptop use local
+folders (§2); where a shared bucket exists, mount it and point the roots there —
+the code doesn't change.

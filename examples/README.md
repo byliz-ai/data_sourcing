@@ -18,16 +18,12 @@ Both scripts do the same thing in each language:
 3. **DSSAT input files** (commented out) — needs Copernicus CDS credentials.
 4. **NDVI** (Python, commented out) — needs Google Earth Engine credentials.
 
-Set your data roots first (AgWise convention on CGLabs — shared raw inputs in,
-your use-case folder out; full explanation in
-[`docs/cglabs_setup.md`](../docs/cglabs_setup.md)):
+Set your data roots first — the
+[three data folders](../README.md#where-your-data-lives--three-folders-three-jobs)
+on CGLabs, or just a personal cache to try the examples on a laptop:
 
 ```bash
-DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
-export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # shared raw inputs (read-only)
-export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed   # shared download cache (read/write)
-# Your outputs go under $DATASOURCING/useCase_<name>/result/ via each writer's out_dir.
-# On a laptop instead: leave AGWISE_LOCAL_ROOT unset, AGWISE_DATA_ROOT=~/agwise_data/cache
+export AGWISE_DATA_ROOT=~/agwise_data/cache   # laptop; on CGLabs see the README
 ```
 
 Steps 2–4 need credentials — the click-by-click setup is in
