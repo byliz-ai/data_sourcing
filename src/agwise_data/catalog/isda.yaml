@@ -1,0 +1,47 @@
+# Catalog entry: iSDA Africa soil properties (alternative soil source).
+# Choose per call with source="isda" (SoilGrids stays the default). Served from
+# the local Global_GeoData/Landing tree via the `local` adapter — set
+# AGWISE_LOCAL_ROOT; there is no network fetch wired for iSDA here.
+id: isda
+title: iSDA Africa soil properties v0.13
+description: >
+  Innovative Solutions for Decision Agriculture (iSDA) gridded soil property
+  maps for Africa at ~30 m, two depths (0-20 cm, 20-50 cm). An alternative to
+  SoilGrids for the soil variables the AgWise layer exposes.
+license: CC-BY 4.0
+citation: >
+  Hengl, T. et al. (2021). African soil properties and nutrients mapped at 30 m
+  spatial resolution. Scientific Reports 11, 6130.
+  https://doi.org/10.1038/s41598-021-85639-y
+version: "0.13"
+providers:
+  - name: iSDA / Innovative Solutions for Decision Agriculture
+    roles: [producer, host]
+    url: https://www.isda-africa.com/isdasoil/
+extent:
+  spatial:
+    bbox: [-18.0, -35.0, 52.0, 38.0]   # Africa
+  temporal:
+    start: null
+    end: null
+spatial_resolution_deg: 0.0083333333   # ~1 km resampled (30 m native)
+temporal_resolution: static
+
+driver: isda
+depths: ["0-20cm", "20-50cm"]
+access:
+  - type: local
+    role: primary
+    # iSDA rasters in the AgWise Global_GeoData/Landing tree. {var} is the iSDA
+    # property (source_name), {depth} one of the two depths above. Values are in
+    # physical units except bulk density (stored x100 -> g/cm3, see conversion).
+    path: "Soil/iSDA/isda_{var}_{depth}_v0.13_30s.tif"
+
+variables:
+  SOIL.CLAY:  {source_name: clay.tot.psa, source_units: "%",       conversion: null}
+  SOIL.SAND:  {source_name: sand.tot.psa, source_units: "%",       conversion: null}
+  SOIL.SILT:  {source_name: silt.tot.psa, source_units: "%",       conversion: null}
+  SOIL.PH:    {source_name: ph.h2o,       source_units: pH,        conversion: null}
+  SOIL.SOC:   {source_name: oc,           source_units: g/kg,      conversion: null}
+  SOIL.CEC:   {source_name: ecec.f,       source_units: cmol(c)/kg, conversion: null}
+  SOIL.BDOD:  {source_name: db.od,        source_units: "0.01 g/cm3", conversion: d100}

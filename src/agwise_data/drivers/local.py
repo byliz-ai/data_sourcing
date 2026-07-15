@@ -154,7 +154,7 @@ def fetch_local_static(
     # the entry directly (variable_spec resolves via the climate namespace).
     spec = entry["variables"][variable]
     prop = spec["source_name"]
-    nodata = spec.get("nodata", 0)
+    nodata = spec.get("nodata")  # None -> rely on the tif's own nodata only
     bbox = config.bbox_for(domain)
 
     layers, lats, lons = [], None, None
@@ -165,9 +165,10 @@ def fetch_local_static(
         z, la, lo, tif_nodata = _read_tif_window(path, bbox)
         if z.size == 0:
             return None
-        if tif_nodata is not None:
+        if tif_nodata is not None and not np.isnan(tif_nodata):
             z[z == tif_nodata] = np.nan
-        z[z == nodata] = np.nan
+        if nodata is not None:
+            z[z == nodata] = np.nan
         if lats is None:
             lats, lons = la, lo
         layers.append(z)

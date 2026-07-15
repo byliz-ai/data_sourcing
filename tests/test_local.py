@@ -118,3 +118,35 @@ def test_local_composite_modis_stacks_scales_and_masks(tmp_path, config):
     assert bool((np.diff(tt) > 0).all())          # sorted by composite date
     assert abs(float(da.max()) - 0.5) < 1e-6        # d10000 applied (5000 -> 0.5)
     assert bool(np.isnan(da.isel(time=0, lat=0, lon=0)))  # fill -> NaN
+
+
+def test_isda_is_a_selectable_soil_source():
+    """source='isda' routes soil to iSDA; SoilGrids stays the default."""
+    import pytest
+
+    from agwise_data.catalog import static_source_for
+
+    assert static_source_for("CLAY", "isda") == "isda"
+    assert static_source_for("CLAY") == "soilgrids"          # default unchanged
+    with pytest.raises(ValueError):                          # iSDA omits nitrogen
+        static_source_for("NITROGEN", "isda")
+
+
+def test_local_isda_applies_conversion(tmp_path, config):
+    """iSDA (unlike the preconverted SoilGrids profile) applies the catalog
+    conversion: db.od is stored x100, so d100 -> g/cm3."""
+    from agwise_data.drivers.local import fetch_local_static
+
+    landing = tmp_path / "landing"
+    entry = get_entry("isda")
+    for depth in entry["depths"]:
+        _write_tif(
+            landing / "Soil" / "iSDA" / f"isda_db.od_{depth}_v0.13_30s.tif",
+            np.full((5, 5), 120.0),
+        )
+    config.local_root = landing
+    config.register_domain("rw", [28.0, -0.5, 29.0, 1.0])
+
+    da, meta = fetch_local_static(config, entry, "isda", "SOIL.BDOD", "rw")
+    assert meta["access"] == "local" and da.sizes["depth"] == 2
+    assert abs(float(da.isel(depth=0).mean()) - 1.2) < 0.01  # 120 / 100

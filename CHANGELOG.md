@@ -3,6 +3,23 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.14.0 — iSDA as a selectable soil source
+- **New:** soil can now be served from **iSDA Africa** as well as SoilGrids —
+  choose per call with `source="isda"` (SoilGrids stays the default). New
+  `catalog/isda.yaml` + `drivers/isda.py`. iSDA maps `SOIL.CLAY/SAND/SILT/PH/
+  SOC/CEC/BDOD` to its `clay.tot.psa/sand.tot.psa/silt.tot.psa/ph.h2o/oc/ecec.f/
+  db.od` layers at its two depths (`0-20cm`, `20-50cm`).
+  - Units verified by inspection: texture/pH/OC/CEC are physical; **bulk
+    density is stored ×100**, so `SOIL.BDOD` carries `conversion: d100`
+    (121.7 → 1.217 g/cm³). Nitrogen is omitted — the `n.tot.ncs` values were
+    implausible, so mapping it was left out rather than guessed.
+  - iSDA is served **only from the local tree** (`AGWISE_LOCAL_ROOT`,
+    `Soil/iSDA/isda_{var}_{depth}_v0.13_30s.tif`); with no local root it raises a
+    clear error instead of attempting a download.
+  - Note: iSDA's two depths differ from SoilGrids' six, so the crop-model
+    writers (which expect the SoilGrids depth set) still use SoilGrids.
+  - Verified live on Rwanda points against SoilGrids side by side.
+
 ## 0.13.0 — Local source extended to soil (SoilGrids) and MODIS
 - The `AGWISE_LOCAL_ROOT` local source (0.12.0) now also covers the **soil**
   (`StaticDriver`) and **MODIS** (`ModisDriver`) code paths, not just the daily

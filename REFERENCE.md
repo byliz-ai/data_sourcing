@@ -172,11 +172,15 @@ out = extract_growing_season(trials, ["PRCP", "TMAX"],
 # adds Precipitation_m1.., TemperatureMax_m1.., totalRF, nrRainyDays
 ```
 
-**`extract_static_points(points, variables, depths=None, fill_nearest_m=1000)`**
+**`extract_static_points(points, variables, depths=None, fill_nearest_m=1000, source=None)`**
 Soil/terrain at points (wide), one column per depth (`CLAY_0_5cm`, …). Points
 on masked pixels (urban/water NoData) are filled from the nearest valid pixel
 within `fill_nearest_m` metres; each variable gets a `<VAR>_fill_m` column
 (0 = own pixel, >0 = donor distance, NaN = nothing in range).
+Soil source is **SoilGrids** by default; pass **`source="isda"`** for iSDA
+Africa instead (`SOIL.CLAY/SAND/SILT/PH/SOC/CEC/BDOD` at depths `0-20cm`/
+`20-50cm`; requires `AGWISE_LOCAL_ROOT`). The same `source=` works on
+`get_static`/`get_soil`.
 ```python
 from agwise_data import extract_static_points
 soil = extract_static_points(trials, ["CLAY", "SAND", "SILT", "SOC", "PH"])
