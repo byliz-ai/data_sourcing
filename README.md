@@ -117,12 +117,34 @@ shared, your outputs stay yours** — so three folders, each with one job:
 | `Global_GeoData/Processed` | the **region** slices the tool downloads + harmonizes | shared · **read/write** | `AGWISE_DATA_ROOT` |
 | `useCase_<Country>_<Name>/` | the **files you produce** (DSSAT/APSIM/…, CSVs) | your project | each writer's `out_dir` |
 
-A request first looks in **Landing** (no download); if it's not there it fetches
-only your region into the shared **Processed** cache (the next person reuses it);
-and you write your own results into **your use-case** folder. **Why three?** each
-role needs different rules — the raw inputs must stay read-only, the download
-cache must be shared *and* writable, and your outputs must stay yours; one folder
-can't be all three. Set the two shared roots (outputs go per call via `out_dir`):
+How they connect — a request flows top to bottom:
+
+```text
+  your call:  get_climate · extract_static_points · to_dssat · …
+        │
+        ▼   ① look in Landing (already downloaded, read-only)
+  ┌────────────────────────────────────────────┐
+  │  Global_GeoData/Landing                    │  raw · GLOBAL · shared · read-only
+  │  AGWISE_LOCAL_ROOT                         │  here? → read + clip to region, NO download
+  └────────────────────────────────────────────┘
+        │  not in Landing
+        ▼   ② else download just your region, then cache it
+  ┌────────────────────────────────────────────┐
+  │  Global_GeoData/Processed                  │  your REGION · shared · read/write
+  │  AGWISE_DATA_ROOT                          │  cached once → everyone reuses it next time
+  └────────────────────────────────────────────┘
+        │  analysis-ready cube / points
+        ▼   ③ you write your results
+  ┌────────────────────────────────────────────┐
+  │  useCase_<Country>_<Name>/result/          │  files YOU produce (DSSAT, CSVs, …)
+  │  each writer's  out_dir                    │  your project · your outputs stay yours
+  └────────────────────────────────────────────┘
+```
+
+**Why three?** each role needs different rules — raw inputs stay **read-only**,
+the download cache is **shared + writable** (fetch a region once, everyone
+reuses it), and your outputs stay **yours**; one folder can't be all three. Set
+the two shared roots (outputs go per call via `out_dir`):
 
 ```bash
 DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
