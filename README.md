@@ -11,7 +11,7 @@ shared cache with agreed names and units (`AGRO.PRCP` in mm/day, `SOIL.CLAY` in
 %, …) and reused by everyone afterwards.
 
 New here? Skim the two tables below (what it can do · where to read), then run
-the [60-second first success](#first-success-no-credentials-needed).
+the [no-credential first success](#first-success-no-credentials-needed).
 
 ## Documentation map
 
@@ -31,12 +31,14 @@ the [60-second first success](#first-success-no-credentials-needed).
 | --- | --- | --- |
 | Get monthly/daily rainfall or temperature for a region | `get_climate("PRCP", …)` | [REF §3.1](REFERENCE.md#31-gridded-cubes) |
 | Get soil or terrain **at my trial points** | `extract_static_points(…)` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
+| Choose the **soil source** (SoilGrids *or* iSDA) | `extract_static_points(…, source="isda")` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
 | Get climate for **each trial's growing season** | `extract_growing_season(…)` / `get_season(…)` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
 | Build **DSSAT / APSIM / WOFOST / ORYZA** input files | `to_dssat` · `to_apsim` · `to_wofost` · `to_oryza` | [REF §3.3](REFERENCE.md#33-crop-model-input-files-return-list-of-written-files) |
 | Get **NDVI/EVI** or a **cropland mask** | `get_ndvi(…)` / `get_cropmask(…)` | [REF §3.1](REFERENCE.md#31-gridded-cubes) |
 | Bias-correct a **seasonal forecast** | `bias_correct(…)` / `forecast_to_dssat(…)` | [REF §3.5](REFERENCE.md#35-seasonal-forecast-bias-correction) |
 | Make an **AOI grid** or tag points with **admin units** | `make_grid(…)` / `tag_admin(…)` | [REF §3.4](REFERENCE.md#34-spatial-scaffolding-return-dataframes) |
 | Use it from **R** or the **command line** | `ad_*` wrappers / `agwise-data …` | [REF §4](REFERENCE.md#4-r-and-command-line-use) |
+| **Reuse data already downloaded** (skip re-fetching from the network) | set `AGWISE_LOCAL_ROOT` | [cglabs_setup](docs/cglabs_setup.md#performance-tuning-optional) |
 | Set up **credentials** | — | [credentials_setup](docs/credentials_setup.md) |
 | Install on the **shared server** | — | [cglabs_setup](docs/cglabs_setup.md) |
 

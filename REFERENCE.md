@@ -79,6 +79,12 @@ Ask for variables by **short** name (`PRCP`), **canonical** name
 Soil depths: `0-5cm, 5-15cm, 15-30cm, 30-60cm, 60-100cm, 100-200cm` (point
 columns use underscores, e.g. `CLAY_0_5cm`).
 
+**Soil source:** SoilGrids by default. Pass `source="isda"` on the soil calls
+(`extract_static_points`/`get_static`/`get_soil`) for iSDA Africa instead —
+`CLAY/SAND/SILT/PH/SOC/CEC/BDOD` at iSDA's two depths `0-20cm`/`20-50cm`
+(needs `AGWISE_LOCAL_ROOT`; the crop-model writers keep using SoilGrids' six
+depths).
+
 **Region** for any gridded/writer call is given by `country="Rwanda"` (or ISO3
 `"RWA"`), optionally `admin_level=1/2` + `admin_name="..."`, **or**
 `bbox=[west, south, east, north]`.
