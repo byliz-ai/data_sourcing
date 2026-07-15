@@ -147,3 +147,37 @@ def test_extract_growing_season_agwise_names(config):
         legacy_names=False, source="fake", config=config,
     )
     assert "PRCP_m1" in out.columns and "PRCP_m3" in out.columns
+
+
+def test_open_product_da_ignores_crs_variable(tmp_path):
+    """Regression: a country-clipped product carries a `spatial_ref` CRS var,
+    so the NetCDF has >1 variable and xr.open_dataarray rejected it on the
+    second (cache-hit) request. _open_product_da must return the data var."""
+    import xarray as xr
+    from agwise_data.api import _open_product_da
+
+    da = xr.DataArray(
+        np.zeros((2, 3, 3), "float32"),
+        coords={"time": pd.date_range("2020-01-01", periods=2),
+                "lat": [0.0, 0.1, 0.2], "lon": [0.0, 0.1, 0.2]},
+        dims=("time", "lat", "lon"), name="PRCP",
+    )
+    ds = da.to_dataset()
+    ds["spatial_ref"] = xr.DataArray(0)  # rioxarray-style CRS placeholder
+    path = tmp_path / "Monthly_PRCP_2020_2020.nc"
+    ds.to_netcdf(path)
+    assert len(xr.open_dataset(path).data_vars) == 2  # would break open_dataarray
+
+    out = _open_product_da(path)
+    assert out.name == "PRCP" and out.sizes["time"] == 2
+
+
+def test_get_climate_product_cache_hit_reopens(config):
+    """The second call for the same product is a cache hit that reopens the
+    file via _open_product_da and returns the same cube."""
+    kw = dict(variables="PRCP", years=[2020], bbox=BBOX, freq="monthly",
+              source="fake", config=config)
+    first = get_climate(**kw)["AGRO.PRCP"]
+    assert first["nc"].exists()
+    second = get_climate(**kw)["AGRO.PRCP"]  # need_nc=False -> _open_product_da
+    assert second["data"].sizes["time"] == first["data"].sizes["time"]

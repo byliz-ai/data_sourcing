@@ -3,6 +3,18 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.11.3 — Fix product cache-hit reopen for country-clipped data
+- **Fix:** the second request for a **country-clipped** product failed with
+  `ValueError: ... more than one data variable`. A geometry clip adds a
+  `spatial_ref` CRS variable (rioxarray), so the cached product NetCDF has two
+  variables, and the cache-hit path reopened it with `xr.open_dataarray`
+  (single-variable only). Added `_open_product_da()` — picks the one real data
+  variable, ignoring the CRS placeholder — and used it in all five affected
+  functions (`get_climate`, `get_static`, `get_seasonal`, `get_modis`,
+  `get_season`). First calls always worked (they return the in-memory cube);
+  only repeat calls hit the bug. Found while ingesting local `common_data`
+  files into the cache.
+
 ## 0.11.2 — AgERA5 v2; document CHIRPS-needs-Earth-Engine
 - **AgERA5 → version 2.** ECMWF deprecated AgERA5 v1/v1.1 (no longer updated).
   The CDS request now uses `version: "2_0"` (same request schema and file

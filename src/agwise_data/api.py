@@ -179,6 +179,23 @@ def _prefetch(config: Config, tasks: List[tuple]) -> None:
             fut.result()  # propagate the first failure
 
 
+def _open_product_da(nc_path) -> xr.DataArray:
+    """Open a cached product's single data variable.
+
+    A country-clipped product carries a ``spatial_ref`` CRS variable (written
+    by rioxarray during the geometry clip), so the NetCDF has more than one
+    variable and ``xr.open_dataarray`` would reject it. Pick the one real data
+    variable, ignoring the CRS placeholder.
+    """
+    ds = xr.open_dataset(nc_path)
+    names = [v for v in ds.data_vars if v not in ("spatial_ref", "crs")]
+    if len(names) != 1:
+        raise ValueError(
+            f"{nc_path}: expected one data variable, found {list(ds.data_vars)}"
+        )
+    return ds[names[0]]
+
+
 # ---------------------------------------------------------------------------
 def get_climate(
     variables: Union[str, Sequence[str]],
@@ -243,7 +260,7 @@ def get_climate(
     for var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif in plans:
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
-            da = xr.open_dataarray(nc_path)
+            da = _open_product_da(nc_path)
         else:
             da = driver.open_years(var, years, var_domain)
             da = subset_bbox(da, region_bbox, buffer=0.05)
@@ -649,7 +666,7 @@ def get_static(
     for var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif in plans:
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
-            da = xr.open_dataarray(nc_path)
+            da = _open_product_da(nc_path)
         else:
             da = driver.open_static(var, var_domain)
             da = subset_bbox(da, region_bbox, buffer=0.05)
@@ -847,7 +864,7 @@ def get_seasonal(
     for var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif in plans:
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
-            da = xr.open_dataarray(nc_path)
+            da = _open_product_da(nc_path)
         else:
             da = driver.open_inits(var, init_month, years, var_domain)
             da = subset_bbox(da, region_bbox, buffer=0.05)
@@ -1018,7 +1035,7 @@ def get_modis(
     for var, parts, nc_path, tif_path, need_nc, need_tif in plans:
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
-            da = xr.open_dataarray(nc_path)
+            da = _open_product_da(nc_path)
         else:
             stacks = [
                 driver.open_years(var, years, dom) for _, driver, dom in parts
@@ -1315,7 +1332,7 @@ def get_season(
 
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
-            da = xr.open_dataarray(nc_path)
+            da = _open_product_da(nc_path)
         else:
             # Fetch (and cache) the whole-year cubes once via the existing
             # region calls, then slice to the season here.
