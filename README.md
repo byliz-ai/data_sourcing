@@ -54,7 +54,7 @@ the [no-credential first success](#first-success-no-credentials-needed).
 | # | Requirement | Needed for |
 | --- | --- | --- |
 | 1 | **conda** (Miniconda/Anaconda) + git | everything (creates the `agwise_data` Python 3.10+ env) |
-| 2 | A **cache folder** (`AGWISE_DATA_ROOT`) | everything — where downloads and products are stored |
+| 2 | A **cache folder** (`AGWISE_DATA_ROOT`) | everything — where downloads and products are stored (the shared `common_data/agwise_data` on CGLabs) |
 | 3 | A free **Copernicus CDS** account + token | temperature/radiation/humidity/wind (AgERA5) and seasonal forecasts (SEAS5) |
 | 4 | A free **Google Earth Engine** account + a Cloud project | MODIS NDVI/EVI (`get_ndvi`) and the crop mask (`get_cropmask`) |
 
@@ -105,9 +105,11 @@ conda env create -f environment.yml     # creates the 'agwise_data' env
 conda activate agwise_data
 pip install -e ".[all]"                  # package + CDS + Earth Engine clients
 
-# Choose where data is cached (your own folder for testing;
-# the shared folder in production — see cglabs_setup.md):
-export AGWISE_DATA_ROOT=~/agwise_data/cache
+# Choose where data is cached. On CGLabs point at the SHARED cache so a dataset
+# downloaded once is reused team-wide; on a laptop / for testing use your own
+# folder (see cglabs_setup.md):
+export AGWISE_DATA_ROOT=/home/jovyan/common_data/agwise_data   # shared (CGLabs)
+# export AGWISE_DATA_ROOT=~/agwise_data/cache                  # personal / testing
 ```
 
 Install extras if you don't need everything: `.[geo]` (clipping + GeoTIFF),

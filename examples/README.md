@@ -18,10 +18,12 @@ Both scripts do the same thing in each language:
 3. **DSSAT input files** (commented out) — needs Copernicus CDS credentials.
 4. **NDVI** (Python, commented out) — needs Google Earth Engine credentials.
 
-Set your cache location first so downloads have a home:
+Set your cache location first so downloads have a home — the shared cache on
+CGLabs, or a personal folder for testing:
 
 ```bash
-export AGWISE_DATA_ROOT=~/agwise_data/cache
+export AGWISE_DATA_ROOT=/home/jovyan/common_data/agwise_data   # shared (CGLabs)
+# export AGWISE_DATA_ROOT=~/agwise_data/cache                  # personal / testing
 ```
 
 Steps 2–4 need credentials — the click-by-click setup is in

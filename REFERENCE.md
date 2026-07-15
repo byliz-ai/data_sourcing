@@ -43,7 +43,9 @@ Install and credentials live in the **[README](README.md)** (concise) and:
 
 In short: `conda env create -f environment.yml` → `conda activate
 agwise_data` → `pip install -e ".[all]"` → `pytest -q` to verify → set
-`AGWISE_DATA_ROOT` to your cache folder. Add `~/.cdsapirc` (CDS) and run
+`AGWISE_DATA_ROOT` to your cache folder (the shared
+`/home/jovyan/common_data/agwise_data` on CGLabs; a personal folder for
+testing). Add `~/.cdsapirc` (CDS) and run
 `earthengine authenticate` + `export AGWISE_GEE_PROJECT=<id>` only for the
 sources you use.
 
