@@ -17,8 +17,14 @@ What each credential unlocks:
 | Provider | Needed for | What you place on the server |
 | --- | --- | --- |
 | Copernicus CDS | AgERA5 climate, SEAS5 forecasts | token in `~/.cdsapirc` |
-| Google Earth Engine (GEE) | MODIS NDVI/EVI (`get_ndvi`, `get_modis`), crop mask (`get_cropmask`) | file `~/.config/earthengine/credentials` |
-| CHIRPS, SoilGrids, DEM | nothing — no account needed | — |
+| Google Earth Engine (GEE) | MODIS NDVI/EVI (`get_ndvi`, `get_modis`), crop mask (`get_cropmask`), **and CHIRPS rainfall while the UCSB host is 403-blocked** (see note) | file `~/.config/earthengine/credentials` |
+| SoilGrids, DEM, geoBoundaries | nothing — no account needed | — |
+
+> **CHIRPS (rainfall) — currently needs Earth Engine.** CHIRPS normally
+> downloads direct from UCSB with no account, but `data.chc.ucsb.edu` is
+> returning HTTP 403 right now. When that happens the driver falls back to
+> CHIRPS on Earth Engine (`UCSB-CHG/CHIRPS/DAILY`), so a `PRCP` fetch needs the
+> same GEE setup as MODIS below (credentials file + `AGWISE_GEE_PROJECT`).
 
 **Everyone uses their own GEE Cloud project and their own CDS account** —
 there is no shared project or token to ask anyone for. The steps below get

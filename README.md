@@ -56,10 +56,17 @@ the [60-second first success](#first-success-no-credentials-needed).
 | 3 | A free **Copernicus CDS** account + token | temperature/radiation/humidity/wind (AgERA5) and seasonal forecasts (SEAS5) |
 | 4 | A free **Google Earth Engine** account + a Cloud project | MODIS NDVI/EVI (`get_ndvi`) and the crop mask (`get_cropmask`) |
 
-Rainfall (CHIRPS), soil (SoilGrids), terrain (Copernicus DEM) and admin
-boundaries (geoBoundaries) need **no account** — so you can install and get your
+Soil (SoilGrids), terrain (Copernicus DEM) and admin boundaries
+(geoBoundaries) need **no account** — so you can install and get your
 [first result](#first-success-no-credentials-needed) with no credentials at all.
 You only add credentials for the sources you actually call.
+
+> **Rainfall (CHIRPS) note:** CHIRPS normally needs no account, but the UCSB
+> host (`data.chc.ucsb.edu`) is **currently returning HTTP 403**. When that
+> happens the driver automatically falls back to CHIRPS on **Earth Engine**,
+> which needs the *same* GEE credentials as MODIS (a Cloud project +
+> `AGWISE_GEE_PROJECT`, see row 4 and [§2](#2-get-the-credentials)). So today,
+> fetching `PRCP` effectively needs Earth Engine set up.
 
 ## 2. Get the credentials
 
@@ -117,14 +124,18 @@ pytest -q
 # 1. Offline: list the data sources and variables you can pull.
 agwise-data catalog list
 
-# 2. A real fetch that needs NO account (CHIRPS rainfall, one year, then cached).
-agwise-data get --vars PRCP --country Rwanda --years 2023:2023 --freq monthly
+# 2. A real fetch that needs NO account at all (Copernicus DEM elevation,
+#    cropped to a county, then cached). ~1-2 min the first time.
+agwise-data get-static --vars ELEV --country Kenya --admin-level 1 --admin-name Nakuru
 agwise-data cache info                   # see what landed in the cache
 ```
 
-Got a NetCDF path back from step 2? You're ready. Add CDS / Earth Engine
-credentials ([§2](#2-get-the-credentials)) only when you reach for AgERA5,
-SEAS5, MODIS or the crop mask.
+Got a NetCDF path back from step 2? You're ready. Add credentials
+([§2](#2-get-the-credentials)) for the sources that need them: CDS for AgERA5/
+SEAS5, and **Earth Engine for MODIS, the crop mask, and — while UCSB is
+blocking direct downloads — CHIRPS rainfall** (see the rainfall note above).
+Once Earth Engine is set up, rainfall works too:
+`agwise-data get --vars PRCP --country Kenya --admin-level 1 --admin-name Nakuru --years 2023:2023 --freq monthly`.
 
 ## 4. Use
 

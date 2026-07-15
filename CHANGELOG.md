@@ -3,6 +3,18 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.11.2 — AgERA5 v2; document CHIRPS-needs-Earth-Engine
+- **AgERA5 → version 2.** ECMWF deprecated AgERA5 v1/v1.1 (no longer updated).
+  The CDS request now uses `version: "2_0"` (same request schema and file
+  structure — verified live). Note: the cache key is (source, variable, year,
+  domain), *not* version, so already-cached years stay v1.1 until refetched —
+  clear the AgERA5 cache dir to force a v2 re-pull.
+- **Docs:** the README and `docs/credentials_setup.md` now state that while the
+  UCSB host is 403-blocking, fetching CHIRPS `PRCP` needs Earth Engine
+  credentials (the v0.11.1 fallback). The README "first success (no
+  credentials)" fetch switched from CHIRPS to Copernicus **DEM elevation**,
+  which needs no account regardless of the UCSB block.
+
 ## 0.11.1 — CHIRPS resilient to the UCSB host block
 - **Fix:** `get_climate`/`get_season`/`extract_*`/`to_*` for `PRCP` no longer
   hard-fail when `data.chc.ucsb.edu` returns HTTP 403 (the UCSB host is

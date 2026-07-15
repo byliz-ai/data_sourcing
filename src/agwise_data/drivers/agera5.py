@@ -76,7 +76,7 @@ class Agera5Driver(Driver):
             "year": str(year),
             "month": months,
             "day": days,
-            "version": access.get("version", "1_1"),
+            "version": access.get("version", "2_0"),
             "area": [n, w, s, e],  # CDS order: North, West, South, East
         }
         if spec.get("statistic"):
