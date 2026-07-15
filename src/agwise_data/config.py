@@ -42,6 +42,7 @@ ENV_CONFIG = "AGWISE_DATA_CONFIG"
 ENV_WORKERS = "AGWISE_DATA_WORKERS"
 ENV_SCOPE = "AGWISE_DATA_SCOPE"
 ENV_GEE_PROJECT = "AGWISE_GEE_PROJECT"
+ENV_LOCAL_ROOT = "AGWISE_LOCAL_ROOT"
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,7 @@ class Config:
         cog_workers: int = 3,
         region_max_area_deg2: float = 400.0,
         gee_project: Optional[str] = None,
+        local_root: Optional[os.PathLike] = None,
     ):
         self.root = Path(root).expanduser() if root else Path.home() / "agwise_data"
         self.domain = domain
@@ -124,6 +126,11 @@ class Config:
         # Credentials themselves stay personal (~/.config/earthengine) —
         # see REFERENCE.md.
         self.gee_project = gee_project
+        # Optional read-only root of already-downloaded legacy geodata (the
+        # AgWise Global_GeoData/Landing tree). When set, daily drivers read a
+        # matching local file (clipping to the region) instead of downloading —
+        # see drivers/local.py. Default None = feature off.
+        self.local_root = Path(local_root).expanduser() if local_root else None
         self._discover_region_domains()
 
     # ------------------------------------------------------------------
@@ -160,6 +167,7 @@ class Config:
             cog_workers=int(file_cfg.get("cog_workers", 8)),
             region_max_area_deg2=float(file_cfg.get("region_max_area_deg2", 400.0)),
             gee_project=os.environ.get(ENV_GEE_PROJECT) or file_cfg.get("gee_project"),
+            local_root=os.environ.get(ENV_LOCAL_ROOT) or file_cfg.get("local_root"),
         )
 
     # ------------------------------------------------------------------

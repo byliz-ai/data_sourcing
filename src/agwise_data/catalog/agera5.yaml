@@ -40,6 +40,21 @@ access:
     role: alternative
     collection: "projects/climate-engine-pro/assets/ce-ag-era5-v2/daily"
     note: AgERA5 v2 mirror in the GEE community catalog (used by legacy scripts).
+  - type: local
+    role: alternative
+    # Already-downloaded yearly files in the AgWise Global_GeoData/Landing tree,
+    # read (and region-clipped) instead of downloading when AGWISE_LOCAL_ROOT is
+    # set. Same raw units as CDS (K, J m-2 day-1, %, m s-1), so the per-variable
+    # `conversion` above applies unchanged. The data variable is named after the
+    # year in these files; the local driver selects it positionally.
+    paths:
+      AGRO.TMAX: "TemperatureMax/AgEra/{year}.nc"
+      AGRO.TMIN: "TemperatureMin/AgEra/{year}.nc"
+      AGRO.TEMP: "TemperatureMean/AgEra/{year}.nc"
+      AGRO.SRAD: "SolarRadiation/AgEra/{year}.nc"
+      AGRO.RHUM: "RelativeHumidity/AgEra/{year}.nc"
+      AGRO.WIND: "WindSpeed/AgEra/{year}.nc"
+      AGRO.PRCP: "Rainfall/AgEra/{year}.nc"
 
 variables:
   AGRO.TMAX:

@@ -48,7 +48,7 @@ from .api import (
 )
 from .config import Config
 
-__version__ = "0.11.3"
+__version__ = "0.12.0"
 
 __all__ = [
     "get_climate",

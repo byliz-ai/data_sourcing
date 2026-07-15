@@ -61,7 +61,16 @@ class Driver:
             ):
                 return dest
 
-            da, fetch_meta = self._fetch_year(variable, year, domain)
+            # Reuse an already-downloaded local file if AGWISE_LOCAL_ROOT is set
+            # and one exists for this (variable, year); otherwise download.
+            from .local import fetch_local_year
+
+            local = fetch_local_year(
+                self.config, self.entry, self.source_id, variable, year, domain
+            )
+            da, fetch_meta = local if local is not None else self._fetch_year(
+                variable, year, domain
+            )
             da = standardize(da, variable, self.source_id)
 
             # A past year must be complete: caching a silently truncated

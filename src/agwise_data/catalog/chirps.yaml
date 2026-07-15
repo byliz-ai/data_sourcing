@@ -47,6 +47,12 @@ access:
     role: alternative
     # Monthly chunks of the current (partial) year.
     url_pattern: "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/netcdf/p05/by_month/chirps-v2.0.{year}.{month:02d}.days_p05.nc"
+  - type: local
+    role: alternative
+    # Already-downloaded yearly file in the AgWise Global_GeoData/Landing tree,
+    # read (and region-clipped) instead of downloading when AGWISE_LOCAL_ROOT is
+    # set. Same units as the network source (mm/day), so no extra conversion.
+    path: "Rainfall/chirps/{year}.nc"
   - type: gee
     role: alternative
     collection: "UCSB-CHG/CHIRPS/DAILY"

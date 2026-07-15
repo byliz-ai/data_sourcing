@@ -47,6 +47,12 @@ agwise_data` → `pip install -e ".[all]"` → `pytest -q` to verify → set
 `earthengine authenticate` + `export AGWISE_GEE_PROJECT=<id>` only for the
 sources you use.
 
+**Reuse already-downloaded data (skip the download):** set
+`AGWISE_LOCAL_ROOT` to the AgWise `Global_GeoData/Landing` tree and the daily
+drivers (CHIRPS, AgERA5) read the matching legacy yearly file, clip it to your
+region and cache it — no network request. Opt-in; unset to always download.
+See [docs/cglabs_setup.md](docs/cglabs_setup.md#performance-tuning-optional).
+
 ## 2. Canonical variables & units
 
 Ask for variables by **short** name (`PRCP`), **canonical** name

@@ -3,6 +3,23 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.12.0 — Local source: reuse already-downloaded geodata (no re-download)
+- **New:** point `AGWISE_LOCAL_ROOT` at the AgWise `Global_GeoData/Landing`
+  tree and the daily drivers read the matching legacy yearly file
+  (`<Variable>/<Source>/<year>.nc`) — region-clipped — instead of downloading.
+  It then flows through the normal harmonize + cache path, so the cached file
+  is identical to one built from the network source. Added a `local` access
+  block to the CHIRPS and AgERA5 catalog entries, a `drivers/local.py`
+  (`fetch_local_year`), and a `local_root` config field. Opt-in: with the env
+  var unset (default), nothing changes and drivers download as before.
+  - Handles the legacy files' quirks: data variable named after the year, an
+    extra `crs` variable, out-of-order time axis, and global extent (clipped
+    before load to stay in memory). Legacy AgERA5 carries the same raw units as
+    CDS (K, J m-2 day-1, %, m s-1), so the existing per-variable `conversion`
+    applies unchanged.
+  - Verified live: Rwanda 2020 RHUM/TMAX/SRAD read from the local tree in ~5 s
+    (vs ~20 min from CDS), with K->degC and J->MJ conversions correct.
+
 ## 0.11.3 — Fix product cache-hit reopen for country-clipped data
 - **Fix:** the second request for a **country-clipped** product failed with
   `ValueError: ... more than one data variable`. A geometry clip adds a

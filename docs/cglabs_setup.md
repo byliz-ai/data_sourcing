@@ -93,6 +93,14 @@ export AGWISE_DATA_WORKERS=6
 # one cache serves every country (small requests otherwise fetch only
 # their own window, which is much faster for one-off runs):
 export AGWISE_DATA_SCOPE=domain     # default: auto
+
+# reuse already-downloaded legacy geodata instead of downloading: point this
+# at the AgWise Global_GeoData/Landing tree. When set, the daily drivers
+# (CHIRPS, AgERA5) read the matching <Variable>/<Source>/<year>.nc file,
+# clip it to the region, and cache it — no network request. Read-only and
+# opt-in; unset it to always download. A Rwanda year reads in seconds instead
+# of minutes on the CDS queue.
+export AGWISE_LOCAL_ROOT=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data/Global_GeoData/Landing
 ```
 
 With the default `auto` scope, a country-scale CHIRPS request reads only
