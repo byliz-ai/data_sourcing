@@ -131,6 +131,12 @@ crop-model input files (`to_dssat`, `to_apsim`), spatial helpers
 (`make_grid`, `tag_admin`) and seasonal-forecast bias correction
 (`bias_correct`, `forecast_to_dssat`), plus the R and CLI equivalents.
 
+## Contributing & changelog
+
+Contributions welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup,
+running tests, adding a data source, the shared-cache ground rules). Release
+history is in **[CHANGELOG.md](CHANGELOG.md)**.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
