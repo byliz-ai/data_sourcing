@@ -11,23 +11,38 @@ conda activate agwise_data
 pip install -e ".[all]"
 ```
 
-## 2. Shared data root (once)
+## 2. Data roots — the AgWise folder convention
 
-Pick a location every AgWise user can read and write, e.g.:
+AgWise keeps two things apart, and this layer follows the same line:
 
-```bash
-mkdir -p /home/jovyan/common_data/agwise_data
-```
+* **Shared raw inputs** — the global geodata everyone consumes, already staged in
+  `.../datasourcing/Data/Global_GeoData/Landing`. Point `AGWISE_LOCAL_ROOT` here
+  and the drivers **read + region-clip** those files instead of re-downloading
+  (treat it as read-only — see [performance tuning](#performance-tuning-optional)).
+* **Your use-case workspace** — where the outputs go. Following the AgWise
+  convention, create `.../datasourcing/Data/useCase_<Country>_<Name>/` and point
+  `AGWISE_DATA_ROOT` there; the layer's harmonized cache, products and the files
+  you write all land under your own use-case folder.
 
 Each user adds to their `~/.bashrc` (or R `.Renviron`):
 
 ```bash
-export AGWISE_DATA_ROOT=/home/jovyan/common_data/agwise_data
+DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
+export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # shared raw inputs (read-only)
+export AGWISE_DATA_ROOT=$DATASOURCING/useCase_Rwanda_MyProject   # your use-case outputs
+export HDF5_USE_FILE_LOCKING=FALSE                               # Landing is on NFS
+mkdir -p "$AGWISE_DATA_ROOT"
 ```
 
-That's the whole trick: because everyone points at the same root, the first
-person to ask for `Kenya PRCP 2005:2024` pays the download; everyone after
-that gets a cache hit.
+So a request **reads the shared Landing file (no download), clips it to your
+region, and writes the result under your own use-case folder** — exactly the
+inputs-shared / outputs-per-use-case pattern the AgWise modules already use. For
+crop-model files, point `out_dir` under your use-case too, e.g.
+`out_dir="$AGWISE_DATA_ROOT/result/DSSAT"`.
+
+Not on CGLabs (laptop / other server)? Leave `AGWISE_LOCAL_ROOT` unset and the
+layer downloads from source into `AGWISE_DATA_ROOT` as usual — a personal folder
+like `~/agwise_data/cache` is fine.
 
 ## 3. CDS credentials (per user, for AgERA5)
 

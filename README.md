@@ -54,7 +54,7 @@ the [no-credential first success](#first-success-no-credentials-needed).
 | # | Requirement | Needed for |
 | --- | --- | --- |
 | 1 | **conda** (Miniconda/Anaconda) + git | everything (creates the `agwise_data` Python 3.10+ env) |
-| 2 | A **cache folder** (`AGWISE_DATA_ROOT`) | everything — where downloads and products are stored (the shared `common_data/agwise_data` on CGLabs) |
+| 2 | A **workspace folder** (`AGWISE_DATA_ROOT`) | everything — your cache, products and outputs (on CGLabs, your `Data/useCase_<name>` folder; see [cglabs_setup](docs/cglabs_setup.md)) |
 | 3 | A free **Copernicus CDS** account + token | temperature/radiation/humidity/wind (AgERA5) and seasonal forecasts (SEAS5) |
 | 4 | A free **Google Earth Engine** account + a Cloud project | MODIS NDVI/EVI (`get_ndvi`) and the crop mask (`get_cropmask`) |
 
@@ -105,11 +105,13 @@ conda env create -f environment.yml     # creates the 'agwise_data' env
 conda activate agwise_data
 pip install -e ".[all]"                  # package + CDS + Earth Engine clients
 
-# Choose where data is cached. On CGLabs point at the SHARED cache so a dataset
-# downloaded once is reused team-wide; on a laptop / for testing use your own
-# folder (see cglabs_setup.md):
-export AGWISE_DATA_ROOT=/home/jovyan/common_data/agwise_data   # shared (CGLabs)
-# export AGWISE_DATA_ROOT=~/agwise_data/cache                  # personal / testing
+# Data roots (AgWise convention on CGLabs): read shared raw inputs from
+# Global_GeoData/Landing, write your outputs to your own use-case folder.
+# Full explanation in cglabs_setup.md; on a laptop, leave LOCAL_ROOT unset and
+# use a personal AGWISE_DATA_ROOT like ~/agwise_data/cache.
+DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
+export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # shared raw inputs (read-only)
+export AGWISE_DATA_ROOT=$DATASOURCING/useCase_Rwanda_MyProject   # your use-case outputs
 ```
 
 Install extras if you don't need everything: `.[geo]` (clipping + GeoTIFF),
