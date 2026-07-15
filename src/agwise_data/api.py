@@ -1,20 +1,25 @@
-"""Public API of the AgWise data access layer.
+"""Public API of the AgWise data-sourcing layer.
 
-Three calls cover the access patterns the AgWise modules use today:
+Grouped by what they return (see HANDOFF.md for the full per-function
+reference with parameters, outputs and examples):
 
-* :func:`get_climate` — harmonized gridded cubes for a country/region
-  (daily or monthly), cached as NetCDF/GeoTIFF products. Replaces the
-  per-module download-and-stack scripts.
-* :func:`extract_points` — time series at point locations.
-* :func:`extract_growing_season` — per-trial monthly values between
-  planting and harvest dates (plus rainfall totals and rainy-day counts),
-  matching the fertilizer ML pipeline's expected columns.
+* **Gridded cubes** → ``{canonical_var: {"nc", "tif", "data"}}``:
+  :func:`get_climate`, :func:`get_static` (+ :func:`get_dem`/:func:`get_soil`),
+  :func:`get_seasonal`, :func:`get_modis` (+ :func:`get_ndvi`),
+  :func:`get_cropmask`, :func:`get_season`.
+* **Point extraction** → ``pandas.DataFrame``: :func:`extract_points`,
+  :func:`extract_growing_season`, :func:`extract_static_points`.
+* **Crop-model input files** → ``list`` of written files: :func:`to_dssat`,
+  :func:`to_apsim`, :func:`forecast_to_dssat`.
+* **Spatial scaffolding** → ``pandas.DataFrame``: :func:`make_grid`,
+  :func:`tag_admin`.
+* **Seasonal-forecast bias correction** → corrected cubes:
+  :func:`bias_correct`.
 
-Performance notes: all (variable, year) fetches run in a thread pool
-(``config.max_workers``) so downloads and CDS queue waits overlap, and
-small requests get a *region-scoped* cache (see ``config.fetch_scope``)
-so a one-country run fetches only that country's window instead of a
-whole continental domain.
+Performance: all (variable, year) fetches run in a thread pool
+(``config.max_workers``) so downloads and CDS queue waits overlap, and small
+requests get a *region-scoped* cache (see ``config.fetch_scope``) so a
+one-country run fetches only that country's window, not a whole continent.
 """
 
 from __future__ import annotations
@@ -338,7 +343,15 @@ def extract_points(
     lat_col: Optional[str] = None,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
-    """Long-format time series at point locations between two dates."""
+    """Long-format climate time series at point locations between two dates.
+
+    ``points`` is a CSV path or DataFrame with longitude/latitude columns
+    (auto-detected, or pass ``lon_col``/``lat_col``). ``variables`` are
+    climate short/canonical names; ``start``/``end`` are ISO dates; ``freq``
+    is ``"daily"`` or ``"monthly"``. Returns a long DataFrame with columns
+    ``point, <lon_col>, <lat_col>, time, variable, value`` (one row per point
+    x time x variable).
+    """
     config = config or Config.load()
     variables = _as_variables(variables)
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)

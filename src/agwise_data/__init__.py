@@ -1,27 +1,33 @@
-"""agwise_data — the AgWise data access layer.
+"""agwise_data — the AgWise data-sourcing layer.
 
-One call to fetch, harmonize and cache the climate data every AgWise
-module needs, with a shared cache so a dataset is downloaded once and
-reused by everyone.
+One call to fetch, harmonize and cache the climate, soil, terrain and
+remote-sensing data every AgWise module needs — and to turn it into
+analysis-ready inputs — with a shared cache so a dataset is downloaded once
+and reused by everyone. Full guide: README.md; function reference: HANDOFF.md.
 
-Public API::
+Public API (all return a dict of products, a DataFrame, or a list of files):
 
-    from agwise_data import get_climate, extract_points, extract_growing_season
+* Gridded cubes — :func:`get_climate`, :func:`get_static`/:func:`get_dem`/
+  :func:`get_soil`, :func:`get_seasonal`, :func:`get_modis`/:func:`get_ndvi`,
+  :func:`get_cropmask`, :func:`get_season`.
+* Point extraction — :func:`extract_points`, :func:`extract_growing_season`,
+  :func:`extract_static_points`.
+* Crop-model input files — :func:`to_dssat`, :func:`to_apsim`.
+* Spatial scaffolding — :func:`make_grid`, :func:`tag_admin`.
+* Seasonal-forecast bias correction — :func:`bias_correct`,
+  :func:`forecast_to_dssat`.
 
-    result = get_climate(
-        variables=["AGRO.PRCP", "AGRO.TMAX"],
-        country="Kenya",
-        years=range(2015, 2025),
-        freq="monthly",
-    )
+    from agwise_data import get_climate
+    result = get_climate(["PRCP", "TMAX"], years=range(2015, 2025),
+                         country="Rwanda", freq="monthly")
 """
 
 from .api import (
     bias_correct,
-    forecast_to_dssat,
     extract_growing_season,
     extract_points,
     extract_static_points,
+    forecast_to_dssat,
     get_climate,
     get_cropmask,
     get_dem,
@@ -32,6 +38,7 @@ from .api import (
     get_soil,
     get_static,
     make_grid,
+    rainy_days,
     tag_admin,
     to_apsim,
     to_dssat,
@@ -44,6 +51,7 @@ __all__ = [
     "get_climate",
     "extract_points",
     "extract_growing_season",
+    "rainy_days",
     "get_static",
     "get_dem",
     "get_soil",
