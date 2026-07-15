@@ -104,15 +104,32 @@ cd data_sourcing
 conda env create -f environment.yml     # creates the 'agwise_data' env
 conda activate agwise_data
 pip install -e ".[all]"                  # package + CDS + Earth Engine clients
+```
 
-# Data roots (AgWise convention on CGLabs): read shared raw inputs from
-# Global_GeoData/Landing, cache new region downloads in the shared
-# Global_GeoData/Processed, and write your outputs to your own use-case folder
-# (via each writer's out_dir). Full explanation in cglabs_setup.md; on a laptop,
-# leave LOCAL_ROOT unset and use a personal AGWISE_DATA_ROOT like ~/agwise_data/cache.
+### Where your data lives — three folders, three jobs
+
+On CGLabs the layer follows the existing AgWise folder layout. **Inputs are
+shared, your outputs stay yours** — so three folders, each with one job:
+
+| Folder (under `…/datasourcing/Data/`) | Holds | Shared? | You set it via |
+| --- | --- | --- | --- |
+| `Global_GeoData/Landing` | raw **global** source data, already downloaded | shared · **read-only** | `AGWISE_LOCAL_ROOT` |
+| `Global_GeoData/Processed` | the **region** slices the tool downloads + harmonizes | shared · **read/write** | `AGWISE_DATA_ROOT` |
+| `useCase_<Country>_<Name>/` | the **files you produce** (DSSAT/APSIM/…, CSVs) | your project | each writer's `out_dir` |
+
+A request first looks in **Landing** (no download); if it's not there it fetches
+only your region into the shared **Processed** cache (the next person reuses it);
+and you write your own results into **your use-case** folder. **Why three?** each
+role needs different rules — the raw inputs must stay read-only, the download
+cache must be shared *and* writable, and your outputs must stay yours; one folder
+can't be all three. Set the two shared roots (outputs go per call via `out_dir`):
+
+```bash
 DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
-export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # shared raw inputs (read-only)
-export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed   # shared download cache (read/write)
+export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # raw inputs (read-only)
+export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed   # download cache (read/write)
+export HDF5_USE_FILE_LOCKING=FALSE                              # Landing/Processed are on NFS
+# Laptop / off CGLabs: leave AGWISE_LOCAL_ROOT unset; AGWISE_DATA_ROOT=~/agwise_data/cache
 ```
 
 Install extras if you don't need everything: `.[geo]` (clipping + GeoTIFF),
