@@ -14,7 +14,7 @@ The full SEAS5 lead range (24..5160 h, 215 days) is always fetched, so
 any later lead subset is a cache hit.
 
 Authentication: a free CDS account and a ``~/.cdsapirc`` file — see
-HANDOFF.md. Never hardcode the token in scripts.
+REFERENCE.md. Never hardcode the token in scripts.
 """
 
 from __future__ import annotations

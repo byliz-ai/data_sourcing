@@ -19,7 +19,7 @@ cells are cropland, it is part of the product definition and recorded in
 every manifest: bump the catalog ``version`` if you change it.
 
 Same GEE machinery, auth and Cloud-project requirement as :mod:`.modis`
-(see :mod:`.gee` and HANDOFF.md).
+(see :mod:`.gee` and REFERENCE.md).
 """
 
 from __future__ import annotations

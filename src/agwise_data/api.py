@@ -1,6 +1,6 @@
 """Public API of the AgWise data-sourcing layer.
 
-Grouped by what they return (see HANDOFF.md for the full per-function
+Grouped by what they return (see REFERENCE.md for the full per-function
 reference with parameters, outputs and examples):
 
 * **Gridded cubes** → ``{canonical_var: {"nc", "tif", "data"}}``:

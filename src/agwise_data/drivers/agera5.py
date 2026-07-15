@@ -9,7 +9,7 @@ Authentication: a free CDS account and a ``~/.cdsapirc`` file::
     url: https://cds.climate.copernicus.eu/api
     key: <your-personal-access-token>
 
-Never hardcode the token in scripts — see HANDOFF.md.
+Never hardcode the token in scripts — see REFERENCE.md.
 """
 
 from __future__ import annotations

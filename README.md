@@ -1,19 +1,49 @@
 # agwise-data — the AgWise data-sourcing module
 
-One call to **fetch, harmonize and cache** the climate, soil, terrain and
-remote-sensing data every AgWise module needs — and to turn it into
-**analysis-ready inputs** (season slices, DSSAT/APSIM files, bias-corrected
-forecasts). A dataset is downloaded **once** into a shared cache with agreed
-names and units (`AGRO.PRCP` in mm/day, `SOIL.CLAY` in %, …) and reused by
-everyone afterwards.
+**For AgWise module developers and researchers** (working in Python *or* R) who
+need analysis-ready climate, soil, terrain and remote-sensing inputs — without
+each project re-implementing downloads, units and caching.
 
-New here? Read this page top to bottom — it takes you from nothing to your
-first data fetch. Detailed walkthroughs are linked where useful so this stays
-short.
+One call to **fetch, harmonize and cache** the data every AgWise module needs —
+and to turn it into **analysis-ready inputs** (season slices, DSSAT/APSIM/WOFOST/
+ORYZA files, bias-corrected forecasts). A dataset is downloaded **once** into a
+shared cache with agreed names and units (`AGRO.PRCP` in mm/day, `SOIL.CLAY` in
+%, …) and reused by everyone afterwards.
 
-- 🔑 **[docs/credentials_setup.md](docs/credentials_setup.md)** — click-by-click credential setup (from zero) + troubleshooting
-- 🖥️ **[docs/cglabs_setup.md](docs/cglabs_setup.md)** — shared-server (CGLabs) setup, use from R, performance tuning
-- 📖 **[HANDOFF.md](HANDOFF.md)** — full function reference: every function, its parameters, output and an example
+New here? Skim the two tables below (what it can do · where to read), then run
+the [60-second first success](#first-success-no-credentials-needed).
+
+## Documentation map
+
+| Document | Open it when you want to… |
+| --- | --- |
+| **README** (this page) | install and run your first fetch |
+| 📖 **[REFERENCE.md](REFERENCE.md)** | look up a function — parameters, output, runnable example |
+| ▶️ **[examples/](examples/)** | run a complete working script (Python + R) |
+| 🔑 **[docs/credentials_setup.md](docs/credentials_setup.md)** | set up CDS + Earth Engine credentials, click-by-click, from zero |
+| 🖥️ **[docs/cglabs_setup.md](docs/cglabs_setup.md)** | install on the shared server (CGLabs), use from R, tune performance |
+| 🛠️ **[CONTRIBUTING.md](CONTRIBUTING.md)** | add a data source or contribute a change |
+| 📜 **[CHANGELOG.md](CHANGELOG.md)** | see what changed between versions |
+
+## What do you want to do?
+
+| I want to… | Call | Details |
+| --- | --- | --- |
+| Get monthly/daily rainfall or temperature for a region | `get_climate("PRCP", …)` | [REF §3.1](REFERENCE.md#31-gridded-cubes) |
+| Get soil or terrain **at my trial points** | `extract_static_points(…)` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
+| Get climate for **each trial's growing season** | `extract_growing_season(…)` / `get_season(…)` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
+| Build **DSSAT / APSIM / WOFOST / ORYZA** input files | `to_dssat` · `to_apsim` · `to_wofost` · `to_oryza` | [REF §3.3](REFERENCE.md#33-crop-model-input-files-return-list-of-written-files) |
+| Get **NDVI/EVI** or a **cropland mask** | `get_ndvi(…)` / `get_cropmask(…)` | [REF §3.1](REFERENCE.md#31-gridded-cubes) |
+| Bias-correct a **seasonal forecast** | `bias_correct(…)` / `forecast_to_dssat(…)` | [REF §3.5](REFERENCE.md#35-seasonal-forecast-bias-correction) |
+| Make an **AOI grid** or tag points with **admin units** | `make_grid(…)` / `tag_admin(…)` | [REF §3.4](REFERENCE.md#34-spatial-scaffolding-return-dataframes) |
+| Use it from **R** or the **command line** | `ad_*` wrappers / `agwise-data …` | [REF §4](REFERENCE.md#4-r-and-command-line-use) |
+| Set up **credentials** | — | [credentials_setup](docs/credentials_setup.md) |
+| Install on the **shared server** | — | [cglabs_setup](docs/cglabs_setup.md) |
+
+> **Golden rule (shared servers):** *data is shared, credentials are personal.*
+> Everyone points at the same shared cache, but each person keeps their **own**
+> tokens in their **own** home (`chmod 600`) — never in the repo, a notebook, or
+> the shared folder. Details in [credentials_setup.md](docs/credentials_setup.md).
 
 ---
 
@@ -27,17 +57,11 @@ short.
 | 4 | A free **Google Earth Engine** account + a Cloud project | MODIS NDVI/EVI (`get_ndvi`) and the crop mask (`get_cropmask`) |
 
 Rainfall (CHIRPS), soil (SoilGrids), terrain (Copernicus DEM) and admin
-boundaries (geoBoundaries) need **no account**. You only need credentials
-for the sources you actually call — you can install and use CHIRPS/soil/DEM
-with no accounts at all.
+boundaries (geoBoundaries) need **no account** — so you can install and get your
+[first result](#first-success-no-credentials-needed) with no credentials at all.
+You only add credentials for the sources you actually call.
 
-> **Golden rule (shared servers):** *data is shared, credentials are
-> personal.* Everyone points at the same shared cache, but each person keeps
-> their **own** tokens in their **own** home (`chmod 600`) — never in the
-> repo, a notebook, or the shared folder. Details in
-> [credentials_setup.md](docs/credentials_setup.md).
-
-## 2. How to get the credentials
+## 2. Get the credentials
 
 Two free accounts, once per person. The full click-by-click (including a
 from-zero path and every error we've hit) is in
@@ -63,7 +87,7 @@ from-zero path and every error we've hit) is in
    `~/.config/earthengine/credentials`.
 3. Tell the tool your project: `export AGWISE_GEE_PROJECT=<your-project-id>`.
 
-## 3. How to install
+## 3. Install
 
 ```bash
 git clone https://github.com/byliz-ai/data_sourcing.git
@@ -71,9 +95,6 @@ cd data_sourcing
 conda env create -f environment.yml     # creates the 'agwise_data' env
 conda activate agwise_data
 pip install -e ".[all]"                  # package + CDS + Earth Engine clients
-
-# Verify — the test suite needs no credentials and no network:
-pytest -q
 
 # Choose where data is cached (your own folder for testing;
 # the shared folder in production — see cglabs_setup.md):
@@ -85,7 +106,27 @@ Install extras if you don't need everything: `.[geo]` (clipping + GeoTIFF),
 Shared-server install, use from **R**, and performance tuning are in
 **[docs/cglabs_setup.md](docs/cglabs_setup.md)**.
 
-## 4. How to use
+### First success (no credentials needed)
+
+Confirm the install works — no accounts required:
+
+```bash
+# 0. Offline: the test suite needs no network and no credentials.
+pytest -q
+
+# 1. Offline: list the data sources and variables you can pull.
+agwise-data catalog list
+
+# 2. A real fetch that needs NO account (CHIRPS rainfall, one year, then cached).
+agwise-data get --vars PRCP --country Rwanda --years 2023:2023 --freq monthly
+agwise-data cache info                   # see what landed in the cache
+```
+
+Got a NetCDF path back from step 2? You're ready. Add CDS / Earth Engine
+credentials ([§2](#2-get-the-credentials)) only when you reach for AgERA5,
+SEAS5, MODIS or the crop mask.
+
+## 4. Use
 
 Ask for variables by short name (`PRCP`, `TMAX`, `CLAY`, `NDVI`) and a region
 (`country="Rwanda"` or `bbox=[w, s, e, n]`). Gridded calls return
@@ -122,14 +163,10 @@ agwise-data get --vars PRCP --country Rwanda --years 2015:2024 --freq monthly
 agwise-data cache info
 ```
 
+▶️ **Complete runnable scripts are in [examples/](examples/)** (Python + R).
 👉 **Every function — with all its parameters, expected output and a runnable
-example — is in [HANDOFF.md](HANDOFF.md).** It covers gridded cubes
-(`get_climate`, `get_static`/`get_dem`/`get_soil`, `get_seasonal`,
-`get_modis`/`get_ndvi`, `get_cropmask`, `get_season`), point extraction
-(`extract_points`, `extract_growing_season`, `extract_static_points`),
-crop-model input files (`to_dssat`, `to_apsim`, `to_wofost`, `to_oryza`), spatial helpers
-(`make_grid`, `tag_admin`) and seasonal-forecast bias correction
-(`bias_correct`, `forecast_to_dssat`), plus the R and CLI equivalents.
+example — is in [REFERENCE.md](REFERENCE.md)**, and the [task table](#what-do-you-want-to-do)
+above maps each goal to the call that does it.
 
 ## Contributing & changelog
 

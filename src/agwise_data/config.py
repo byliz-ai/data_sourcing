@@ -122,7 +122,7 @@ class Config:
         self.region_max_area_deg2 = float(region_max_area_deg2)
         # Google Cloud project registered for Earth Engine (GEE drivers).
         # Credentials themselves stay personal (~/.config/earthengine) —
-        # see HANDOFF.md.
+        # see REFERENCE.md.
         self.gee_project = gee_project
         self._discover_region_domains()
 

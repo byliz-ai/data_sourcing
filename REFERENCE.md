@@ -1,11 +1,9 @@
-# agwise-data — the AgWise data-sourcing module
+# agwise-data — function reference
 
-One call to **fetch, harmonize and cache** the climate, soil, terrain and
-remote-sensing data every AgWise module needs — and to turn it into
-**analysis-ready inputs** (season slices, DSSAT/APSIM files, bias-corrected
-forecasts). A dataset is downloaded **once** into a shared cache with agreed
-names and units (`AGRO.PRCP` in mm/day, `SOIL.CLAY` in %, …) and reused by
-everyone afterwards.
+**The API reference:** every function with its parameters, output and a runnable
+example. New here? Start with the **[README](README.md)** (install · credentials
+· first fetch) and its [task table](README.md#what-do-you-want-to-do), which maps
+each goal to the call that does it.
 
 ```
  CHIRPS  AgERA5  SEAS5  SoilGrids  Copernicus-DEM  MODIS  ESA-WorldCover  geoBoundaries
@@ -18,12 +16,19 @@ everyone afterwards.
      CLI     agwise-data get | extract | to-dssat | bias-correct | …
 ```
 
-**This is the function reference.** To install and configure the module,
-start with the **[README](README.md)** (what you need · how to get the
-credentials · how to install · how to use), with the detailed walkthroughs in
-[docs/credentials_setup.md](docs/credentials_setup.md) and
-[docs/cglabs_setup.md](docs/cglabs_setup.md). Below is every function with its
-parameters, output and an example.
+## Contents
+
+- [1. Setup](#1-setup) — install, credentials (see also
+  [credentials_setup](docs/credentials_setup.md) · [cglabs_setup](docs/cglabs_setup.md))
+- [2. Canonical variables & units](#2-canonical-variables--units)
+- [3. Function reference](#3-function-reference) —
+  [gridded cubes](#31-gridded-cubes) ·
+  [point extraction](#32-point-extraction-return-dataframes) ·
+  [crop-model files](#33-crop-model-input-files-return-list-of-written-files) ·
+  [spatial scaffolding](#34-spatial-scaffolding-return-dataframes) ·
+  [bias correction](#35-seasonal-forecast-bias-correction)
+- [4. R and command-line use](#4-r-and-command-line-use)
+- [5. How it saves you time](#5-how-it-saves-you-time)
 
 ---
 

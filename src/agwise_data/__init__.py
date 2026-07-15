@@ -3,7 +3,7 @@
 One call to fetch, harmonize and cache the climate, soil, terrain and
 remote-sensing data every AgWise module needs — and to turn it into
 analysis-ready inputs — with a shared cache so a dataset is downloaded once
-and reused by everyone. Full guide: README.md; function reference: HANDOFF.md.
+and reused by everyone. Full guide: README.md; function reference: REFERENCE.md.
 
 Public API (all return a dict of products, a DataFrame, or a list of files):
 

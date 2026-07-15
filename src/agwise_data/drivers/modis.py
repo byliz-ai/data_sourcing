@@ -17,7 +17,7 @@ those gaps; masking never fabricates values).
 Authentication: personal Earth Engine credentials plus a Cloud project
 registered for Earth Engine (``AGWISE_GEE_PROJECT`` env var or
 ``gee_project`` in ``~/.config/agwise_data.yaml``) — see
-HANDOFF.md. Never hardcode credentials in scripts.
+REFERENCE.md. Never hardcode credentials in scripts.
 """
 
 from __future__ import annotations

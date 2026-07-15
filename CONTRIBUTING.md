@@ -19,7 +19,7 @@ environment quirk); it passes in CI. Everything else must stay green.
 
 New behaviour needs a test. Prefer network-free tests using the fake drivers
 and `config` fixture in `conftest.py`; verify live paths (CDS/GEE) manually and
-note the result in the commit/HANDOFF rather than adding a networked test.
+note the result in the commit/REFERENCE rather than adding a networked test.
 
 ## Ground rules (shared server / cache)
 
@@ -46,17 +46,22 @@ The layer is `catalog → driver → harmonize → cache → api`. To add a sour
    `__init__.py`), a CLI subcommand in `cli.py`, and an `ad_*` wrapper in
    `r/agwise_data.R`.
 5. **Tests + docs** — add a network-free test, document the function in
-   `HANDOFF.md`, and add a `CHANGELOG.md` entry + version bump.
+   `REFERENCE.md`, and add a `CHANGELOG.md` entry + version bump.
 
 ## Documentation conventions
 
-- **README.md** = first-time entry (what you need · get credentials · install ·
-  use). **HANDOFF.md** = full function reference. **docs/** = detailed
-  credential and server setup. Keep them concise and cross-linked; don't
-  duplicate setup steps across files.
+- Each doc has **one job** — the canonical
+  [documentation map](README.md#documentation-map) in the README lists them
+  (README = entry, `REFERENCE.md` = function reference, `docs/` = credential &
+  server setup, `examples/` = runnable scripts). Keep them concise and
+  cross-linked; **don't duplicate** setup steps or a doc list across files —
+  add a link to the one canonical place instead.
+- When you add or change a public function, keep the README
+  [task table](README.md#what-do-you-want-to-do) and its `REFERENCE.md` entry
+  in step, and add an `examples/` line if it opens a new workflow.
 - Every public function has a docstring (summary, params, returns, example
   where useful) that matches its signature. Update the docs when the API
-  changes — README/HANDOFF examples are expected to run.
+  changes — README/REFERENCE/`examples/` snippets are expected to run.
 
 ## Commits & CI
 
