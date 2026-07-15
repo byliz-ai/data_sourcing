@@ -3,6 +3,16 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.11.1 — CHIRPS resilient to the UCSB host block
+- **Fix:** `get_climate`/`get_season`/`extract_*`/`to_*` for `PRCP` no longer
+  hard-fail when `data.chc.ucsb.edu` returns HTTP 403 (the UCSB host is
+  currently blocking both the yearly NetCDF and the daily COGs). The CHIRPS
+  driver now falls through **COG → Earth Engine mirror (`UCSB-CHG/CHIRPS/DAILY`)
+  → NetCDF**: for a country/AOI-scale window it pulls CHIRPS daily from Earth
+  Engine (needs GEE credentials + `AGWISE_GEE_PROJECT`, same as MODIS) and
+  assembles the same harmonized mm/day cube. Quieted the expected GDAL 403
+  INFO noise from the paced COG probing.
+
 ## 0.11.0 — ORYZA v3 crop-model inputs
 - `to_oryza(...)` — write ORYZA v3 weather + soil files per point. Weather is
   the CABO format, one file per calendar year (`EXTE<n>/<code><n>.<yyy>`;

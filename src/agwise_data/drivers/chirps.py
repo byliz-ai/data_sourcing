@@ -35,8 +35,14 @@ from ..harmonize import apply_conversion
 from ..spatial import subset_bbox
 from . import register
 from .base import Driver
+from .gee import ee_init, fetch_image_grid, grid_coords, grid_shape, plan_tiles
 
 logger = logging.getLogger("agwise_data")
+
+# GDAL logs each HTTP 403 from the paced COG probing at INFO via this logger;
+# those are expected and handled (we fall back to the Earth Engine mirror), so
+# keep them out of users' output — genuine rasterio warnings still show.
+logging.getLogger("rasterio._env").setLevel(logging.WARNING)
 
 # Final CHIRPS lags real time; don't hammer the server with 404s for days
 # that cannot exist yet.
@@ -63,34 +69,132 @@ def _bbox_area_deg2(bbox) -> float:
     return max(0.0, e - w) * max(0.0, n - s)
 
 
-def _cog_access(entry):
+def _access_of_type(entry, type_):
     for block in entry.get("access", []):
-        if block.get("type") == "https-cog":
+        if block.get("type") == type_:
             return block
     return None
+
+
+def _cog_access(entry):
+    return _access_of_type(entry, "https-cog")
 
 
 @register("chirps")
 class ChirpsDriver(Driver):
     def _fetch_year(self, variable: str, year: int, domain: str):
         bbox = self.config.bbox_for(domain)
+        small = _bbox_area_deg2(bbox) <= self.config.region_max_area_deg2
         cog = _cog_access(self.entry)
-        if cog and _bbox_area_deg2(bbox) <= self.config.region_max_area_deg2:
+        gee = _access_of_type(self.entry, "gee")
+
+        # 1. Windowed COG — cheapest when the UCSB server answers.
+        if cog and small:
             try:
                 return self._fetch_year_cog(variable, year, bbox, cog)
             except ImportError:
                 logger.info(
-                    "rasterio not installed — falling back to the yearly "
-                    "NetCDF (pip install 'agwise-data[geo]' for windowed reads)"
+                    "rasterio not installed — trying the Earth Engine mirror "
+                    "then the yearly NetCDF (pip install 'agwise-data[geo]')"
                 )
             except CogUnavailable as exc:
                 logger.warning(
-                    "CHIRPS COG path unavailable for %s (%s) — falling back "
-                    "to the yearly NetCDF",
+                    "CHIRPS COG path unavailable for %s (%s) — trying the "
+                    "Earth Engine mirror",
                     year,
                     exc,
                 )
+        # 2. Earth Engine mirror (UCSB-CHG/CHIRPS/DAILY) — works when the UCSB
+        #    HTTP host is blocking us (403). Needs GEE creds; small/AOI windows.
+        if gee and small:
+            try:
+                return self._fetch_year_gee(variable, year, bbox, gee)
+            except CogUnavailable as exc:
+                logger.warning(
+                    "CHIRPS Earth Engine path unavailable for %s (%s) — "
+                    "falling back to the yearly NetCDF",
+                    year,
+                    exc,
+                )
+            except Exception as exc:  # EE not configured / auth / transient
+                logger.warning(
+                    "CHIRPS Earth Engine path failed for %s (%s) — falling "
+                    "back to the yearly NetCDF",
+                    year,
+                    exc,
+                )
+        # 3. Yearly global NetCDF — large domains, or last resort.
         return self._fetch_year_netcdf(variable, year, domain)
+
+    # ------------------------------------------------------------------
+    def _fetch_year_gee(self, variable: str, year: int, bbox, access: dict):
+        """Fetch one CHIRPS year from Earth Engine (the UCSB-CHG mirror).
+
+        Resilient to the UCSB HTTP host blocking us: pulls each daily image of
+        ``UCSB-CHG/CHIRPS/DAILY`` over the domain window via ``computePixels``
+        and assembles the same ``(time, lat, lon)`` mm/day cube the HTTP paths
+        return. Requires Earth Engine credentials + a project
+        (``AGWISE_GEE_PROJECT``). Raises :class:`CogUnavailable` if the year
+        has no readable images.
+        """
+        collection = access["collection"]
+        band = access.get("band", "precipitation")
+        res = float(access.get("scale_deg", 0.05))
+
+        ee = ee_init(self.config.gee_project)
+        col = (
+            ee.ImageCollection(collection)
+            .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+            .sort("system:time_start")
+        )
+        listing = (
+            col.reduceColumns(
+                ee.Reducer.toList(2), ["system:index", "system:time_start"]
+            )
+            .get("list")
+            .getInfo()
+        )
+        if not listing:
+            raise CogUnavailable(
+                f"no {collection} images on Earth Engine for {year}"
+            )
+
+        width, height = grid_shape(bbox, res)
+        tiles = plan_tiles(width, height)
+
+        def fetch_day(item):
+            index, t0 = item
+            img = ee.Image(f"{collection}/{index}")
+            arrays = fetch_image_grid(ee, img, [band], bbox, res, tiles, "float32")
+            arr = arrays[band]
+            arr[arr <= -9990.0] = np.nan   # CHIRPS ocean/no-data fill (-9999)
+            arr[arr < 0] = np.nan          # precipitation is non-negative
+            return pd.Timestamp(t0, unit="ms").normalize(), arr
+
+        workers = max(1, int(self.config.cog_workers))
+        if workers > 1 and len(listing) > 1:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                results = list(ex.map(fetch_day, listing))
+        else:
+            results = [fetch_day(item) for item in listing]
+
+        times = [t for t, _ in results]
+        stack = np.stack([a for _, a in results]).astype("float32")
+        lats, lons = grid_coords(bbox, res)
+        da = xr.DataArray(
+            stack,
+            coords={"time": times, "lat": lats, "lon": lons},
+            dims=("time", "lat", "lon"),
+            name="precip",
+        )
+        spec = variable_spec(self.source_id, variable)
+        da = apply_conversion(da, spec.get("conversion"))
+        return da, {
+            "access": "gee",
+            "gee_collection": collection,
+            "scale_deg": res,
+            "n_days": len(times),
+        }
 
     # ------------------------------------------------------------------
     def _fetch_year_netcdf(self, variable: str, year: int, domain: str):

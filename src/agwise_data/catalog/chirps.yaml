@@ -50,7 +50,11 @@ access:
   - type: gee
     role: alternative
     collection: "UCSB-CHG/CHIRPS/DAILY"
-    note: Used by the legacy AgWise GEE downloader; not required by this driver.
+    band: precipitation
+    scale_deg: 0.05
+    # Resilient mirror: when data.chc.ucsb.edu blocks HTTP (403), the driver
+    # pulls CHIRPS daily from Earth Engine instead. Needs GEE credentials +
+    # AGWISE_GEE_PROJECT (same as MODIS); best for country/AOI-scale windows.
 
 variables:
   AGRO.PRCP:
