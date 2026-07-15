@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from agwise_data.writers import apsim, dssat, soil
+from agwise_data.writers import apsim, dssat, soil, wofost
 from agwise_data.writers._common import prepare_weather, station_code, tav_amp
 
 
@@ -324,3 +324,116 @@ def test_to_dssat_skips_point_without_weather(tmp_path):
     weather = weather[weather["point"] == 0]  # drop point 1's weather
     res = to_dssat(pts, out_dir=tmp_path / "D", weather=weather, soil=_soil_frame(pts))
     assert len(res) == 1 and res[0]["point"] == 0
+
+
+# --------------------------------------------------------------------------
+# WOFOST writer (weather table + soil parameters)
+# --------------------------------------------------------------------------
+def _wofost_series():
+    """A short daily frame with all six WOFOST weather inputs + edge cases."""
+    dates = pd.date_range("2021-03-01", "2021-03-04", freq="D")
+    return pd.DataFrame({
+        "DATE": dates,
+        "TMAX": [26.0, 26.0, 10.0, 26.0],   # day 3 crossed (tmax<tmin)
+        "TMIN": [14.0, 14.0, 20.0, np.nan],  # day 4 has a NaN -> dropped
+        "SRAD": [19.0, 19.0, 19.0, 19.0],    # MJ -> kJ
+        "RHUM": [65.0, 65.0, 65.0, 65.0],    # %
+        "WIND": [1.5, 1.5, 1.5, 1.5],
+        "PRCP": [3.0, 0.0, 0.0, 0.0],
+    })
+
+
+def test_wofost_esat_kpa_matches_plantecophys():
+    # plantecophys::esat (Jones 1992) at 20 C, sea level ~= 2.347 kPa.
+    assert round(float(wofost.esat_kpa(20.0)), 3) == 2.347
+    # actual vapour pressure at 70% RH is that x 0.70.
+    assert round(float(0.70 * wofost.esat_kpa(20.0)), 3) == 1.643
+
+
+def test_wofost_prepare_weather_units_and_cleaning():
+    df = wofost.prepare_weather(_wofost_series())
+    assert list(df.columns) == wofost.WOFOST_WEATHER_COLS
+    # NaN row dropped (complete.cases); crossed day kept but swapped.
+    assert len(df) == 3
+    assert (df["tmin"] <= df["tmax"]).all()
+    # SRAD scaled MJ -> kJ.
+    assert (df["srad"] == 19000.0).all()
+    # vapr = (RH/100) * esat_kPa(tmean); day 1 tmean=20, RH=65% -> 1.526 kPa.
+    assert round(float(df["vapr"].iloc[0]), 3) == 1.526
+    # day 3 (10/20 -> swapped to 10/20) tmean=15 -> lower vapr.
+    assert df["vapr"].iloc[2] < df["vapr"].iloc[0]
+
+
+def test_wofost_prepare_weather_missing_cols_raises():
+    bad = _wofost_series().drop(columns=["WIND"])
+    with pytest.raises(ValueError, match="WIND"):
+        wofost.prepare_weather(bad)
+
+
+def test_wofost_soil_params_topmeter_weighting():
+    # Constant hydraulics across depths -> top-meter mean equals that constant.
+    p = wofost.soil_params(_soil_row())
+    prof = soil.build_profile(_soil_row())
+    w = np.array([5, 10, 15, 30, 40.0])
+    assert p["SMW"] == round(float((prof["pwp"][:5] * w).sum() / 100), 3)
+    assert p["SMFCF"] == round(float((prof["fc"][:5] * w).sum() / 100), 3)
+    assert p["SM0"] == round(float((prof["sat"][:5] * w).sum() / 100), 3)
+    # K0: mm/h -> cm/day via 0.1 * 24.
+    assert p["K0"] == round(0.1 * 24 * float((prof["ks"][:5] * w).sum() / 100), 2)
+    # ordering SMW <= SMFCF <= SM0 (wilting <= field cap <= saturation).
+    assert p["SMW"] <= p["SMFCF"] <= p["SM0"]
+    # site-independent defaults present.
+    assert p["RDMSOL"] == 150 and p["WAV"] == 50 and p["SMLIM"] == 1
+
+
+def test_wofost_soil_params_defaults_overridable():
+    p = wofost.soil_params(_soil_row(), defaults={"RDMSOL": 120, "WAV": 30})
+    assert p["RDMSOL"] == 120 and p["WAV"] == 30
+
+
+def test_wofost_write_weather_srad_is_plain_decimal(tmp_path):
+    path = wofost.write_weather(_wofost_series(), tmp_path / "w.csv")
+    text = path.read_text()
+    assert "e+" not in text.lower()  # no scientific notation
+    assert "19000" in text.splitlines()[1]
+
+
+def _wofost_weather_long(points):
+    """Synthetic per-point WOFOST season weather in get_season long format."""
+    dates = pd.date_range("2020-09-14", "2021-02-28", freq="D")  # cross-year
+    rng = np.random.default_rng(1)
+    ranges = {"TMAX": (24, 30), "TMIN": (12, 16), "SRAD": (15, 22),
+              "PRCP": (0, 20), "RHUM": (50, 90), "WIND": (0.5, 3)}
+    rows = []
+    for pid in points.index:
+        for v, (lo, hi) in ranges.items():
+            for t in dates:
+                rows.append({
+                    "point": pid, "lon": points.lon[pid], "lat": points.lat[pid],
+                    "time": t, "variable": v, "value": round(rng.uniform(lo, hi), 1),
+                })
+    return pd.DataFrame(rows)
+
+
+def test_to_wofost_writes_per_point_files(tmp_path):
+    from agwise_data.api import to_wofost
+
+    pts = pd.DataFrame({"lon": [30.06, 30.10], "lat": [-1.95, -1.90],
+                        "site": ["Kigali", "Nyagatare"]})
+    res = to_wofost(
+        pts, out_dir=tmp_path / "WOFOST", station_col="site",
+        weather=_wofost_weather_long(pts), soil=_soil_frame(pts),
+    )
+    assert len(res) == 2
+    for n, r in enumerate(res, start=1):
+        assert r["dir"].name == f"EXTE{n:04d}"
+        assert r["weather"].name == f"weather_{n}.csv" and r["weather"].exists()
+        assert r["soil"].name == f"soil_{n}.csv" and r["soil"].exists()
+    # weather header is exactly the WOFOST columns
+    header = res[0]["weather"].read_text().splitlines()[0]
+    assert header == ",".join(wofost.WOFOST_WEATHER_COLS)
+    # soil file is the long parameter table with the derived rows
+    soil_txt = res[0]["soil"].read_text()
+    assert soil_txt.splitlines()[0] == "parameter,value,units,note"
+    for key in ("SMW", "SMFCF", "SM0", "K0", "RDMSOL"):
+        assert key in soil_txt

@@ -187,6 +187,28 @@ to_dssat(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
 **`to_apsim(points, ...)`** — same, writing `EXTE<n>/wth_loc_<n>.met` and
 `soil_<n>.csv` (the per-layer soil table for the apsimx template).
 
+**`to_wofost(points, ...)`** — same arguments, writing `EXTE<n>/weather_<n>.csv`
+and `soil_<n>.csv` for the R `meteor`/`Rwofost` model (which reads its inputs as
+lists, so the deliverable is tidy CSVs). Weather columns are WOFOST's exact set
+`date, srad, tmin, tmax, vapr, wind, prec` — SRAD in **kJ m⁻² day⁻¹** (the layer's
+MJ ×1000), `vapr` the **actual vapour pressure in kPa** derived from relative
+humidity and mean temperature, `wind` m s⁻¹, `prec` mm. The soil CSV is a long
+`parameter,value,units,note` table: the moisture parameters `SMW`/`SMFCF`/`SM0`
+(Saxton wilting-point/field-capacity/saturation) and `K0` (saturated
+conductivity, cm day⁻¹), each a thickness-weighted mean over the top metre, plus
+the site-independent WOFOST defaults (`RDMSOL`, `WAV`, `ZTI`, `IDRAIN`, `NOTINF`,
+`SSI`, `SMLIM`). Sources relative humidity + wind on top of the crop-model four.
+```python
+from agwise_data import to_wofost
+to_wofost(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
+          out_dir="WOFOST", station_col="site")
+# -> [{"point", "dir", "weather": .../weather_1.csv, "soil": .../soil_1.csv}, ...]
+```
+> Note: the legacy `5a_prepare_list_weather.r` computed `vapr` with an errant
+> `×1000` (`plantecophys::esat` returns **Pa**, so the correct kPa value is
+> `(RH/100)·esat/1000`); `to_wofost` emits the physically-correct kPa vapour
+> pressure.
+
 ### 3.4 Spatial scaffolding (return DataFrames)
 
 **`make_grid(country=|bbox=, admin_level=0, admin_name=None, res_km=5, tag_admin_level=2)`**
@@ -240,7 +262,7 @@ threshold (the metric behind `nrRainyDays`).
 with the same arguments — `ad_get_climate`, `ad_extract_points`,
 `ad_extract_growing_season`, `ad_get_static`/`ad_get_dem`/`ad_get_soil`,
 `ad_get_seasonal`, `ad_get_modis`, `ad_get_cropmask`, `ad_get_season`,
-`ad_extract_static_points`, `ad_to_dssat`/`ad_to_apsim`,
+`ad_extract_static_points`, `ad_to_dssat`/`ad_to_apsim`/`ad_to_wofost`,
 `ad_make_grid`/`ad_tag_admin`, `ad_bias_correct`/`ad_forecast_to_dssat`.
 Gridded wrappers return `terra::SpatRaster`s; point/writer wrappers return
 data.frames.
@@ -252,7 +274,7 @@ soil <- ad_extract_static_points(trials, c("CLAY", "PH", "SOC"))
 
 **CLI** (`agwise-data <subcommand>`): `get`, `extract`, `get-static`,
 `get-seasonal`, `get-modis`, `get-cropmask`, `get-season`, `extract-static`,
-`to-dssat`, `to-apsim`, `make-grid`, `tag-admin`, `bias-correct`,
+`to-dssat`, `to-apsim`, `to-wofost`, `make-grid`, `tag-admin`, `bias-correct`,
 `forecast-to-dssat`, plus `catalog` and `cache` for inspection. Each prints a
 JSON line describing the outputs.
 ```bash

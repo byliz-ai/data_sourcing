@@ -12,7 +12,7 @@ Public API (all return a dict of products, a DataFrame, or a list of files):
   :func:`get_cropmask`, :func:`get_season`.
 * Point extraction — :func:`extract_points`, :func:`extract_growing_season`,
   :func:`extract_static_points`.
-* Crop-model input files — :func:`to_dssat`, :func:`to_apsim`.
+* Crop-model input files — :func:`to_dssat`, :func:`to_apsim`, :func:`to_wofost`.
 * Spatial scaffolding — :func:`make_grid`, :func:`tag_admin`.
 * Seasonal-forecast bias correction — :func:`bias_correct`,
   :func:`forecast_to_dssat`.
@@ -42,10 +42,11 @@ from .api import (
     tag_admin,
     to_apsim,
     to_dssat,
+    to_wofost,
 )
 from .config import Config
 
-__version__ = "0.9.1"
+__version__ = "0.10.0"
 
 __all__ = [
     "get_climate",
@@ -63,6 +64,7 @@ __all__ = [
     "extract_static_points",
     "to_dssat",
     "to_apsim",
+    "to_wofost",
     "make_grid",
     "tag_admin",
     "bias_correct",

@@ -496,6 +496,41 @@ ad_to_apsim <- function(points, planting_date = NULL, harvest_date = NULL,
   do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
 }
 
+#' Write WOFOST weather + soil-parameter CSVs for trial/AOI points.
+#'
+#' WOFOST counterpart of ad_to_dssat: for each row of `points` writes
+#' out_dir/EXTE<n>/weather_<n>.csv (WOFOST columns date, srad [kJ/m2/day],
+#' tmin, tmax, vapr [kPa], wind, prec) and out_dir/EXTE<n>/soil_<n>.csv
+#' (SMW/SMFCF/SM0/K0 from the Saxton-Rawls hydraulics over the top metre,
+#' plus the WOFOST soil defaults). WOFOST reads weather/soil as R lists, so
+#' these tidy CSVs are the deliverable. Returns a data.frame of files written.
+ad_to_wofost <- function(points, planting_date = NULL, harvest_date = NULL,
+                         out_dir = NULL, planting_col = NULL, harvest_col = NULL,
+                         lon_col = NULL, lat_col = NULL, id_col = NULL,
+                         station_col = NULL,
+                         weather_source = NULL, soil_source = NULL) {
+  points_csv <- points
+  if (is.data.frame(points)) {
+    points_csv <- tempfile(fileext = ".csv")
+    utils::write.csv(points, points_csv, row.names = FALSE)
+  }
+  args <- c("to-wofost", "--points", points_csv)
+  if (!is.null(out_dir))        args <- c(args, "--out-dir", out_dir)
+  if (!is.null(planting_date))  args <- c(args, "--planting-date", planting_date)
+  if (!is.null(harvest_date))   args <- c(args, "--harvest-date", harvest_date)
+  if (!is.null(planting_col))   args <- c(args, "--planting-col", planting_col)
+  if (!is.null(harvest_col))    args <- c(args, "--harvest-col", harvest_col)
+  if (!is.null(lon_col))        args <- c(args, "--lon-col", lon_col)
+  if (!is.null(lat_col))        args <- c(args, "--lat-col", lat_col)
+  if (!is.null(id_col))         args <- c(args, "--id-col", id_col)
+  if (!is.null(station_col))    args <- c(args, "--station-col", station_col)
+  if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
+  if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
+
+  res <- ad_run(args)
+  do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
+}
+
 #' Soil/topography values at point locations (wide format).
 #'
 #' Returns the input data plus ELEV/SLOPE/... columns and one column per

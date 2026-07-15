@@ -10,7 +10,7 @@ reference with parameters, outputs and examples):
 * **Point extraction** → ``pandas.DataFrame``: :func:`extract_points`,
   :func:`extract_growing_season`, :func:`extract_static_points`.
 * **Crop-model input files** → ``list`` of written files: :func:`to_dssat`,
-  :func:`to_apsim`, :func:`forecast_to_dssat`.
+  :func:`to_apsim`, :func:`to_wofost`, :func:`forecast_to_dssat`.
 * **Spatial scaffolding** → ``pandas.DataFrame``: :func:`make_grid`,
   :func:`tag_admin`.
 * **Seasonal-forecast bias correction** → corrected cubes:
@@ -1535,22 +1535,27 @@ def extract_static_points(
 # weather (extract) + soil-at-points (extract) + the writers into the engine's
 # per-point folder layout.
 _CM_WEATHER_VARS = ["TMAX", "TMIN", "SRAD", "PRCP"]
+# WOFOST additionally needs relative humidity (-> vapour pressure) and wind.
+_WOFOST_WEATHER_VARS = ["TMAX", "TMIN", "SRAD", "PRCP", "RHUM", "WIND"]
 _CM_SOIL_VARS = ["CLAY", "SAND", "SILT", "SOC", "NITROGEN", "PH", "CEC", "BDOD"]
 
 
 def _cm_inputs(
     points, planting_date, harvest_date, planting_col, harvest_col,
     lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+    weather_vars=None,
 ):
     """Resolve the per-point weather (long) and soil (wide) inputs for a writer.
 
     Fetches them from the layer when not supplied, so a caller can either let
-    ``to_dssat``/``to_apsim`` source everything or pass pre-extracted frames.
+    ``to_dssat``/``to_apsim``/``to_wofost`` source everything or pass
+    pre-extracted frames. ``weather_vars`` overrides the weather set fetched
+    (WOFOST needs RHUM + WIND on top of the DSSAT/APSIM four).
     """
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
     if weather is None:
         weather = get_season(
-            _CM_WEATHER_VARS, planting_date=planting_date,
+            weather_vars or _CM_WEATHER_VARS, planting_date=planting_date,
             harvest_date=harvest_date, points=df,
             planting_col=planting_col, harvest_col=harvest_col,
             lon_col=lon_col, lat_col=lat_col, source=weather_source, config=config,
@@ -1696,6 +1701,59 @@ def to_apsim(
             )
             table.to_csv(fh, index=False)
         written.append({"point": idx, "dir": d, "met": met, "soil": soil_csv})
+    return written
+
+
+def to_wofost(
+    points,
+    planting_date: Optional[str] = None,
+    harvest_date: Optional[str] = None,
+    out_dir=None,
+    planting_col: Optional[str] = None,
+    harvest_col: Optional[str] = None,
+    lon_col: Optional[str] = None,
+    lat_col: Optional[str] = None,
+    id_col: Optional[str] = None,
+    station_col: Optional[str] = None,
+    weather: Optional[pd.DataFrame] = None,
+    soil: Optional[pd.DataFrame] = None,
+    weather_source: Optional[str] = None,
+    soil_source: Optional[str] = None,
+    config: Optional[Config] = None,
+) -> list:
+    """Write WOFOST weather + soil-parameter CSVs for every point.
+
+    For each row of ``points`` writes ``<out_dir>/EXTE<n>/weather_<n>.csv`` (the
+    WOFOST columns ``date, srad, tmin, tmax, vapr, wind, prec`` with SRAD in
+    kJ m-2 day-1 and ``vapr`` the actual vapour pressure in kPa) and
+    ``<out_dir>/EXTE<n>/soil_<n>.csv`` (SMW/SMFCF/SM0/K0 from the Saxton-Rawls
+    hydraulics averaged over the top metre, plus the WOFOST soil defaults). WOFOST
+    reads its weather/soil as R lists, so these tidy CSVs are the deliverable —
+    they retire ``WOFOST/grid/5a_prepare_list_weather.r`` + ``5c_prepare_list_soil.r``.
+    Weather is sourced with RHUM + WIND on top of the crop-model four. Same
+    per-row/scalar season and reuse options as :func:`to_dssat`. Returns a list
+    of ``{"point", "dir", "weather", "soil"}``.
+    """
+    from .writers import wofost as wofost_w
+
+    config = config or Config.load()
+    out_dir = Path(out_dir) if out_dir else Path.cwd() / "WOFOST"
+    df, lon_col, lat_col, weather, soil = _cm_inputs(
+        points, planting_date, harvest_date, planting_col, harvest_col,
+        lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+        weather_vars=_WOFOST_WEATHER_VARS,
+    )
+
+    written = []
+    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+        wide = _point_weather_wide(weather, idx)
+        if wide.empty:
+            logger.warning("Point %s has no weather in season; skipped", idx)
+            continue
+        d = out_dir / f"EXTE{n:04d}"
+        wth = wofost_w.write_weather(wide, path=d / f"weather_{n}.csv")
+        sol = wofost_w.write_soil(soil.loc[idx], path=d / f"soil_{n}.csv")
+        written.append({"point": idx, "dir": d, "weather": wth, "soil": sol})
     return written
 
 
@@ -2029,6 +2087,7 @@ __all__ = [
     "extract_static_points",
     "to_dssat",
     "to_apsim",
+    "to_wofost",
     "make_grid",
     "tag_admin",
     "bias_correct",

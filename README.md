@@ -127,7 +127,7 @@ example — is in [HANDOFF.md](HANDOFF.md).** It covers gridded cubes
 (`get_climate`, `get_static`/`get_dem`/`get_soil`, `get_seasonal`,
 `get_modis`/`get_ndvi`, `get_cropmask`, `get_season`), point extraction
 (`extract_points`, `extract_growing_season`, `extract_static_points`),
-crop-model input files (`to_dssat`, `to_apsim`), spatial helpers
+crop-model input files (`to_dssat`, `to_apsim`, `to_wofost`), spatial helpers
 (`make_grid`, `tag_admin`) and seasonal-forecast bias correction
 (`bias_correct`, `forecast_to_dssat`), plus the R and CLI equivalents.
 

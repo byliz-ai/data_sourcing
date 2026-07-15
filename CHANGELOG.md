@@ -3,6 +3,18 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.10.0 — WOFOST crop-model inputs
+- `to_wofost(...)` — write WOFOST weather + soil-parameter CSVs per point
+  (`EXTE<n>/weather_<n>.csv` with `date, srad, tmin, tmax, vapr, wind, prec`;
+  `EXTE<n>/soil_<n>.csv` with the top-metre `SMW`/`SMFCF`/`SM0`/`K0` from the
+  Saxton–Rawls hydraulics plus the WOFOST soil defaults). Sources relative
+  humidity + wind on top of the crop-model four. Also a `to-wofost` CLI
+  subcommand and an `ad_to_wofost` R wrapper.
+- **Fix:** the weather vapour pressure is emitted in the physically-correct
+  kPa. The legacy `5a_prepare_list_weather.r` multiplied `plantecophys::esat`
+  (which returns **Pa**) by 1000, making `vapr` ~10⁶× too large; the correct
+  actual vapour pressure is `(RH/100)·esat/1000`.
+
 ## 0.9.1
 - **Fix:** add `scipy` to dependencies — `bias_correct` regrids the forecast
   with `xarray.interp`, which needs scipy; a clean install failed without it.
