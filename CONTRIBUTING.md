@@ -24,10 +24,11 @@ note the result in the commit/REFERENCE rather than adding a networked test.
 ## Ground rules (shared server / cache)
 
 - **Data is shared, credentials are personal.** Read shared raw inputs from
-  `Global_GeoData/Landing` (`AGWISE_LOCAL_ROOT`, read-only) and write to your own
-  `Data/useCase_<name>` workspace (`AGWISE_DATA_ROOT`) — never write into the
-  shared originals. While developing, use a throwaway `AGWISE_DATA_ROOT`. Never
-  commit tokens or put them in a shared folder (see `docs/credentials_setup.md`).
+  `Global_GeoData/Landing` (`AGWISE_LOCAL_ROOT`, read-only), cache new region
+  downloads in the shared `Global_GeoData/Processed` (`AGWISE_DATA_ROOT`), and
+  write your outputs under `Data/useCase_<name>` (each writer's `out_dir`) —
+  never write into `Landing`. While developing, use a throwaway `AGWISE_DATA_ROOT`.
+  Never commit tokens or put them in a shared folder (see `docs/credentials_setup.md`).
 - Only create/modify files inside the repo (or your own test root). Treat the
   shared `common_data` and other repos as read-only inputs.
 

@@ -39,11 +39,13 @@ yours alone) plus one **shared folder** (`common_data`) that every AgWise
 user can read and write. The team policy in one line: **data is shared,
 credentials are personal.**
 
-**Data → shared, outputs → your use-case.** The shared raw inputs live in
-`Global_GeoData/Landing` (everyone reads them via `AGWISE_LOCAL_ROOT`,
-read-only); your own outputs go in your `Data/useCase_<Country>_<Name>` folder
-(`AGWISE_DATA_ROOT`). See [cglabs_setup.md](cglabs_setup.md) §2. Nothing secret
-is ever stored in either.
+**Data → shared, outputs → your use-case.** Shared raw inputs live in
+`Global_GeoData/Landing` (read via `AGWISE_LOCAL_ROOT`, read-only); new region
+downloads are cached in the shared `Global_GeoData/Processed`
+(`AGWISE_DATA_ROOT`, read/write — download once, reused by all); your own
+outputs go under your `Data/useCase_<Country>_<Name>` folder (each writer's
+`out_dir`). See [cglabs_setup.md](cglabs_setup.md) §2. Nothing secret is ever
+stored in any of them.
 
 **Credentials → personal, always.** Each person creates their **own** free
 accounts and keeps the tokens in their **own** home:

@@ -25,7 +25,8 @@ your use-case folder out; full explanation in
 ```bash
 DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
 export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # shared raw inputs (read-only)
-export AGWISE_DATA_ROOT=$DATASOURCING/useCase_Rwanda_MyProject   # your use-case outputs
+export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed   # shared download cache (read/write)
+# Your outputs go under $DATASOURCING/useCase_<name>/result/ via each writer's out_dir.
 # On a laptop instead: leave AGWISE_LOCAL_ROOT unset, AGWISE_DATA_ROOT=~/agwise_data/cache
 ```
 

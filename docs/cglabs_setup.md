@@ -13,43 +13,57 @@ pip install -e ".[all]"
 
 ## 2. Data roots — the AgWise folder convention
 
-AgWise keeps two things apart, and this layer follows the same line:
+Three folders, each with one job, so the whole team shares data but keeps its
+own outputs:
 
-* **Shared raw inputs** — the global geodata everyone consumes, already staged in
-  `.../datasourcing/Data/Global_GeoData/Landing`. Point `AGWISE_LOCAL_ROOT` here
-  and the drivers **read + region-clip** those files instead of re-downloading
-  (treat it as read-only — see [performance tuning](#performance-tuning-optional)).
-* **Your use-case workspace** — where the outputs go. Following the AgWise
-  convention, create `.../datasourcing/Data/useCase_<Country>_<Name>/` and point
-  `AGWISE_DATA_ROOT` there; the layer's harmonized cache, products and the files
-  you write all land under your own use-case folder.
+* **Shared raw inputs** (read-only) — the *global* geodata everyone consumes,
+  already staged in `.../datasourcing/Data/Global_GeoData/Landing`. Point
+  `AGWISE_LOCAL_ROOT` here and the drivers **read + region-clip** these instead
+  of downloading. Treat as read-only.
+* **Shared download cache** (read/write) — `.../Global_GeoData/Processed`. When
+  something is *not* in Landing, the layer downloads only that **region** and
+  caches the harmonized result here, keyed by region (`rg_<bbox>`). Point
+  `AGWISE_DATA_ROOT` here so the first person to fetch a region pays for it and
+  everyone else gets a cache hit — writes are `FileLock`-guarded, so concurrent
+  users are safe.
+* **Your use-case outputs** (per project) — `.../Data/useCase_<Country>_<Name>/`.
+  The files *you* produce (DSSAT/APSIM/… inputs, extracted CSVs) go here via each
+  writer's `out_dir`, following the existing `useCase_*` layout
+  (`Landing/raw/result/transform`).
 
 Each user adds to their `~/.bashrc` (or R `.Renviron`):
 
 ```bash
 DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
-export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # shared raw inputs (read-only)
-export AGWISE_DATA_ROOT=$DATASOURCING/useCase_Rwanda_MyProject   # your use-case outputs
-export HDF5_USE_FILE_LOCKING=FALSE                               # Landing is on NFS
-mkdir -p "$AGWISE_DATA_ROOT"
+export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing     # shared raw inputs (read-only)
+export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed    # shared download cache (read/write)
+export HDF5_USE_FILE_LOCKING=FALSE                                # Landing/Processed are on NFS
 ```
 
-So a request **reads the shared Landing file (no download), clips it to your
-region, and writes the result under your own use-case folder** — exactly the
-inputs-shared / outputs-per-use-case pattern the AgWise modules already use. For
-crop-model files, point `out_dir` under your use-case too, e.g.
-`out_dir="$AGWISE_DATA_ROOT/result/DSSAT"`.
+So a request first tries Landing (no download), else downloads just your region
+into the shared `Processed` cache (reused by everyone next time), and you write
+your own outputs under your use-case folder — e.g.
 
-Not on CGLabs (laptop / other server)? Leave `AGWISE_LOCAL_ROOT` unset and the
-layer downloads from source into `AGWISE_DATA_ROOT` as usual — a personal folder
-like `~/agwise_data/cache` is fine.
+```python
+to_dssat(points, planting_date="2023-01-01", harvest_date="2023-06-30",
+         out_dir=f"{DATASOURCING}/useCase_Rwanda_MyProject/result/DSSAT", ...)
+```
+
+Maximise reuse by requesting stable regions (`country=`/`admin_level=`, which
+give a stable region key everyone shares) or, for a bulk server, set
+`AGWISE_DATA_SCOPE=domain` to fetch the whole continent once (see
+[performance tuning](#performance-tuning-optional)).
+
+Not on CGLabs (laptop / other server)? Leave `AGWISE_LOCAL_ROOT` unset and set
+`AGWISE_DATA_ROOT` to a personal folder like `~/agwise_data/cache`; the layer
+downloads from source as usual.
 
 ## 3. CDS credentials (per user, for AgERA5)
 
 (First time on Copernicus or Google Earth Engine? There is a from-zero,
 click-by-click guide in [credentials_setup.md](credentials_setup.md) —
-including the shared-server rules: data is shared via `common_data`,
-credentials are personal and live only in your own home.)
+including the shared-server rules: data is shared via the `Global_GeoData`
+folders, credentials are personal and live only in your own home.)
 
 1. Create a free account at <https://cds.climate.copernicus.eu>.
 2. Accept the license of the *"Agrometeorological indicators"* dataset

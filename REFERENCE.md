@@ -44,7 +44,8 @@ Install and credentials live in the **[README](README.md)** (concise) and:
 In short: `conda env create -f environment.yml` → `conda activate
 agwise_data` → `pip install -e ".[all]"` → `pytest -q` to verify → set the data
 roots (AgWise convention: `AGWISE_LOCAL_ROOT` = shared `Global_GeoData/Landing`
-inputs, `AGWISE_DATA_ROOT` = your `Data/useCase_<name>` workspace — see
+raw inputs, `AGWISE_DATA_ROOT` = shared `Global_GeoData/Processed` download
+cache, and each writer's `out_dir` under your `Data/useCase_<name>` folder — see
 [cglabs_setup](docs/cglabs_setup.md)). Add `~/.cdsapirc` (CDS) and run
 `earthengine authenticate` + `export AGWISE_GEE_PROJECT=<id>` only for the
 sources you use.
