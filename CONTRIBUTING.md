@@ -21,6 +21,23 @@ New behaviour needs a test. Prefer network-free tests using the fake drivers
 and `config` fixture in `conftest.py`; verify live paths (CDS/GEE) manually and
 note the result in the commit/REFERENCE rather than adding a networked test.
 
+### Optional: the clean-user smoke test
+
+`scripts/smoke_test.sh` is an **optional, networked** end-to-end check — run it
+by hand after an install or a change to the download/cache path:
+
+```bash
+bash scripts/smoke_test.sh          # ~2-4 min the first time
+```
+
+It reproduces the README [first success](README.md#first-success-no-credentials-needed)
+a brand-new user hits — list the catalog, then two real **no-credential**
+fetches (Copernicus DEM `ELEV` + SoilGrids `CLAY` clipped to a county) — and
+asserts the cache filled up, so it exercises install + network + clipping +
+cache for someone with zero credentials. It writes only to a throwaway `mktemp`
+cache it deletes on exit and never touches the shared `Landing` tree. It is
+**not** part of `pytest`/CI (which stays network-free) — keep it that way.
+
 ## Ground rules (shared server / cache)
 
 - **Data is shared, credentials are personal.** Read shared raw inputs from
