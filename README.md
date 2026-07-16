@@ -164,9 +164,6 @@ Shared-server install, use from **R**, and performance tuning are in
 Confirm the install works — no accounts required:
 
 ```bash
-# 0. Offline: the test suite needs no network and no credentials.
-pytest -q
-
 # 1. Offline: list the data sources and variables you can pull.
 agwise-data catalog list
 
@@ -175,6 +172,9 @@ agwise-data catalog list
 agwise-data get-static --vars ELEV --country Kenya --admin-level 1 --admin-name Nakuru
 agwise-data cache info                   # see what landed in the cache
 ```
+
+(Contributors verifying a change run the test suite instead — that needs the dev
+extra: `pip install -e ".[dev]"` then `pytest -q`; see [CONTRIBUTING.md](CONTRIBUTING.md).)
 
 Got a NetCDF path back from step 2? You're ready. Add credentials
 ([§2](#2-get-the-credentials)) for the sources that need them: CDS for AgERA5/
