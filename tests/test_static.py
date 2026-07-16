@@ -157,3 +157,57 @@ def test_extract_static_points_fill_out_of_range(config):
     )
     assert np.isnan(out["CLAY_0_5cm"].iloc[0])
     assert np.isnan(out["CLAY_fill_m"].iloc[0])
+
+
+# --------------------------------------------------------------------------
+# derive= : pedotransfer-derived columns
+# --------------------------------------------------------------------------
+def test_derive_hydraulics_adds_saxton_columns(config):
+    from agwise_data.writers.soil import saxton_rawls
+
+    pts = pd.DataFrame({"lon": [34.0], "lat": [0.0]})
+    out = extract_static_points(
+        pts, "CLAY", source="fake_static", config=config, derive="hydraulics"
+    )
+    # hydraulics pulled in its base variables (SAND, SOC) even though only CLAY
+    # was requested, and added PWP/FC/SAT/KS per depth.
+    assert "SAND_0_5cm" in out.columns and "SOC_0_5cm" in out.columns
+    for depth in ["0_5cm", "5_15cm", "15_30cm"]:
+        for pfx in ("PWP", "FC", "SAT", "KS"):
+            assert f"{pfx}_{depth}" in out.columns
+    # values match saxton_rawls on the (clay, sand, som) at that depth
+    # (d10 fake -> clay=sand=[10,20,30]; soc=[10,20,30] g/kg -> som=soc/10*2)
+    clay = np.array([10.0, 20.0, 30.0])
+    som = (np.array([10.0, 20.0, 30.0]) / 10.0) * 2.0
+    pwp, fc, sat, ks = saxton_rawls(clay, clay, som)
+    for i, depth in enumerate(["0_5cm", "5_15cm", "15_30cm"]):
+        assert out[f"PWP_{depth}"].iloc[0] == pytest.approx(pwp[i])
+        assert out[f"FC_{depth}"].iloc[0] == pytest.approx(fc[i])
+        assert out[f"SAT_{depth}"].iloc[0] == pytest.approx(sat[i])
+        assert out[f"KS_{depth}"].iloc[0] == pytest.approx(ks[i])
+
+
+def test_derive_olsen_p_from_mehlich3(config):
+    from agwise_data.writers.soil import mehlich3_to_olsen
+
+    pts = pd.DataFrame({"lon": [34.0], "lat": [0.0]})
+    out = extract_static_points(
+        pts, "EXTP", source="fake_static", config=config, derive="olsen_p"
+    )
+    for i, depth in enumerate(["0_5cm", "5_15cm", "15_30cm"]):
+        m3 = (i + 1) * 10.0
+        assert out[f"OLSENP_{depth}"].iloc[0] == pytest.approx(
+            mehlich3_to_olsen(m3)
+        )
+        # calcareous regression differs
+        assert out[f"OLSENP_{depth}"].iloc[0] != pytest.approx(
+            mehlich3_to_olsen(m3, calcareous=True)
+        )
+
+
+def test_derive_unknown_kind_raises(config):
+    pts = pd.DataFrame({"lon": [34.0], "lat": [0.0]})
+    with pytest.raises(ValueError, match="Unknown derive"):
+        extract_static_points(
+            pts, "CLAY", source="fake_static", config=config, derive="bogus"
+        )

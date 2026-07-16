@@ -32,6 +32,7 @@ the [no-credential first success](#first-success-no-credentials-needed).
 | Get monthly/daily rainfall or temperature for a region | `get_climate("PRCP", …)` | [REF §3.1](REFERENCE.md#31-gridded-cubes) |
 | Get soil or terrain **at my trial points** | `extract_static_points(…)` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
 | Choose the **soil source** (SoilGrids *or* iSDA) | `extract_static_points(…, source="isda")` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
+| Add **soil hydraulics** (PWP/FC/SAT/KS) or **Olsen P** at points | `extract_static_points(…, derive="hydraulics")` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
 | Get climate for **each trial's growing season** | `extract_growing_season(…)` / `get_season(…)` | [REF §3.2](REFERENCE.md#32-point-extraction-return-dataframes) |
 | Build **DSSAT / APSIM / WOFOST / ORYZA** input files | `to_dssat` · `to_apsim` · `to_wofost` · `to_oryza` | [REF §3.3](REFERENCE.md#33-crop-model-input-files-return-list-of-written-files) |
 | Get **NDVI/EVI** or a **cropland mask** | `get_ndvi(…)` / `get_cropmask(…)` | [REF §3.1](REFERENCE.md#31-gridded-cubes) |

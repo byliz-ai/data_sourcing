@@ -181,6 +181,13 @@ STATIC_VARS = {
         "legacy": "CF",
         "depth": True,
     },
+    "SOIL.EXTP": {
+        "short": "EXTP",
+        "long_name": "Extractable phosphorus (Mehlich-3)",
+        "units": "mg kg-1",
+        "legacy": "p",
+        "depth": True,
+    },
     "SOIL.WV0010": {
         "short": "WV0010",
         "long_name": "Volumetric water content at 10 kPa",

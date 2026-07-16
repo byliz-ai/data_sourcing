@@ -81,6 +81,65 @@ def saxton_rawls(clay, sand, som):
     return pwp, fc, sat, ks
 
 
+def mehlich3_to_olsen(mehlich3_p, calcareous: bool = False):
+    """Convert Mehlich-3 extractable P to Olsen P (both mg/kg).
+
+    Linear regressions from Steinfurth et al. (2023), *Scientific Data* 10,
+    137 (https://www.nature.com/articles/s41597-023-02022-4): non-calcareous
+    soils ``0.47*M3 + 2.4``; calcareous soils ``0.41*M3 + 1.1``. Scalar or
+    numpy-array input. This is the conversion used to fill the DSSAT ``.SOL``
+    P block (``SLPX``) from a Mehlich-3 extractable-P layer (e.g. iSDA).
+    """
+    m3 = np.asarray(mehlich3_p, dtype="float64")
+    return 0.41 * m3 + 1.1 if calcareous else 0.47 * m3 + 2.4
+
+
+def _parse_depth(label: str):
+    """Depth label -> (top_cm, bottom_cm). ``"0_5cm"`` -> ``(0.0, 5.0)``."""
+    top, bottom = label.replace("cm", "").split("_")
+    return float(top), float(bottom)
+
+
+def _extp_columns(soil: Mapping) -> Dict[tuple, float]:
+    """{(top,bottom): Mehlich-3 P} from ``EXTP_<depth>`` columns in a row."""
+    keys = soil.keys() if hasattr(soil, "keys") else list(soil.index)
+    out: Dict[tuple, float] = {}
+    for k in keys:
+        if isinstance(k, str) and k.startswith("EXTP_"):
+            v = soil[k]
+            if v is not None and not pd.isna(v):
+                out[_parse_depth(k[len("EXTP_"):])] = float(v)
+    return out
+
+
+def olsen_by_layer(
+    soil: Mapping, depths: Sequence[str] = DEPTH_LABELS, calcareous: bool = False
+):
+    """Per-profile-layer Olsen P (mg/kg) from Mehlich-3 ``EXTP_<depth>`` columns.
+
+    The extractable-P source (iSDA) has its own, coarser depth intervals than
+    the six-layer SoilGrids profile, so each profile layer takes the ``EXTP``
+    value whose source interval contains the layer midpoint (nearest interval
+    by centre distance if none contains it) — a transparent piecewise-constant
+    depth mapping, no decay assumption — then converts it with
+    :func:`mehlich3_to_olsen`. Returns ``None`` when the row carries no
+    ``EXTP`` columns (so the P block is simply omitted, as before).
+    """
+    src = _extp_columns(soil)
+    if not src:
+        return None
+    intervals = sorted(src)
+    chosen = []
+    for label in depths:
+        top, bottom = _parse_depth(label)
+        mid = (top + bottom) / 2.0
+        hit = next((iv for iv in intervals if iv[0] <= mid < iv[1]), None)
+        if hit is None:
+            hit = min(intervals, key=lambda iv: abs((iv[0] + iv[1]) / 2.0 - mid))
+        chosen.append(src[hit])
+    return mehlich3_to_olsen(np.array(chosen, dtype="float64"), calcareous)
+
+
 def texture_class(clay_frac: float, silt_frac: float) -> str:
     """USDA texture class name from clay/silt *fractions* (0-1).
 
@@ -231,6 +290,8 @@ def write_sol(
     sldr: float = 0.5,
     slnf: float = 1.0,
     slpf: float = 1.0,
+    olsen_p: Optional[Sequence[float]] = None,
+    calcareous: bool = False,
     depths: Sequence[str] = DEPTH_LABELS,
 ) -> Path:
     """Write one DSSAT ``.SOL`` profile from a soil-point row.
@@ -239,8 +300,18 @@ def write_sol(
     (photosynthesis factor) are model metadata not derivable from SoilGrids;
     the defaults are DSSAT-neutral and a module can override them. The
     hydraulics and layer chemistry are computed from ``soil``. Returns the path.
+
+    A DSSAT second-tier P block (``SLPX`` = Olsen P, mg/kg) is appended when
+    phosphorus is available: pass ``olsen_p`` (one Olsen-P value per profile
+    layer) directly, or let it be derived from Mehlich-3 ``EXTP_<depth>``
+    columns on ``soil`` (via :func:`olsen_by_layer`, honouring ``calcareous``).
+    With neither, the P block is omitted (unchanged from before).
     """
     p = build_profile(soil, depths)
+    if olsen_p is not None:
+        olsen = np.asarray(olsen_p, dtype="float64")
+    else:
+        olsen = olsen_by_layer(soil, depths, calcareous)
     lines = ["*SOILS: General DSSAT Soil Input File", ""]
     total_depth = p["slb"][-1]
     lines.append(
@@ -273,6 +344,17 @@ def write_sol(
             f"{_f(p['cec'][i], '{:>6.2f}')}"
             f"   -99"                                    # SADC
         )
+    if olsen is not None:
+        # DSSAT second-tier layer table: SLPX = extractable (Olsen) P, mg/kg;
+        # the remaining 15 chemistry columns are left as -99 (not sourced here).
+        lines.append(
+            "@  SLB  SLPX  SLPT  SLPO CACO3  SLAL  SLFE  SLMN  SLBS  SLPA  SLPB"
+            "  SLKE  SLMG  SLNA  SLSU  SLEC  SLCA"
+        )
+        for i in range(p["n_layers"]):
+            lines.append(
+                f"{p['slb'][i]:>6}{_f(olsen[i], '{:>6.1f}')}" + "   -99" * 15
+            )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")

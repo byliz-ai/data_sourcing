@@ -163,18 +163,29 @@ out = extract_growing_season(trials, ["PRCP", "TMAX"],
 # adds Precipitation_m1.., TemperatureMax_m1.., totalRF, nrRainyDays
 ```
 
-**`extract_static_points(points, variables, depths=None, fill_nearest_m=1000, source=None)`**
+**`extract_static_points(points, variables, depths=None, fill_nearest_m=1000, source=None, derive=None, calcareous=False)`**
 Soil/terrain at points (wide), one column per depth (`CLAY_0_5cm`, …). Points
 on masked pixels (urban/water NoData) are filled from the nearest valid pixel
 within `fill_nearest_m` metres; each variable gets a `<VAR>_fill_m` column
 (0 = own pixel, >0 = donor distance, NaN = nothing in range).
 Soil source is **SoilGrids** by default; pass **`source="isda"`** for iSDA
-Africa instead (`SOIL.CLAY/SAND/SILT/PH/SOC/CEC/BDOD` at depths `0-20cm`/
-`20-50cm`; requires `AGWISE_LOCAL_ROOT`). The same `source=` works on
-`get_static`/`get_soil`.
+Africa instead (`SOIL.CLAY/SAND/SILT/PH/SOC/CEC/BDOD`, plus **`EXTP`**
+Mehlich-3 extractable phosphorus, at depths `0-20cm`/`20-50cm`; requires
+`AGWISE_LOCAL_ROOT`). The same `source=` works on `get_static`/`get_soil`.
+
+`derive=` adds pedotransfer columns (a name or list), pulling in the base
+variables it needs:
+- **`"hydraulics"`** — Saxton & Rawls (2006) from CLAY/SAND/SOC: per depth
+  `PWP_<d>`, `FC_<d>`, `SAT_<d>` (cm³/cm³) and `KS_<d>` (mm/h).
+- **`"olsen_p"`** — `OLSENP_<d>` (mg/kg) from Mehlich-3 `EXTP` via
+  `mehlich3_to_olsen` (`0.47·M3+2.4`; `calcareous=True` → `0.41·M3+1.1`).
 ```python
 from agwise_data import extract_static_points
 soil = extract_static_points(trials, ["CLAY", "SAND", "SILT", "SOC", "PH"])
+# Saxton hydraulics at each depth (adds PWP_/FC_/SAT_/KS_ columns):
+hyd = extract_static_points(trials, ["CLAY"], derive="hydraulics")
+# Olsen P from iSDA Mehlich-3 extractable P:
+p = extract_static_points(trials, ["EXTP"], source="isda", derive="olsen_p")
 ```
 
 ### 3.3 Crop-model input files (return list of written files)
@@ -183,7 +194,11 @@ soil = extract_static_points(trials, ["CLAY", "SAND", "SILT", "SOC", "PH"])
 Writes, per point `n`, `out_dir/EXTE<n>/WHTE<n>.WTH` (daily
 DATE/TMAX/TMIN/SRAD/RAIN + TAV/AMP header) and `SOIL.SOL` (layered profile
 with Saxton–Rawls hydraulics). Fetches season weather + soil itself, or reuse
-frames you already have via `weather=`/`soil=`.
+frames you already have via `weather=`/`soil=`. If the `soil` frame carries
+Mehlich-3 `EXTP_<depth>` columns (e.g. from
+`extract_static_points(..., ["EXTP"], source="isda")`), the DSSAT second-tier
+**P block** (`SLPX` = Olsen P) is written too (`calcareous=` picks the
+regression); otherwise it is omitted.
 ```python
 from agwise_data import to_dssat
 to_dssat(trials, planting_date="2021-01-01", harvest_date="2021-04-30",

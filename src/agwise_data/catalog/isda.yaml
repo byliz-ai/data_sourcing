@@ -45,3 +45,6 @@ variables:
   SOIL.SOC:   {source_name: oc,           source_units: g/kg,      conversion: null}
   SOIL.CEC:   {source_name: ecec.f,       source_units: cmol(c)/kg, conversion: null}
   SOIL.BDOD:  {source_name: db.od,        source_units: "0.01 g/cm3", conversion: d100}
+  # Extractable P (Mehlich-3). Landing rasters are physical mg/kg (sampled
+  # median ~6.7, matching Soil/soilGrids/af_p_0-30cm / 100), so no conversion.
+  SOIL.EXTP:  {source_name: p,            source_units: "mg/kg",    conversion: null}

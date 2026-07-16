@@ -582,7 +582,8 @@ ad_to_oryza <- function(points, planting_date = NULL, harvest_date = NULL,
 #' >0 = donor distance, NA = nothing valid in range).
 ad_extract_static_points <- function(points, vars, depths = NULL,
                                      lon_col = NULL, lat_col = NULL,
-                                     source = NULL, fill_nearest_m = 1000) {
+                                     source = NULL, fill_nearest_m = 1000,
+                                     derive = NULL, calcareous = FALSE) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -597,6 +598,8 @@ ad_extract_static_points <- function(points, vars, depths = NULL,
   if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!is.null(source))  args <- c(args, "--source", source)
+  if (!is.null(derive))  args <- c(args, "--derive", paste(derive, collapse = ","))
+  if (isTRUE(calcareous)) args <- c(args, "--calcareous")
   args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
 
   res <- ad_run(args)

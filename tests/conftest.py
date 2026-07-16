@@ -133,6 +133,11 @@ FAKE_STATIC_ENTRY = {
     "variables": {
         "TOPO.ELEV": {"source_name": "dem", "conversion": None},
         "SOIL.CLAY": {"source_name": "clay", "conversion": "d10", "nodata": 0},
+        # raw fake layer = (depth_index+1)*100; d10 -> 10/20/30 in each unit,
+        # enough to exercise the pedotransfer derivations (hydraulics/olsen_p).
+        "SOIL.SAND": {"source_name": "sand", "conversion": "d10", "nodata": 0},
+        "SOIL.SOC": {"source_name": "soc", "conversion": "d10", "nodata": 0},
+        "SOIL.EXTP": {"source_name": "p", "conversion": "d10", "nodata": 0},
     },
 }
 

@@ -234,6 +234,52 @@ def test_write_sol_nan_becomes_sentinel(tmp_path):
     assert last.split()[-2] == "-99"
 
 
+def test_write_sol_no_p_block_by_default(tmp_path):
+    p = soil.write_sol(_soil_row(), lat=0.0, lon=0.0, path=tmp_path / "S.SOL")
+    assert "SLPX" not in p.read_text()  # no P data -> P block omitted
+
+
+def test_write_sol_p_block_from_olsen_arg(tmp_path):
+    olsen = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    p = soil.write_sol(
+        _soil_row(), lat=0.0, lon=0.0, path=tmp_path / "S.SOL", olsen_p=olsen
+    )
+    lines = p.read_text().splitlines()
+    h = next(i for i, ln in enumerate(lines) if ln.startswith("@  SLB  SLPX"))
+    p_rows = lines[h + 1 : h + 7]
+    assert len(p_rows) == 6
+    assert p_rows[0].split()[0] == "5" and p_rows[-1].split()[0] == "200"
+    for row, want in zip(p_rows, olsen):
+        f = row.split()
+        assert f[1] == f"{want:.1f}"          # SLPX = Olsen P
+        assert f[2:] == ["-99"] * 15          # other chemistry left as -99
+
+
+def test_write_sol_p_block_from_mehlich3_columns(tmp_path):
+    row = _soil_row()
+    row["EXTP_0_20cm"] = 8.0    # Mehlich-3 P, mg/kg (iSDA-style two depths)
+    row["EXTP_20_50cm"] = 4.0
+    p = soil.write_sol(row, lat=0.0, lon=0.0, path=tmp_path / "S.SOL")
+    lines = p.read_text().splitlines()
+    h = next(i for i, ln in enumerate(lines) if ln.startswith("@  SLB  SLPX"))
+    slpx = [float(ln.split()[1]) for ln in lines[h + 1 : h + 7]]
+    top = soil.mehlich3_to_olsen(8.0)     # layer midpoint in 0-20cm
+    bottom = soil.mehlich3_to_olsen(4.0)  # layer midpoint in/nearest 20-50cm
+    # layer midpoints 2.5, 10 -> 0-20cm; 22.5, 45, 80, 150 -> 20-50cm
+    assert slpx[:2] == pytest.approx([top, top], abs=0.05)
+    assert slpx[2:] == pytest.approx([bottom] * 4, abs=0.05)
+
+
+def test_mehlich3_to_olsen_equations():
+    # Steinfurth et al. (2023) regressions
+    assert soil.mehlich3_to_olsen(20.0) == pytest.approx(0.47 * 20 + 2.4)
+    assert soil.mehlich3_to_olsen(20.0, calcareous=True) == pytest.approx(
+        0.41 * 20 + 1.1
+    )
+    got = soil.mehlich3_to_olsen(np.array([10.0, 30.0]))
+    assert got == pytest.approx([0.47 * 10 + 2.4, 0.47 * 30 + 2.4])
+
+
 # --------------------------------------------------------------------------
 # Soil: APSIM soil table
 # --------------------------------------------------------------------------

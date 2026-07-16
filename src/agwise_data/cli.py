@@ -313,6 +313,11 @@ def cmd_extract_static(args) -> dict:
         if args.depths
         else None
     )
+    derive = (
+        [d.strip() for d in args.derive.split(",") if d.strip()]
+        if args.derive
+        else None
+    )
     df = extract_static_points(
         points=args.points,
         variables=args.vars,
@@ -321,6 +326,8 @@ def cmd_extract_static(args) -> dict:
         lon_col=args.lon_col,
         lat_col=args.lat_col,
         fill_nearest_m=args.fill_nearest_m or None,
+        derive=derive,
+        calcareous=args.calcareous,
     )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -737,6 +744,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=1000.0,
         help="Fill masked (NaN) pixels from the nearest valid pixel within "
         "this many meters; 0 disables (default: 1000)",
+    )
+    p_es.add_argument(
+        "--derive",
+        help="Add pedotransfer columns: hydraulics (PWP/FC/SAT/KS) and/or "
+        "olsen_p (Olsen P from Mehlich-3 EXTP). Comma-separated.",
+    )
+    p_es.add_argument(
+        "--calcareous",
+        action="store_true",
+        help="Use the calcareous Mehlich-3->Olsen P regression (derive=olsen_p)",
     )
     p_es.set_defaults(func=cmd_extract_static)
 

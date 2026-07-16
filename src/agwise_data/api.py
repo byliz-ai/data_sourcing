@@ -1439,6 +1439,12 @@ def _nearest_valid_fill(da: xr.DataArray, lon: float, lat: float, max_m: float):
     return donor, float(dist[j, i])
 
 
+_DERIVE_BASE_VARS = {
+    "hydraulics": ["SOIL.CLAY", "SOIL.SAND", "SOIL.SOC"],
+    "olsen_p": ["SOIL.EXTP"],
+}
+
+
 def extract_static_points(
     points,
     variables: Union[str, Sequence[str]],
@@ -1447,6 +1453,8 @@ def extract_static_points(
     lon_col: Optional[str] = None,
     lat_col: Optional[str] = None,
     fill_nearest_m: Optional[float] = 1000.0,
+    derive: Optional[Union[str, Sequence[str]]] = None,
+    calcareous: bool = False,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
     """Soil/topography values at point locations (wide format).
@@ -1463,9 +1471,34 @@ def extract_static_points(
     variable gets a ``<VAR>_fill_m`` column: 0 where the point's own pixel
     was valid, the donor-pixel distance in meters where it was filled, and
     NaN where no valid pixel was in range (the value stays NaN too).
+
+    ``derive`` adds pedotransfer-derived columns (a name or list of names);
+    it pulls in the base variables it needs (fetched if not already asked
+    for). Supported:
+
+    * ``"hydraulics"`` — Saxton & Rawls (2006) from CLAY/SAND/SOC: per depth
+      ``PWP_<d>``, ``FC_<d>``, ``SAT_<d>`` (cm3/cm3) and ``KS_<d>`` (mm/h).
+    * ``"olsen_p"`` — Olsen P (mg/kg) per depth ``OLSENP_<d>`` from Mehlich-3
+      ``EXTP`` (``source="isda"``), via ``mehlich3_to_olsen`` (``calcareous``
+      selects the calcareous regression).
     """
+    from .writers.soil import saxton_rawls, mehlich3_to_olsen
+
     config = config or Config.load()
     variables = _as_static_variables(variables)
+    derive_kinds = (
+        [derive] if isinstance(derive, str)
+        else list(derive) if derive else []
+    )
+    for kind in derive_kinds:
+        if kind not in _DERIVE_BASE_VARS:
+            raise ValueError(
+                f"Unknown derive={kind!r}; supported: "
+                f"{sorted(_DERIVE_BASE_VARS)}"
+            )
+        for base in _DERIVE_BASE_VARS[kind]:
+            if base not in variables:
+                variables.append(base)
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
     valid = df[lon_col].notna() & df[lat_col].notna()
     if valid.sum() == 0:
@@ -1543,6 +1576,32 @@ def extract_static_points(
         col = pd.Series(np.nan, index=df.index, dtype="float64")
         col.loc[sub.index] = values
         out[name] = col
+
+    def _depth_suffixes(short: str) -> list:
+        # depth-tagged columns for a variable, excluding the <short>_fill_m col
+        pref = f"{short}_"
+        return [
+            c[len(pref):] for c in out.columns
+            if c.startswith(pref) and c != f"{short}_fill_m"
+        ]
+
+    if "hydraulics" in derive_kinds:
+        for d in _depth_suffixes("CLAY"):
+            if f"SAND_{d}" not in out or f"SOC_{d}" not in out:
+                continue
+            som = (out[f"SOC_{d}"].to_numpy() / 10.0) * 2.0  # SOC g/kg -> SOM %
+            pwp, fc, sat, ks = saxton_rawls(
+                out[f"CLAY_{d}"].to_numpy(), out[f"SAND_{d}"].to_numpy(), som
+            )
+            out[f"PWP_{d}"] = pwp
+            out[f"FC_{d}"] = fc
+            out[f"SAT_{d}"] = sat
+            out[f"KS_{d}"] = ks
+    if "olsen_p" in derive_kinds:
+        for d in _depth_suffixes("EXTP"):
+            out[f"OLSENP_{d}"] = mehlich3_to_olsen(
+                out[f"EXTP_{d}"].to_numpy(), calcareous=calcareous
+            )
     return out
 
 
@@ -1613,6 +1672,7 @@ def to_dssat(
     soil: Optional[pd.DataFrame] = None,
     weather_source: Optional[str] = None,
     soil_source: Optional[str] = None,
+    calcareous: bool = False,
     config: Optional[Config] = None,
 ) -> list:
     """Write DSSAT weather + soil files for every point (retires readGeo_CM).
@@ -1624,6 +1684,11 @@ def to_dssat(
     Saxton-Rawls hydraulics. Pass ``weather``/``soil`` to reuse frames you have
     already extracted instead of re-fetching. Returns a list of
     ``{"point", "dir", "wth", "sol"}`` for the files written.
+
+    If the ``soil`` frame carries Mehlich-3 ``EXTP_<depth>`` columns (e.g. from
+    ``extract_static_points(..., ["EXTP"], source="isda")``), the DSSAT P block
+    (``SLPX`` = Olsen P) is written too; ``calcareous`` picks the calcareous
+    Mehlich-3->Olsen regression. Otherwise the P block is omitted.
     """
     from .writers import dssat as dssat_w
     from .writers import soil as soil_w
@@ -1654,6 +1719,7 @@ def to_dssat(
         sol = soil_w.write_sol(
             soil.loc[idx], lat=float(prow[lat_col]), lon=float(prow[lon_col]),
             path=d / "SOIL.SOL", pedon=f"{insi}{n:05d}", site=name, country=country,
+            calcareous=calcareous,
         )
         written.append({"point": idx, "dir": d, "wth": wth, "sol": sol})
     return written

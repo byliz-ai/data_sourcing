@@ -3,6 +3,33 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.15.0 — soil hydraulics at points + Mehlich-3→Olsen P (DSSAT P block)
+- **New:** `extract_static_points(..., derive=...)` adds pedotransfer columns,
+  pulling in the base variables each needs:
+  - `derive="hydraulics"` — Saxton & Rawls (2006) from CLAY/SAND/SOC, per
+    depth: `PWP_<d>`, `FC_<d>`, `SAT_<d>` (cm³/cm³) and `KS_<d>` (mm/h). Same
+    equations the crop-model writers already use (`writers/soil.saxton_rawls`),
+    now exposed at points without writing a model file.
+  - `derive="olsen_p"` — `OLSENP_<d>` (mg/kg) from Mehlich-3 extractable P via
+    the new `mehlich3_to_olsen()` (`0.47·M3 + 2.4`; `calcareous=True` →
+    `0.41·M3 + 1.1`; Steinfurth et al. 2023).
+- **New:** `SOIL.EXTP` — Mehlich-3 extractable phosphorus (mg/kg), served from
+  **iSDA** (`source="isda"`, layer `p`, depths `0-20cm`/`20-50cm`; Landing
+  rasters are physical mg/kg, verified by sampling). SoilGrids has no P.
+- **New:** the DSSAT `.SOL` writer now fills the **second-tier P block**
+  (`SLPX` = Olsen P) when phosphorus is available — pass `write_sol(...,
+  olsen_p=[...])` per layer, or let `to_dssat`/`write_sol` derive it from
+  Mehlich-3 `EXTP_<depth>` columns on the soil frame. The extractable-P source
+  has coarser depths than the six-layer profile, so each profile layer takes
+  the `EXTP` value whose interval contains the layer midpoint (nearest by
+  centre otherwise) — a transparent piecewise-constant depth mapping. With no
+  P data the block is omitted (unchanged output).
+  - The provisional 0-30 cm→multi-depth exponential P extrapolation in the
+    legacy `get_geoSpatialData_V2_phosphorus.R` (flagged `# TODO: Revise`
+    there) was **not** ported; the depth mapping above is used instead.
+- CLI `extract-static` gains `--derive` / `--calcareous`; the R
+  `ad_extract_static_points` gains `derive` / `calcareous`.
+
 ## 0.14.0 — iSDA as a selectable soil source
 - **New:** soil can now be served from **iSDA Africa** as well as SoilGrids —
   choose per call with `source="isda"` (SoilGrids stays the default). New
