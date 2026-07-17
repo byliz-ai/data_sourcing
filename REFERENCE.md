@@ -1,48 +1,46 @@
-# agwise-data — function reference
+# agwise-data — function reference (Documentation Section 6)
 
-**The API reference:** every function with its parameters, output and a runnable
-example. New here? Start with the **[README](README.md)** (install · credentials
-· first fetch) and its [task table](README.md#what-do-you-want-to-do), which maps
-each goal to the call that does it.
+Every public function, with **all its parameters** — type, required/optional,
+default, meaning, allowed values — and a runnable example. New here? Do
+[Sections 1–5](README.md) first (install → credentials → workflow); this page is
+the lookup you return to.
 
 ```
- CHIRPS  AgERA5  SEAS5  SoilGrids  Copernicus-DEM  MODIS  ESA-WorldCover  geoBoundaries
-    └────────┴───────┴───────┴──────────┴───────────────┴───────┴───────────────┘
+ CHIRPS  AgERA5  SEAS5  SoilGrids  iSDA  Copernicus-DEM  MODIS  ESA-WorldCover  geoBoundaries
+    └───────┴──────┴───────┴───────┴─────────┴──────────────┴───────┴──────────────┘
                               │  agwise-data  │
         catalog → driver → harmonize → shared cache → products / points / files
-                              │
-     Python  get_climate(), extract_points(), to_dssat(), bias_correct(), …
-     R       ad_get_climate(), ad_extract_points(), ad_to_dssat(), …
-     CLI     agwise-data get | extract | to-dssat | bias-correct | …
 ```
 
 ## Contents
 
-- [1. Setup](#1-setup) — where install / credentials / folders are documented
-- [2. Canonical variables & units](#2-canonical-variables--units)
-- [3. Function reference](#3-function-reference) —
-  [gridded cubes](#31-gridded-cubes) ·
-  [point extraction](#32-point-extraction-return-dataframes) ·
-  [crop-model files](#33-crop-model-input-files-return-list-of-written-files) ·
-  [spatial scaffolding](#34-spatial-scaffolding-return-dataframes) ·
-  [bias correction](#35-seasonal-forecast-bias-correction)
-- [4. R and command-line use](#4-r-and-command-line-use)
-- [5. How it saves you time](#5-how-it-saves-you-time)
+- [Conventions](#conventions) — how to read the tables (region, variables, returns)
+- [6.1 Gridded cubes](#61-gridded-cubes-climate-soil-terrain-forecasts-ndvi)
+- [6.2 Point extraction](#62-point-extraction-return-dataframes)
+- [6.3 Crop-model input files](#63-crop-model-input-files-return-the-list-of-files-written)
+- [6.4 Spatial scaffolding](#64-spatial-scaffolding-return-dataframes)
+- [6.5 Seasonal-forecast bias correction](#65-seasonal-forecast-bias-correction)
+- [R and CLI equivalents](#r-and-cli-equivalents)
 
 ---
 
-## 1. Setup
+## Conventions
 
-This page is the **function catalogue**. Setup is documented once, elsewhere:
+**Region** (for every gridded/writer call): `country="Rwanda"` (name or ISO3
+`"RWA"`), optionally with `admin_level=1|2` + `admin_name="..."`, **or**
+`bbox=[west, south, east, north]`. Point functions instead take `points=` (a CSV
+or DataFrame with lon/lat). Full guidance: [user guide §4.1](docs/user_guide.md#41-decision-1--select-the-study-area).
 
-- **Install, credentials & the [three data folders](README.md#where-your-data-lives--three-folders-three-jobs)** → **[README](README.md)** (§1–§3).
-- **Credentials, click-by-click + troubleshooting** → **[docs/credentials_setup.md](docs/credentials_setup.md)**.
-- **Shared server (CGLabs): env, R, performance, data reuse** → **[docs/cglabs_setup.md](docs/cglabs_setup.md)**.
+**Return shapes** referenced in the tables below:
 
-## 2. Canonical variables & units
+- *Gridded cube* → `{canonical_var: {"nc": Path, "tif": Path|None, "data": xarray.DataArray}}`.
+  The NetCDF is always written (it **is** the cache); `out_format=["nc","tif"]`
+  adds a GeoTIFF.
+- *Point extraction* → a `pandas.DataFrame`.
+- *Crop-model writers* → a `list` of the files written.
 
-Ask for variables by **short** name (`PRCP`), **canonical** name
-(`AGRO.PRCP`) or the legacy label (`Precipitation`).
+**Variables** are given by short name (`PRCP`), canonical name (`AGRO.PRCP`) or
+legacy label (`Precipitation`):
 
 | Namespace | Short names | Units |
 | --- | --- | --- |
@@ -51,302 +49,608 @@ Ask for variables by **short** name (`PRCP`), **canonical** name
 | | `SRAD` | MJ m⁻² day⁻¹ |
 | | `RHUM` | % |
 | | `WIND` | m s⁻¹ |
-| `SOIL.*` (SoilGrids) | `CLAY`, `SAND`, `SILT` | % |
+| `SOIL.*` (SoilGrids / iSDA) | `CLAY`, `SAND`, `SILT` | % |
 | | `PH` | pH |
 | | `SOC`, `NITROGEN` | g kg⁻¹ |
 | | `CEC` | cmol(c) kg⁻¹ |
 | | `BDOD` | g cm⁻³ |
-| | `CFVO`, `WV0010`, `WV0033`, `WV1500` | vol % |
+| | `CFVO` | vol % |
+| | `EXTP` (iSDA only) | mg kg⁻¹ |
 | `TOPO.*` (DEM) | `ELEV`, `SLOPE`, `ASPECT`, `TPI`, `TRI` | m / degree |
 | `RS.*` (MODIS) | `NDVI`, `EVI` | unitless |
 | `LC.*` | `CROPLAND` | 1 = cropland, NaN otherwise |
 
-Soil depths: `0-5cm, 5-15cm, 15-30cm, 30-60cm, 60-100cm, 100-200cm` (point
-columns use underscores, e.g. `CLAY_0_5cm`).
+Soil depths — SoilGrids: `0-5cm, 5-15cm, 15-30cm, 30-60cm, 60-100cm, 100-200cm`;
+iSDA: `0-20cm, 20-50cm` (point columns use underscores, e.g. `CLAY_0_5cm`).
 
-**Soil source:** SoilGrids by default. Pass `source="isda"` on the soil calls
-(`extract_static_points`/`get_static`/`get_soil`) for iSDA Africa instead —
-`CLAY/SAND/SILT/PH/SOC/CEC/BDOD` at iSDA's two depths `0-20cm`/`20-50cm`
-(needs `AGWISE_LOCAL_ROOT`; the crop-model writers keep using SoilGrids' six
-depths).
-
-**Region** for any gridded/writer call is given by `country="Rwanda"` (or ISO3
-`"RWA"`), optionally `admin_level=1/2` + `admin_name="..."`, **or**
-`bbox=[west, south, east, north]`.
+> Every function also accepts `config=` (an advanced preloaded `Config`; omit it
+> to load settings from the environment). It is listed once here to keep the
+> per-function tables focused.
 
 ---
 
-## 3. Function reference
+## 6.1 Gridded cubes (climate, soil, terrain, forecasts, NDVI)
 
-Every Python function has an R wrapper (`ad_<name>`) and a CLI subcommand
-(§4). Gridded functions return
-`{canonical_var: {"nc": Path, "tif": Path|None, "data": xarray.DataArray}}`
-(the NetCDF is always written — it is the cache; `out_format=["nc","tif"]`
-adds a GeoTIFF). Point functions return a `pandas.DataFrame`. Writer functions
-return a `list` of the files written.
+### `get_climate`
 
-### 3.1 Gridded cubes
+Fetch a harmonized daily/monthly **climate cube** for a region.
 
-**`get_climate(variables, years, country=|bbox=, freq="daily"|"monthly", out_format="nc", ...)`**
-Harmonized daily/monthly climate cube `(time, lat, lon)`.
+**Returns:** `{canonical_var: {"nc": Path, "tif": Path|None, "data": DataArray}}`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `variables` | str \| list[str] | Yes | — | Climate variable name(s), short or canonical. Values: `PRCP, TMAX, TMIN, TEMP, SRAD, RHUM, WIND`. |
+| `years` | int \| list[int] | Yes | — | Year or years to fetch. Values: e.g. `2021`, `range(2015, 2025)`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `freq` | str | No | `'daily'` | Time step of the returned climate values. Values: `"daily"`, `"monthly"`. |
+| `source` | str | No | `None` | Force one source for every variable. Default: `PRCP`→CHIRPS, the rest→AgERA5. Values: `"chirps"`, `"agera5"`. |
+| `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import get_climate
-res = get_climate("PRCP", years=range(2015, 2025), country="Rwanda",
-                  freq="monthly", out_format=["nc", "tif"])
-cube = res["AGRO.PRCP"]["data"]            # (time, lat, lon)
-print(res["AGRO.PRCP"]["nc"])              # cached NetCDF path
+res = get_climate("PRCP", years=range(2015, 2025),
+                  country="Rwanda", freq="monthly")
+cube = res["AGRO.PRCP"]["data"]              # (time, lat, lon)
 ```
 
-**`get_static(variables, country=|bbox=, depths=None, ...)`** — soil/terrain
-(no time axis; soil layers carry a `depth` dim).
-Convenience: **`get_dem(...)`** (ELEV/SLOPE/ASPECT/TPI/TRI),
-**`get_soil(...)`** (the fertilizer soil set).
+### `get_static`
+
+Fetch harmonized **soil / terrain** layers (no time axis).
+
+**Returns:** `{canonical_var: {"nc", "tif", "data"}}` (soil layers carry a `depth` dim)
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `variables` | str \| list[str] | Yes | — | Soil and/or terrain variable name(s). Values: soil `CLAY,SAND,SILT,PH,SOC,NITROGEN,CEC,BDOD,CFVO,EXTP`; terrain `ELEV,SLOPE,ASPECT,TPI,TRI`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `depths` | list[str] | No | `None` | Soil depth layers to return (default: all). Values: SoilGrids `0-5cm,5-15cm,15-30cm,30-60cm,60-100cm,100-200cm`; iSDA `0-20cm,20-50cm`. |
+| `source` | str | No | `None` | Soil source (terrain always comes from Copernicus DEM). Values: `"soilgrids"` (default), `"isda"`. |
+| `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
-from agwise_data import get_soil, get_dem
-get_soil(["CLAY", "PH", "SOC"], country="Rwanda", depths=["0-5cm", "5-15cm"])
+from agwise_data import get_static
+get_static(["CLAY", "PH"], country="Rwanda", depths=["0-5cm", "5-15cm"])
+```
+
+### `get_dem`
+
+Convenience wrapper of `get_static` for **elevation + terrain derivatives**.
+
+**Returns:** same as `get_static`
+
+Accepts **all the same parameters as [`get_static`](#get_static)** — only the `variables` default differs:
+
+- `variables` (str | list[str], optional) — Terrain variable(s). Values: `ELEV, SLOPE, ASPECT, TPI, TRI` — default: all five.
+
+```python
+from agwise_data import get_dem
 get_dem(country="Rwanda")["TOPO.SLOPE"]["data"]     # (lat, lon)
 ```
 
-**`get_seasonal(variables, init_month, years, country=|bbox=, ensemble="members"|"mean"|"median")`**
-SEAS5 seasonal forecast / hindcast cube `(member, time, lat, lon)`, `time` =
-valid date.
+### `get_soil`
+
+Convenience wrapper of `get_static` for the **SoilGrids soil set**.
+
+**Returns:** same as `get_static`
+
+Accepts **all the same parameters as [`get_static`](#get_static)** — only the `variables` default differs:
+
+- `variables` (str | list[str], optional) — Soil variable(s). Values: default: `CLAY, SAND, SILT, PH, SOC, NITROGEN, CEC, BDOD, CFVO`.
+
+```python
+from agwise_data import get_soil
+get_soil(["CLAY", "PH", "SOC"], country="Rwanda")
+```
+
+### `get_cropmask`
+
+Convenience wrapper of `get_static` for the **ESA WorldCover cropland mask** (1 = cropland, NaN else) on the MODIS grid.
+
+**Returns:** same as `get_static`
+
+Accepts **all the same parameters as [`get_static`](#get_static)** — only the `variables` default differs:
+
+- `variables` is fixed to `"LC.CROPLAND"` (this wrapper serves that one layer).
+
+```python
+from agwise_data import get_cropmask
+mask = get_cropmask(country="Rwanda")["LC.CROPLAND"]["data"]
+```
+
+### `get_seasonal`
+
+Fetch a **SEAS5 seasonal forecast / hindcast** cube (one init month across years).
+
+**Returns:** `{canonical_var: {"nc", "tif", "data"}}`, `data` dims `(member, time, lat, lon)`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `variables` | str \| list[str] | Yes | — | Forecast variable(s). Values: `PRCP, TMAX, TMIN, TEMP, SRAD`. |
+| `init_month` | int | Yes | — | Forecast initialization month. Values: `1`–`12`. |
+| `years` | int \| list[int] | Yes | — | Year or years to fetch. Values: e.g. `2021`, `range(2015, 2025)`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `ensemble` | str | No | `'members'` | Ensemble handling. `members` keeps all; `mean`/`median` reduce (required for a GeoTIFF). Values: `"members"`, `"mean"`, `"median"`. |
+| `source` | str | No | `None` | Forecast source. Values: `"seas5"` (default). |
+| `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import get_seasonal
-res = get_seasonal(["PRCP", "TMAX"], init_month=2, years=range(1993, 2017),
-                   country="Rwanda")          # 24-yr hindcast, all members
+get_seasonal(["PRCP", "TMAX"], init_month=2, years=range(1993, 2017),
+             country="Rwanda")
 ```
 
-**`get_modis(variables, years, country=|bbox=, satellite="both"|"terra"|"aqua")`**
-and **`get_ndvi(...)`** — MODIS 16-day vegetation-index composites
-`(time, lat, lon)`, 46/year with `satellite="both"`. Needs Earth Engine.
+### `get_modis`
+
+Fetch **MODIS NDVI/EVI composite** stacks (Terra+Aqua interleaved).
+
+**Returns:** `{canonical_var: {"nc", "tif", "data"}}`, `data` dims `(time, lat, lon)`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `variables` | str \| list[str] | Yes | — | Vegetation-index name(s). Values: `NDVI, EVI`. |
+| `years` | int \| list[int] | Yes | — | Year or years to fetch. Values: e.g. `2021`, `range(2015, 2025)`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `satellite` | str | No | `'both'` | MODIS satellite: `both` interleaves Terra+Aqua (46/yr); a single one gives 23/yr. Values: `"both"`, `"terra"`, `"aqua"`. |
+| `source` | str \| list[str] | No | `None` | Override the MODIS source id(s) (advanced). Values: `"mod13q1"` (Terra), `"myd13q1"` (Aqua). |
+| `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
+```python
+from agwise_data import get_modis
+get_modis("NDVI", years=2021, country="Rwanda")["RS.NDVI"]["data"]
+```
+
+### `get_ndvi`
+
+Convenience wrapper of `get_modis` for **NDVI**.
+
+**Returns:** same as `get_modis`
+
+Accepts **all the same parameters as [`get_modis`](#get_modis)** — only the `variables` default differs:
+
+- `variables` is fixed to `"NDVI"` (this wrapper serves that one layer).
+
 ```python
 from agwise_data import get_ndvi
-ndvi = get_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
+get_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
 ```
 
-**`get_cropmask(country=|bbox=)`** — ESA WorldCover cropland mask (1/NaN) on
-the MODIS grid, so `ndvi * mask` drops non-cropland. Needs Earth Engine.
+### `smooth_ndvi`
 
-**`smooth_ndvi(years, country=|bbox=, cropmask=True, gapfill="linear"|"mean", window=9, polyorder=3, satellite="both")`**
-Analysis-ready NDVI: gap-fills the cloud/QA holes in the composite stack and
-smooths it with a Savitzky-Golay filter along time (the port of the legacy
-`get_MODISts_PreProc.R`). `gapfill="linear"` (default) interpolates gaps along
-the time axis; `"mean"` reproduces the legacy per-pixel mean. With
-`cropmask=True` the ESA WorldCover mask is aligned to the NDVI grid and
-non-cropland is set to NaN first. Returns `{"RS.NDVI": {...}}` like
-`get_modis`, writing a `Smoothed_NDVI_*_SG` product. Needs Earth Engine.
+**Gap-fill + Savitzky-Golay smooth** the MODIS NDVI stack (analysis-ready NDVI).
+
+**Returns:** `{"RS.NDVI": {"short", "source", "nc", "tif", "data"}}`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `years` | int \| list[int] | Yes | — | Year or years to fetch. Values: e.g. `2021`, `range(2015, 2025)`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `satellite` | str | No | `'both'` | MODIS satellite: `both` interleaves Terra+Aqua (46/yr); a single one gives 23/yr. Values: `"both"`, `"terra"`, `"aqua"`. |
+| `source` | str \| list[str] | No | `None` | Override the MODIS source id(s) (advanced). |
+| `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
+| `cropmask` | bool | No | `True` | Mask out non-cropland (ESA WorldCover) before smoothing. Values: `True`, `False`. |
+| `cropmask_source` | str | No | `None` | Override the cropland source (advanced). |
+| `window` | int | No | `9` | Savitzky-Golay window length (must be odd). |
+| `polyorder` | int | No | `3` | Savitzky-Golay polynomial order (must be < `window`). |
+| `gapfill` | str | No | `'linear'` | How to fill cloud/QA gaps before smoothing: interpolate along time, or the legacy per-pixel mean. Values: `"linear"` (default), `"mean"`. |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import smooth_ndvi
-ndvi = smooth_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
+smooth_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
 ```
 
-**`get_season(variables, planting_date, harvest_date, country=|bbox=|points=, planting_col=, harvest_col=, freq="daily", satellite="both")`**
-Climate **and/or** NDVI sliced to a growing season, **cross-year aware**
-(e.g. Sep→Feb). Region mode → cube dict (`Season_*` products); points mode →
-long DataFrame. Mixes `AGRO.*` and `RS.*` in one call. (Distinct from
-`get_seasonal`, which is SEAS5 *forecasts*.)
+### `get_season`
+
+Climate and/or NDVI **already sliced to a growing season** (cross-year aware).
+
+**Returns:** **region mode** → cube dict; **point mode** (`points=`) → long `DataFrame`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `variables` | str \| list[str] | Yes | — | Climate and/or remote-sensing name(s); each is routed to its source automatically. Values: climate `PRCP,TMAX,…` and/or `NDVI, EVI`. |
+| `planting_date` | str | No | `None` | Season start date, applied to the whole region / all points. Values: ISO `YYYY-MM-DD`. |
+| `harvest_date` | str | No | `None` | Season end date. Values: ISO `YYYY-MM-DD`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `points` | str \| DataFrame | No | `None` | Optional **point mode**: a CSV/DataFrame with lon/lat. If given, returns a long DataFrame instead of cubes. |
+| `planting_col` | str | No | `None` | Column in `points` holding each row's planting date (per-trial seasons). |
+| `harvest_col` | str | No | `None` | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `freq` | str | No | `'daily'` | Time step of the returned climate values. Values: `"daily"`, `"monthly"`. |
+| `satellite` | str | No | `'both'` | MODIS satellite: `both` interleaves Terra+Aqua (46/yr); a single one gives 23/yr. Values: `"both"`, `"terra"`, `"aqua"`. |
+| `source` | str \| list[str] | No | `None` | Override the source(s) for the variables (advanced). |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import get_season
-# region: NDVI sliced to a cross-year season
-get_season("NDVI", planting_date="2020-09-14", harvest_date="2021-02-28",
-           country="Rwanda")
-# points: per-trial seasons -> long df (point, lon, lat, time, variable, value)
-get_season(["PRCP", "TMAX"], points=trials,
-           planting_col="Pl_date", harvest_col="Hv_date")
+get_season("NDVI", planting_date="2020-09-14",
+           harvest_date="2021-02-28", country="Rwanda")
 ```
 
-### 3.2 Point extraction (return DataFrames)
+## 6.2 Point extraction (return DataFrames)
 
-**`extract_points(points, variables, start, end, freq="daily")`** — long time
-series at points. `points` is a CSV path or DataFrame with lon/lat columns.
-Returns columns `point, lon, lat, time, variable, value`.
+### `extract_points`
+
+Long-format climate **time series at point locations** between two dates.
+
+**Returns:** `DataFrame` with columns `point, lon, lat, time, variable, value`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `variables` | str \| list[str] | Yes | — | Climate variable name(s). Values: `PRCP, TMAX, TMIN, TEMP, SRAD, RHUM, WIND`. |
+| `start` | str | Yes | — | First date to extract. Values: ISO `YYYY-MM-DD`. |
+| `end` | str | Yes | — | Last date to extract. Values: ISO `YYYY-MM-DD`. |
+| `freq` | str | No | `'daily'` | Time step of the returned climate values. Values: `"daily"`, `"monthly"`. |
+| `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"agera5"`. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import extract_points
 df = extract_points("trials.csv", ["PRCP", "TMAX"],
                     start="2021-01-01", end="2021-06-30")
 ```
 
-**`extract_growing_season(points, variables, planting_col, harvest_col, legacy_names=True)`**
-Per-trial growing-season climate in the fertilizer-ML wide format:
-`<VAR>_m1..mN` monthly columns plus `totalRF` and `nrRainyDays` for rainfall.
+### `extract_growing_season`
+
+Per-trial **growing-season climate** in the fertilizer-ML wide format.
+
+**Returns:** `DataFrame`: input rows + `<VAR>_m1..mN`, `totalRF`, `nrRainyDays`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `variables` | str \| list[str] | Yes | — | Climate variable name(s). Values: `PRCP, TMAX, TMIN, TEMP, SRAD, RHUM, WIND`. |
+| `planting_col` | str | Yes | — | Column in `points` holding each row's planting date (per-trial seasons). |
+| `harvest_col` | str | Yes | — | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
+| `legacy_names` | bool | No | `True` | Use pre-2026 column names (`Precipitation_m1`, …) so existing ML code works; `False` uses short names (`PRCP_m1`, …). Values: `True`, `False`. |
+| `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"agera5"`. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import extract_growing_season
-out = extract_growing_season(trials, ["PRCP", "TMAX"],
-                             planting_col="Pl_date", harvest_col="Hv_date")
-# adds Precipitation_m1.., TemperatureMax_m1.., totalRF, nrRainyDays
+df = extract_growing_season("trials.csv", ["PRCP", "TMAX"],
+                            planting_col="Pl_date", harvest_col="Hv_date")
 ```
 
-**`extract_static_points(points, variables, depths=None, fill_nearest_m=1000, source=None, derive=None, calcareous=False)`**
-Soil/terrain at points (wide), one column per depth (`CLAY_0_5cm`, …). Points
-on masked pixels (urban/water NoData) are filled from the nearest valid pixel
-within `fill_nearest_m` metres; each variable gets a `<VAR>_fill_m` column
-(0 = own pixel, >0 = donor distance, NaN = nothing in range).
-Soil source is **SoilGrids** by default; pass **`source="isda"`** for iSDA
-Africa instead (`SOIL.CLAY/SAND/SILT/PH/SOC/CEC/BDOD`, plus **`EXTP`**
-Mehlich-3 extractable phosphorus, at depths `0-20cm`/`20-50cm`; requires
-`AGWISE_LOCAL_ROOT`). The same `source=` works on `get_static`/`get_soil`.
+### `extract_static_points`
 
-`derive=` adds pedotransfer columns (a name or list), pulling in the base
-variables it needs:
-- **`"hydraulics"`** — Saxton & Rawls (2006) from CLAY/SAND/SOC: per depth
-  `PWP_<d>`, `FC_<d>`, `SAT_<d>` (cm³/cm³) and `KS_<d>` (mm/h).
-- **`"olsen_p"`** — `OLSENP_<d>` (mg/kg) from Mehlich-3 `EXTP` via
-  `mehlich3_to_olsen` (`0.47·M3+2.4`; `calcareous=True` → `0.41·M3+1.1`).
+**Soil / terrain at point locations** (wide format), with optional derived columns.
+
+**Returns:** `DataFrame`: input + one column per variable×depth (+ derived)
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `variables` | str \| list[str] | Yes | — | Soil/terrain variable name(s) to extract. Values: soil `CLAY,…,EXTP`; terrain `ELEV,SLOPE,ASPECT,TPI,TRI`. |
+| `depths` | list[str] | No | `None` | Soil depth layers to return (default: all). Values: SoilGrids `0-5cm,5-15cm,15-30cm,30-60cm,60-100cm,100-200cm`; iSDA `0-20cm,20-50cm`. |
+| `source` | str | No | `None` | Soil source. Values: `"soilgrids"` (default), `"isda"`. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `fill_nearest_m` | float | No | `1000.0` | Fill points on NoData pixels from the nearest valid pixel within this many metres; `None` or `0` disables. |
+| `derive` | str \| list[str] | No | `None` | Add pedotransfer-derived columns (a name or list). Values: `"hydraulics"`, `"olsen_p"`. |
+| `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import extract_static_points
-soil = extract_static_points(trials, ["CLAY", "SAND", "SILT", "SOC", "PH"])
-# Saxton hydraulics at each depth (adds PWP_/FC_/SAT_/KS_ columns):
-hyd = extract_static_points(trials, ["CLAY"], derive="hydraulics")
-# Olsen P from iSDA Mehlich-3 extractable P:
-p = extract_static_points(trials, ["EXTP"], source="isda", derive="olsen_p")
+extract_static_points("trials.csv", ["CLAY", "PH", "SOC"],
+                      derive="hydraulics")
 ```
 
-### 3.3 Crop-model input files (return list of written files)
+### `rainy_days`
 
-**`to_dssat(points, planting_date=|planting_col=, harvest_date=|harvest_col=, out_dir=, station_col=, country=)`**
-Writes, per point `n`, `out_dir/EXTE<n>/WHTE<n>.WTH` (daily
-DATE/TMAX/TMIN/SRAD/RAIN + TAV/AMP header) and `SOIL.SOL` (layered profile
-with Saxton–Rawls hydraulics). Fetches season weather + soil itself, or reuse
-frames you already have via `weather=`/`soil=`. If the `soil` frame carries
-Mehlich-3 `EXTP_<depth>` columns (e.g. from
-`extract_static_points(..., ["EXTP"], source="isda")`), the DSSAT second-tier
-**P block** (`SLPX` = Olsen P) is written too (`calcareous=` picks the
-regression); otherwise it is omitted.
+Count the days with rainfall ≥ a threshold along the time axis.
+
+**Returns:** `DataArray` (the count per pixel)
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `daily_precip` | DataArray | Yes | — | A daily-precipitation cube with a `time` axis. |
+| `threshold` | float | No | `2.0` | Minimum daily rainfall (mm) to count a day as rainy. |
+
+```python
+from agwise_data import rainy_days
+n = rainy_days(cube, threshold=2.0)
+```
+
+## 6.3 Crop-model input files (return the list of files written)
+
+### `to_dssat`
+
+Write **DSSAT** weather (`.WTH`) + soil (`.SOL`) files for every point.
+
+**Returns:** `list` of `{"point", "dir", "wth", "sol"}`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `planting_date` | str | No | `None` | Season start date, applied to the whole region / all points. Values: ISO `YYYY-MM-DD`. |
+| `harvest_date` | str | No | `None` | Season end date. Values: ISO `YYYY-MM-DD`. |
+| `out_dir` | str \| Path | No | `None` → `./DSSAT` | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `planting_col` | str | No | `None` | Column in `points` holding each row's planting date (per-trial seasons). |
+| `harvest_col` | str | No | `None` | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `id_col` | str | No | `None` | Column in `points` used as the point identifier in output file names. |
+| `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
+| `country` | str | No | `'-99'` | DSSAT country **code** written into the files (not a region selector). |
+| `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
+| `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
+| `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import to_dssat
-to_dssat(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
-         out_dir="DSSAT", station_col="site", country="Rwanda")
-# -> [{"point", "dir", "wth": .../WHTE0001.WTH, "sol": .../SOIL.SOL}, ...]
+to_dssat("trials.csv", planting_date="2021-01-01",
+         harvest_date="2021-04-30", out_dir="DSSAT", station_col="site")
 ```
 
-**`to_apsim(points, ...)`** — same, writing `EXTE<n>/wth_loc_<n>.met` and
-`soil_<n>.csv` (the per-layer soil table for the apsimx template).
+### `to_apsim`
 
-**`to_wofost(points, ...)`** — same arguments, writing `EXTE<n>/weather_<n>.csv`
-and `soil_<n>.csv` for the R `meteor`/`Rwofost` model (which reads its inputs as
-lists, so the deliverable is tidy CSVs). Weather columns are WOFOST's exact set
-`date, srad, tmin, tmax, vapr, wind, prec` — SRAD in **kJ m⁻² day⁻¹** (the layer's
-MJ ×1000), `vapr` the **actual vapour pressure in kPa** derived from relative
-humidity and mean temperature, `wind` m s⁻¹, `prec` mm. The soil CSV is a long
-`parameter,value,units,note` table: the moisture parameters `SMW`/`SMFCF`/`SM0`
-(Saxton wilting-point/field-capacity/saturation) and `K0` (saturated
-conductivity, cm day⁻¹), each a thickness-weighted mean over the top metre, plus
-the site-independent WOFOST defaults (`RDMSOL`, `WAV`, `ZTI`, `IDRAIN`, `NOTINF`,
-`SSI`, `SMLIM`). Sources relative humidity + wind on top of the crop-model four.
+Write **APSIM** weather (`.met`) + soil files for every point.
+
+**Returns:** `list` of the files written per point
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `planting_date` | str | No | `None` | Season start date, applied to the whole region / all points. Values: ISO `YYYY-MM-DD`. |
+| `harvest_date` | str | No | `None` | Season end date. Values: ISO `YYYY-MM-DD`. |
+| `out_dir` | str \| Path | No | `None` → `./APSIM` | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `planting_col` | str | No | `None` | Column in `points` holding each row's planting date (per-trial seasons). |
+| `harvest_col` | str | No | `None` | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `id_col` | str | No | `None` | Column in `points` used as the point identifier in output file names. |
+| `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
+| `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
+| `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
+```python
+from agwise_data import to_apsim
+to_apsim("trials.csv", planting_date="2021-01-01",
+         harvest_date="2021-04-30", out_dir="APSIM")
+```
+
+### `to_wofost`
+
+Write **WOFOST** weather + soil files for every point.
+
+**Returns:** `list` of the files written per point
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `planting_date` | str | No | `None` | Season start date, applied to the whole region / all points. Values: ISO `YYYY-MM-DD`. |
+| `harvest_date` | str | No | `None` | Season end date. Values: ISO `YYYY-MM-DD`. |
+| `out_dir` | str \| Path | No | `None` → `./WOFOST` | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `planting_col` | str | No | `None` | Column in `points` holding each row's planting date (per-trial seasons). |
+| `harvest_col` | str | No | `None` | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `id_col` | str | No | `None` | Column in `points` used as the point identifier in output file names. |
+| `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
+| `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
+| `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import to_wofost
-to_wofost(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
-          out_dir="WOFOST", station_col="site")
-# -> [{"point", "dir", "weather": .../weather_1.csv, "soil": .../soil_1.csv}, ...]
+to_wofost("trials.csv", planting_date="2021-01-01",
+          harvest_date="2021-04-30", out_dir="WOFOST")
 ```
-> Note: the legacy `5a_prepare_list_weather.r` computed `vapr` with an errant
-> `×1000` (`plantecophys::esat` returns **Pa**, so the correct kPa value is
-> `(RH/100)·esat/1000`); `to_wofost` emits the physically-correct kPa vapour
-> pressure.
 
-**`to_oryza(points, ...)`** — same arguments, for the ORYZA v3 rice model.
-Under `EXTE<n>/` it writes the CABO weather files `<code><n>.<yyy>` (**one per
-calendar year** the season spans, so a cross-New-Year season yields two —
-columns `station, year, day, srad, tmin, tmax, vapr, wind, rain`, SRAD in
-kJ m⁻² day⁻¹, `vapr` the FAO-56 actual vapour pressure in kPa, missing values
-`-99`) and the **8-layer PADDY** `soil_<n>.sol`. SoilGrids' six depths are
-remapped onto ORYZA's fixed 8 layers (0.05 m ×6, 0.30, 0.40) and the
-Saxton-Rawls hydraulics fill the retention/conductivity block (WCST/WCFC/WCWP/
-WCAD m³ m⁻³, KST cm day⁻¹, CLAYX/SANDX fractions, BD g cm⁻³, SOC/SON kg ha⁻¹);
-the water-balance switches follow the non-puddled template with overridable
-defaults (`zrtms`, `wl0mx`, `wcli`=field capacity, `satav`, …). Sources relative
-humidity + wind on top of the crop-model four.
+### `to_oryza`
+
+Write **ORYZA** CABO weather + PADDY soil files for every point.
+
+**Returns:** `list` of the files written per point
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `planting_date` | str | No | `None` | Season start date, applied to the whole region / all points. Values: ISO `YYYY-MM-DD`. |
+| `harvest_date` | str | No | `None` | Season end date. Values: ISO `YYYY-MM-DD`. |
+| `out_dir` | str \| Path | No | `None` → `./ORYZA` | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `planting_col` | str | No | `None` | Column in `points` holding each row's planting date (per-trial seasons). |
+| `harvest_col` | str | No | `None` | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `id_col` | str | No | `None` | Column in `points` used as the point identifier in output file names. |
+| `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
+| `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
+| `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import to_oryza
-to_oryza(trials, planting_date="2021-01-01", harvest_date="2021-04-30",
-         out_dir="ORYZA", station_col="site")
-# -> [{"point", "dir", "weather": [.../AGWS1.021, ...], "soil": .../soil_1.sol}, ...]
+to_oryza("trials.csv", planting_date="2021-01-01",
+         harvest_date="2021-04-30", out_dir="ORYZA")
 ```
 
-### 3.4 Spatial scaffolding (return DataFrames)
+## 6.4 Spatial scaffolding (return DataFrames)
 
-**`make_grid(country=|bbox=, admin_level=0, admin_name=None, res_km=5, tag_admin_level=2)`**
-Regular ~`res_km` point grid clipped to a boundary, each point tagged
-`country, NAME_1, NAME_2`.
+### `make_grid`
+
+Build a **regular point grid** clipped to a country/admin boundary (or a bbox).
+
+**Returns:** `DataFrame` with `lon, lat, country` (+ `NAME_1`/`NAME_2` when a country is given)
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `res_km` | float | No | `5.0` | Grid spacing in kilometres. Values: e.g. `5.0`, `1.0`, `0.25`. |
+| `tag_admin_level` | int | No | `2` | Tag each grid point with admin names up to this level. Values: `0`, `1`, `2`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import make_grid
-grid = make_grid(country="Rwanda", res_km=5)     # lon, lat, country, NAME_1, NAME_2
+grid = make_grid(country="Rwanda", res_km=5.0)
 ```
 
-**`tag_admin(points, country, admin_level=2)`** — add `country/NAME_1/NAME_2`
-to your points by point-in-polygon (the field↔geospatial link).
+### `tag_admin`
+
+**Tag points with admin-unit names** (the field↔geospatial link).
+
+**Returns:** the input `DataFrame` + `country`, `NAME_1` (and `NAME_2` when `admin_level ≥ 2`)
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `country` | str | Yes | — | Country the points fall in (name or ISO3), used for the boundary lookup. Values: e.g. `"Rwanda"`. |
+| `admin_level` | int | No | `2` | Deepest admin level to tag (`2` adds `NAME_2`). Values: `1`, `2`. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import tag_admin
-tagged = tag_admin(trials, country="Rwanda")
+tagged = tag_admin("trials.csv", country="Rwanda", admin_level=2)
 ```
 
-### 3.5 Seasonal-forecast bias correction
+## 6.5 Seasonal-forecast bias correction
 
-**`bias_correct(variables, init_month, forecast_year, calib_years, country=|bbox=, window_days=None)`**
-Quantile Delta Mapping of a SEAS5 forecast: learns the model bias from
-hindcast-vs-observations over `calib_years` and corrects the `forecast_year`
-forecast (additive for temperatures, multiplicative for PRCP/SRAD). Returns
-`{var: {"short", "kind", "nc", "data"}}`, corrected cube
-`(member, time, lat, lon)` on the observation grid.
+### `bias_correct`
+
+**Bias-correct a SEAS5 forecast** with Quantile Delta Mapping.
+
+**Returns:** `{canonical_var: {"short", "kind", "nc", "data"}}`, corrected `(member, time, lat, lon)`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `variables` | str \| list[str] | Yes | — | Forecast variable(s) to bias-correct. Values: `PRCP, TMAX, TMIN, SRAD`. |
+| `init_month` | int | Yes | — | Forecast initialization month. Values: `1`–`12`. |
+| `forecast_year` | int | Yes | — | The year whose forecast is corrected. |
+| `calib_years` | list[int] | Yes | — | Hindcast/observation years used to learn the bias. Values: e.g. `range(1993, 2017)`. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `window_days` | int | No | `None` | Restrict QDM calibration to ±this many days-of-year of each step; `None` pools the whole season. |
+| `obs` | dict | No | `None` | Advanced/testing: supply the observation cubes directly to skip fetching. |
+| `hind` | dict | No | `None` | Advanced/testing: supply the hindcast cubes directly to skip fetching. |
+| `fcst` | dict | No | `None` | Advanced/testing: supply the forecast cubes directly to skip fetching. |
+| `source` | str | No | `None` | Forecast source. Values: `"seas5"` (default). |
+| `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
+| `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import bias_correct
-bc = bias_correct(["PRCP", "TMAX", "TMIN", "SRAD"], init_month=2,
-                  forecast_year=2024, calib_years=range(1993, 2017),
-                  country="Rwanda")
+bias_correct(["PRCP", "TMAX"], init_month=2, forecast_year=2024,
+             calib_years=range(1993, 2017), country="Rwanda")
 ```
 
-**`forecast_to_dssat(points, init_month, forecast_year, calib_years, out_dir=, ensemble="mean"|"median", station_col=)`**
-Bias-corrects the forecast, samples it at points, reduces the ensemble, and
-writes DSSAT `.WTH`+`.SOL` (chains `bias_correct` into `to_dssat`).
+### `forecast_to_dssat`
+
+**Bias-correct a forecast and write DSSAT files** in one call.
+
+**Returns:** the `to_dssat` manifest (`list` of written-file records)
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
+| `init_month` | int | Yes | — | Forecast initialization month. Values: `1`–`12`. |
+| `forecast_year` | int | Yes | — | The year whose forecast is written. |
+| `calib_years` | list[int] | Yes | — | Hindcast/observation years used to learn the bias. Values: e.g. `range(1993, 2017)`. |
+| `out_dir` | str \| Path | No | `None` → `./DSSAT` | Directory for the output files (see the **Default** column for where it lands when omitted). |
+| `ensemble` | str | No | `'mean'` | Reduce the corrected forecast ensemble before writing. Values: `"mean"` (default), `"median"`. |
+| `window_days` | int | No | `None` | Restrict QDM calibration to ±this many days-of-year of each step; `None` pools the whole season. |
+| `country` | str | No | `None` | Region by country **name or ISO3 code**. Use this *or* `bbox`. Values: e.g. `"Rwanda"`, `"RWA"`. |
+| `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
+| `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
+| `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
+| `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `id_col` | str | No | `None` | Column in `points` used as the point identifier in output file names. |
+| `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
+| `country_name` | str | No | `'-99'` | DSSAT country **code** written into the files. |
+| `corrected` | dict | No | `None` | Advanced/testing: a precomputed `bias_correct` result, to skip the QDM step. |
+| `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
+| `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
 ```python
 from agwise_data import forecast_to_dssat
-forecast_to_dssat(trials, init_month=2, forecast_year=2024,
-                  calib_years=range(1993, 2017), out_dir="DSSAT_forecast",
+forecast_to_dssat("trials.csv", init_month=2, forecast_year=2024,
+                  calib_years=range(1993, 2017), out_dir="DSSAT_fc",
                   station_col="site")
 ```
 
-Helper: **`rainy_days(daily_precip, threshold=2.0)`** — count of days ≥
-threshold (the metric behind `nrRainyDays`).
-
 ---
 
-## 4. R and command-line use
+## R and CLI equivalents
 
-**R** (`source("r/agwise_data.R")`): every function above has an `ad_` wrapper
-with the same arguments — `ad_get_climate`, `ad_extract_points`,
-`ad_extract_growing_season`, `ad_get_static`/`ad_get_dem`/`ad_get_soil`,
-`ad_get_seasonal`, `ad_get_modis`, `ad_get_cropmask`, `ad_smooth_ndvi`,
-`ad_get_season`,
-`ad_extract_static_points`, `ad_to_dssat`/`ad_to_apsim`/`ad_to_wofost`/
-`ad_to_oryza`, `ad_make_grid`/`ad_tag_admin`,
-`ad_bias_correct`/`ad_forecast_to_dssat`.
-Gridded wrappers return `terra::SpatRaster`s; point/writer wrappers return
-data.frames.
-```r
-source("r/agwise_data.R")
-rain <- ad_get_climate("PRCP", 2015:2024, country = "Rwanda", freq = "monthly")
-soil <- ad_extract_static_points(trials, c("CLAY", "PH", "SOC"))
-```
+Every function above has an **R wrapper** (`ad_<name>`, same arguments —
+`source("r/agwise_data.R")`) and a **CLI subcommand** (`agwise-data <name>`).
+The full Python ↔ R ↔ CLI mapping, with side-by-side examples, is in
+**[user guide §5](docs/user_guide.md#5-user-interface--python--r--cli)**.
 
-**CLI** (`agwise-data <subcommand>`): `get`, `extract`, `get-static`,
-`get-seasonal`, `get-modis`, `get-cropmask`, `smooth-ndvi`, `get-season`, `extract-static`,
-`to-dssat`, `to-apsim`, `to-wofost`, `to-oryza`, `make-grid`, `tag-admin`,
-`bias-correct`, `forecast-to-dssat`, plus `catalog` and `cache` for inspection. Each prints a
-JSON line describing the outputs.
 ```bash
-agwise-data get --vars PRCP,TMAX --country Rwanda --years 2015:2024 --freq monthly
-agwise-data to-dssat --points trials.csv --planting-date 2021-01-01 \
-    --harvest-date 2021-04-30 --station-col site --out-dir DSSAT
-agwise-data cache info
+agwise-data --help            # list every subcommand
+agwise-data <subcommand> -h   # parameters for one subcommand
+agwise-data catalog list      # sources + variables
+agwise-data cache info        # what is cached, and where
 ```
 
----
-
-## 5. How it saves you time
-
-- **Region-scoped** fetches: a country request downloads only its window.
-- **Download once, shared**: the second request (anyone) is a cache hit;
-  cached years are never re-fetched.
-- **Parallel** downloads across (variable, year); reuse extractions across
-  writers by passing `weather=`/`soil=` so you fetch once and write DSSAT +
-  APSIM (or several engines) from the same data.
+Region flags on the CLI: `--country`, `--admin-level`, `--admin-name`, `--bbox`;
+output flags: `--format nc,tif`, `--out-dir`, `--overwrite`.

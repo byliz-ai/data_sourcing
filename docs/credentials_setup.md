@@ -1,11 +1,17 @@
-# Credentials setup (GEE + Copernicus CDS)
+# Credentials — Section 3 (Copernicus CDS + Google Earth Engine)
+
+**Create, configure and verify** the two accounts the data sources need. This is
+Section 3 of the [documentation](../README.md#documentation-map--read-in-this-order);
+do [installation (Section 2)](../README.md#2-installation) first, then come here,
+then the [user workflow (Section 4)](user_guide.md).
 
 Everything here is done **once per user**. Pick your path:
 
 | Your situation | Go to |
 | --- | --- |
-| I already have a CDS token and a GEE credentials file | [Path A — I have everything (≈5 min)](#path-a--i-have-everything-5-min) |
-| I have never used Google Earth Engine or Copernicus | [Path B — first time, from zero (≈20 min)](#path-b--first-time-from-zero-20-min) |
+| I already have a CDS token and a GEE credentials file (**configure existing**) | [Path A — I have everything (≈5 min)](#path-a--i-have-everything-5-min) |
+| I have never used Google Earth Engine or Copernicus (**create from zero**) | [Path B — first time, from zero (≈20 min)](#path-b--first-time-from-zero-20-min) |
+| I just want to **verify** what I set up | [A3. Verify both](#a3-verify-both-30-seconds) |
 | Something failed | [Troubleshooting](#troubleshooting) |
 
 Whichever path you take, read the

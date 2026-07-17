@@ -1,15 +1,21 @@
-# CGLabs setup (one time per server, then one line per user)
+# CGLabs setup — Section 2 (shared-server deep dive)
+
+Installation basics (required software, `git clone` → `conda` → `pip install`,
+and the folder structure after install) are in
+[README Section 2](../README.md#2-installation). This page covers what is
+**specific to the shared server**: installing once for everyone, persisting the
+data roots per user, using it from R, and performance tuning.
 
 ## 1. Install (once per server)
 
 Install the package + env once, in a location everyone can reach — same commands
-as the [README install](../README.md#3-install) (`git clone` → `conda env create
+as [README §2.2](../README.md#22-install) (`git clone` → `conda env create
 -f environment.yml` → `conda activate agwise_data` → `pip install -e ".[all]"`).
 
 ## 2. Data roots (once per user)
 
-The **three data folders** — and *why* there are three — are explained in the
-[README](../README.md#where-your-data-lives--three-folders-three-jobs). On the
+The **three data folders** — and *why* there are three — are explained in
+[README §1.2](../README.md#12-the-three-data-folders--each-with-one-job). On the
 shared server, persist the two roots in your `~/.bashrc` (R users: `.Renviron`)
 and create your use-case folder:
 

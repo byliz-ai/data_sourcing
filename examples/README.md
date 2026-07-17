@@ -19,7 +19,7 @@ Both scripts do the same thing in each language:
 4. **NDVI** (Python, commented out) — needs Google Earth Engine credentials.
 
 Set your data roots first — the
-[three data folders](../README.md#where-your-data-lives--three-folders-three-jobs)
+[three data folders](../README.md#12-the-three-data-folders--each-with-one-job)
 on CGLabs, or just a personal cache to try the examples on a laptop:
 
 ```bash
