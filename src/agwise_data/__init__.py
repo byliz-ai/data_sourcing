@@ -9,7 +9,7 @@ Public API (all return a dict of products, a DataFrame, or a list of files):
 
 * Gridded cubes — :func:`get_climate`, :func:`get_static`/:func:`get_dem`/
   :func:`get_soil`, :func:`get_seasonal`, :func:`get_modis`/:func:`get_ndvi`,
-  :func:`get_cropmask`, :func:`get_season`.
+  :func:`get_cropmask`, :func:`get_season`, :func:`smooth_ndvi`.
 * Point extraction — :func:`extract_points`, :func:`extract_growing_season`,
   :func:`extract_static_points`.
 * Crop-model input files — :func:`to_dssat`, :func:`to_apsim`,
@@ -40,6 +40,7 @@ from .api import (
     get_static,
     make_grid,
     rainy_days,
+    smooth_ndvi,
     tag_admin,
     to_apsim,
     to_dssat,
@@ -48,7 +49,7 @@ from .api import (
 )
 from .config import Config
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 __all__ = [
     "get_climate",
@@ -63,6 +64,7 @@ __all__ = [
     "get_modis",
     "get_ndvi",
     "get_season",
+    "smooth_ndvi",
     "extract_static_points",
     "to_dssat",
     "to_apsim",

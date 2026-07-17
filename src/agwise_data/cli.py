@@ -276,6 +276,43 @@ def cmd_get_season(args) -> dict:
     }
 
 
+def cmd_smooth_ndvi(args) -> dict:
+    from .api import smooth_ndvi
+
+    bbox = [float(v) for v in args.bbox.split(",")] if args.bbox else None
+    results = smooth_ndvi(
+        years=_parse_years(args.years),
+        country=args.country,
+        bbox=bbox,
+        admin_level=args.admin_level,
+        admin_name=args.admin_name,
+        satellite=args.satellite,
+        source=args.source,
+        domain=args.domain,
+        cropmask=not args.no_cropmask,
+        cropmask_source=args.cropmask_source,
+        window=args.window,
+        polyorder=args.polyorder,
+        gapfill=args.gapfill,
+        out_format=[f.strip() for f in args.format.split(",")],
+        out_dir=Path(args.out_dir) if args.out_dir else None,
+        overwrite=args.overwrite,
+    )
+    return {
+        "ok": True,
+        "outputs": [
+            {
+                "variable": var,
+                "short": info["short"],
+                "source": info["source"],
+                "nc": str(info["nc"]) if info["nc"] else None,
+                "tif": str(info["tif"]) if info["tif"] else None,
+            }
+            for var, info in results.items()
+        ],
+    }
+
+
 def cmd_get_cropmask(args) -> dict:
     from .api import get_cropmask
 
@@ -666,6 +703,44 @@ def build_parser() -> argparse.ArgumentParser:
     p_mo.add_argument("--out-dir", dest="out_dir")
     p_mo.add_argument("--overwrite", action="store_true")
     p_mo.set_defaults(func=cmd_get_modis)
+
+    p_sm = sub.add_parser(
+        "smooth-ndvi",
+        help="Gap-fill + Savitzky-Golay smooth the MODIS NDVI stack (crop-masked)",
+    )
+    p_sm.add_argument("--years", required=True, help="e.g. 2020:2023")
+    _add_region_args(p_sm)
+    p_sm.add_argument(
+        "--satellite", choices=["both", "terra", "aqua"], default="both",
+        help="both interleaves MOD13Q1+MYD13Q1 (46 composites/year)",
+    )
+    p_sm.add_argument(
+        "--no-cropmask", dest="no_cropmask", action="store_true",
+        help="Skip the cropland mask (smooth every pixel)",
+    )
+    p_sm.add_argument(
+        "--cropmask-source", dest="cropmask_source",
+        help="Override the cropland source (advanced)",
+    )
+    p_sm.add_argument(
+        "--window", type=int, default=9,
+        help="Savitzky-Golay window length (odd, default 9)",
+    )
+    p_sm.add_argument(
+        "--polyorder", type=int, default=3,
+        help="Savitzky-Golay polynomial order (default 3)",
+    )
+    p_sm.add_argument(
+        "--gapfill", choices=["linear", "mean"], default="linear",
+        help="gap-fill before smoothing: linear interpolation (default) or "
+             "legacy per-pixel mean",
+    )
+    p_sm.add_argument("--format", default="nc", help="nc, tif or nc,tif")
+    p_sm.add_argument("--source", help="Override the NDVI source ids (advanced)")
+    p_sm.add_argument("--domain", help="Cache domain (default: auto)")
+    p_sm.add_argument("--out-dir", dest="out_dir")
+    p_sm.add_argument("--overwrite", action="store_true")
+    p_sm.set_defaults(func=cmd_smooth_ndvi)
 
     p_sn = sub.add_parser(
         "get-season",

@@ -127,6 +127,19 @@ ndvi = get_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
 **`get_cropmask(country=|bbox=)`** — ESA WorldCover cropland mask (1/NaN) on
 the MODIS grid, so `ndvi * mask` drops non-cropland. Needs Earth Engine.
 
+**`smooth_ndvi(years, country=|bbox=, cropmask=True, gapfill="linear"|"mean", window=9, polyorder=3, satellite="both")`**
+Analysis-ready NDVI: gap-fills the cloud/QA holes in the composite stack and
+smooths it with a Savitzky-Golay filter along time (the port of the legacy
+`get_MODISts_PreProc.R`). `gapfill="linear"` (default) interpolates gaps along
+the time axis; `"mean"` reproduces the legacy per-pixel mean. With
+`cropmask=True` the ESA WorldCover mask is aligned to the NDVI grid and
+non-cropland is set to NaN first. Returns `{"RS.NDVI": {...}}` like
+`get_modis`, writing a `Smoothed_NDVI_*_SG` product. Needs Earth Engine.
+```python
+from agwise_data import smooth_ndvi
+ndvi = smooth_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
+```
+
 **`get_season(variables, planting_date, harvest_date, country=|bbox=|points=, planting_col=, harvest_col=, freq="daily", satellite="both")`**
 Climate **and/or** NDVI sliced to a growing season, **cross-year aware**
 (e.g. Sep→Feb). Region mode → cube dict (`Season_*` products); points mode →
@@ -302,7 +315,8 @@ threshold (the metric behind `nrRainyDays`).
 **R** (`source("r/agwise_data.R")`): every function above has an `ad_` wrapper
 with the same arguments — `ad_get_climate`, `ad_extract_points`,
 `ad_extract_growing_season`, `ad_get_static`/`ad_get_dem`/`ad_get_soil`,
-`ad_get_seasonal`, `ad_get_modis`, `ad_get_cropmask`, `ad_get_season`,
+`ad_get_seasonal`, `ad_get_modis`, `ad_get_cropmask`, `ad_smooth_ndvi`,
+`ad_get_season`,
 `ad_extract_static_points`, `ad_to_dssat`/`ad_to_apsim`/`ad_to_wofost`/
 `ad_to_oryza`, `ad_make_grid`/`ad_tag_admin`,
 `ad_bias_correct`/`ad_forecast_to_dssat`.
@@ -315,7 +329,7 @@ soil <- ad_extract_static_points(trials, c("CLAY", "PH", "SOC"))
 ```
 
 **CLI** (`agwise-data <subcommand>`): `get`, `extract`, `get-static`,
-`get-seasonal`, `get-modis`, `get-cropmask`, `get-season`, `extract-static`,
+`get-seasonal`, `get-modis`, `get-cropmask`, `smooth-ndvi`, `get-season`, `extract-static`,
 `to-dssat`, `to-apsim`, `to-wofost`, `to-oryza`, `make-grid`, `tag-admin`,
 `bias-correct`, `forecast-to-dssat`, plus `catalog` and `cache` for inspection. Each prints a
 JSON line describing the outputs.

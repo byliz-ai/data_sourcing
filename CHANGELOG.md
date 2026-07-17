@@ -3,6 +3,33 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.16.0 — smooth_ndvi (gap-fill + Savitzky-Golay of the MODIS NDVI stack)
+- **New:** `smooth_ndvi(years, country=|bbox=, ...)` — turns the raw MODIS NDVI
+  composites (with cloud/QA gaps left as NaN by the drivers) into the
+  analysis-ready, smoothed time series the planting-date phenology workflow
+  needs; the port of the legacy `get_MODISts_PreProc.R`. Per pixel the gaps are
+  filled and a Savitzky-Golay filter (`window=9`, `polyorder=3` — the MODIS
+  choice) is run along time; pixels with no valid observation stay NaN. Returns
+  `{"RS.NDVI": {...}}` like `get_modis`, writing a `Smoothed_NDVI_*_SG` product.
+- **Gap-fill method** is selectable via `gapfill=`:
+  - `"linear"` (**default**) — linear interpolation along the *time*
+    coordinate, edges carried from the nearest valid step. Tracks a peaked
+    seasonal signal far better than the legacy mean (verified: RMSD-to-truth
+    ~0.036 vs ~0.080 on a noisy season with ~20% gaps) and matches the MODIS
+    driver's stated intent ("the downstream smoothing interpolates the gaps").
+  - `"mean"` — per-pixel temporal mean, reproducing the legacy
+    `substituteNA(type="mean")` for exact parity.
+- **Optional cropland masking** (`cropmask=True`, default): the ESA WorldCover
+  mask (`get_cropmask`) is aligned to the NDVI grid by nearest neighbour and
+  non-cropland pixels are set to NaN before smoothing. `cropmask_source=`
+  overrides the source; `cropmask=False` smooths every pixel.
+- Non-default `window`/`polyorder` and a `"mean"` gap-fill are appended to the
+  product name, so they never collide with a default-smoothed cache entry.
+- New module `agwise_data.smoothing` (`smooth_stack`, `savgol_gapfill`,
+  `apply_cropmask`); CLI `smooth-ndvi` and R `ad_smooth_ndvi`. +10 tests.
+- Note (perf): the `"linear"` fill loops over pixels with gaps — fine at
+  county/region scale; vectorize before continental-scale runs.
+
 ## 0.15.0 — soil hydraulics at points + Mehlich-3→Olsen P (DSSAT P block)
 - **New:** `extract_static_points(..., derive=...)` adds pedotransfer columns,
   pulling in the base variables each needs:

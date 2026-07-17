@@ -246,6 +246,44 @@ ad_get_modis <- function(vars = "NDVI", years, country = NULL, bbox = NULL,
   if (length(rasters) == 1) rasters[[1]] else rasters
 }
 
+#' Gap-fill and Savitzky-Golay smooth the MODIS NDVI composite stack.
+#'
+#' The port of the legacy get_MODISts_PreProc.R: turns the raw NDVI
+#' composites (with cloud/QA gaps as NA) into an analysis-ready smoothed
+#' time series. Per pixel, NA gaps are filled with the pixel's temporal mean,
+#' then a Savitzky-Golay filter (window/polyorder, MODIS defaults 9/3) is run
+#' along time. With cropmask = TRUE (default) the ESA WorldCover cropland mask
+#' is aligned to the NDVI grid and non-cropland pixels are set to NA first.
+#'
+#' @param years        year or vector of years
+#' @param cropmask     mask out non-cropland before smoothing (default TRUE)
+#' @param window       Savitzky-Golay window length (odd, default 9)
+#' @param polyorder    Savitzky-Golay polynomial order (default 3)
+#' @param gapfill      gap-fill method: "linear" (default) or legacy "mean"
+#' @return a terra::SpatRaster of the smoothed NDVI stack
+ad_smooth_ndvi <- function(years, country = NULL, bbox = NULL,
+                           admin_level = 0, admin_name = NULL,
+                           satellite = "both", cropmask = TRUE,
+                           window = 9, polyorder = 3, gapfill = "linear",
+                           overwrite = FALSE) {
+  args <- c("smooth-ndvi",
+            "--years", paste0(min(years), ":", max(years)),
+            "--satellite", satellite,
+            "--window", window,
+            "--polyorder", polyorder,
+            "--gapfill", gapfill,
+            "--format", "nc,tif")
+  if (!is.null(country))    args <- c(args, "--country", country)
+  if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
+  if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
+  if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!cropmask)            args <- c(args, "--no-cropmask")
+  if (overwrite)            args <- c(args, "--overwrite")
+
+  res <- ad_run(args)
+  terra::rast(res$outputs[[1]]$tif)
+}
+
 #' Climate and/or NDVI already sliced to a growing season.
 #'
 #' The season-ready delivery: instead of fetching whole years and slicing

@@ -6,7 +6,7 @@ reference with parameters, outputs and examples):
 * **Gridded cubes** → ``{canonical_var: {"nc", "tif", "data"}}``:
   :func:`get_climate`, :func:`get_static` (+ :func:`get_dem`/:func:`get_soil`),
   :func:`get_seasonal`, :func:`get_modis` (+ :func:`get_ndvi`),
-  :func:`get_cropmask`, :func:`get_season`.
+  :func:`get_cropmask`, :func:`get_season`, :func:`smooth_ndvi`.
 * **Point extraction** → ``pandas.DataFrame``: :func:`extract_points`,
   :func:`extract_growing_season`, :func:`extract_static_points`.
 * **Crop-model input files** → ``list`` of written files: :func:`to_dssat`,
@@ -1086,6 +1086,137 @@ def get_modis(
 def get_ndvi(**kwargs) -> Dict[str, dict]:
     """MODIS NDVI composites (Terra + Aqua interleaved by default)."""
     return get_modis(variables=["RS.NDVI"], **kwargs)
+
+
+def smooth_ndvi(
+    years: Union[int, Sequence[int]],
+    country: Optional[str] = None,
+    bbox: Optional[Sequence[float]] = None,
+    admin_level: int = 0,
+    admin_name: Optional[str] = None,
+    satellite: str = "both",
+    source: Union[str, Sequence[str], None] = None,
+    domain: Optional[str] = None,
+    cropmask: bool = True,
+    cropmask_source: Optional[str] = None,
+    window: int = 9,
+    polyorder: int = 3,
+    gapfill: str = "linear",
+    out_format: Union[str, Sequence[str]] = "nc",
+    out_dir: Optional[Path] = None,
+    overwrite: bool = False,
+    config: Optional[Config] = None,
+) -> Dict[str, dict]:
+    """Gap-fill and Savitzky-Golay smooth the MODIS NDVI composite stack.
+
+    Turns the raw NDVI composites — with cloud/QA gaps left as NaN by the
+    drivers — into the analysis-ready smoothed time series the planting-date
+    phenology workflow needs; the port of the legacy ``get_MODISts_PreProc.R``.
+    Per pixel, NaN gaps are filled (``gapfill="linear"`` interpolates along the
+    time axis, the default; ``"mean"`` reproduces the legacy per-pixel mean),
+    then a Savitzky-Golay filter (``window``/``polyorder``, MODIS defaults 9/3)
+    runs along time. With ``cropmask=True`` (default) the ESA WorldCover
+    cropland mask (:func:`get_cropmask`) is aligned to the NDVI grid by nearest
+    neighbour and non-cropland pixels are set to NaN before smoothing;
+    ``cropmask_source`` overrides the cropland source.
+
+    Returns ``{"RS.NDVI": {"short", "source", "nc", "tif", "data"}}`` like
+    :func:`get_modis`, with ``data`` the smoothed ``(time, lat, lon)`` cube
+    written as a ``Smoothed_NDVI_<y0>_<y1>[_sat]_SG`` product. Non-default
+    ``window``/``polyorder`` and a ``"mean"`` gap-fill are appended to the
+    product name so they never collide with a default-smoothed cache entry.
+    """
+    from .smoothing import apply_cropmask, smooth_stack
+
+    config = config or Config.load()
+    years = _as_years(years)
+    canon = rs_canonical_name("NDVI")
+    short = rs_short_name(canon)
+    formats = [out_format] if isinstance(out_format, str) else list(out_format)
+    for f in formats:
+        if f not in ("nc", "tif"):
+            raise ValueError(f"Unknown output format '{f}' (use 'nc' and/or 'tif')")
+    write_tif = "tif" in formats
+
+    if source:
+        source_ids = [source] if isinstance(source, str) else list(source)
+        suffix = "_" + "-".join(source_ids)
+    elif satellite == "both":
+        suffix = ""
+    elif satellite in _MODIS_SATELLITE_SOURCES:
+        suffix = f"_{satellite}"
+    else:
+        raise ValueError(
+            f"satellite must be 'both', 'terra' or 'aqua', got '{satellite}'"
+        )
+    if (window, polyorder) != (9, 3):
+        suffix += f"_w{window}p{polyorder}"
+    if gapfill != "linear":
+        suffix += f"_{gapfill}"
+
+    _, _, tag = _resolve_region(config, country, bbox, admin_level, admin_name)
+    out_root = Path(out_dir) if out_dir else config.products_dir(tag)
+    stem = f"Smoothed_{short}_{years[0]}_{years[-1]}{suffix}_SG"
+    nc_path = out_root / f"{stem}.nc"
+    tif_path = out_root / f"{stem}.tif" if write_tif else None
+    need_nc = overwrite or not nc_path.exists()
+    need_tif = write_tif and (overwrite or not tif_path.exists())
+
+    if not need_nc and not need_tif:
+        logger.info("Product cache hit: %s", nc_path)
+        da = _open_product_da(nc_path)
+    else:
+        region_kwargs = dict(
+            country=country, bbox=bbox, admin_level=admin_level,
+            admin_name=admin_name, out_dir=out_dir, config=config,
+        )
+        raw = get_modis(
+            variables=[canon], years=years, satellite=satellite, source=source,
+            domain=domain, **region_kwargs,
+        )[canon]["data"]
+        if cropmask:
+            cm = get_cropmask(source=cropmask_source, domain=domain, **region_kwargs)
+            mask = next(iter(cm.values()))["data"]
+            raw = apply_cropmask(raw, mask)
+        da = smooth_stack(
+            raw, window=window, polyorder=polyorder, gapfill=gapfill
+        ).load()
+
+        meta = {
+            "variable": canon,
+            "region": tag,
+            "years": [years[0], years[-1]],
+            "satellite": "custom" if source else satellite,
+            "cropmask": bool(cropmask),
+            "smoothing": {
+                "method": "savitzky_golay",
+                "window": int(window),
+                "polyorder": int(polyorder),
+                "gapfill": gapfill,
+            },
+            "n_composites": int(da.sizes["time"]),
+        }
+        if need_nc:
+            nc_path.parent.mkdir(parents=True, exist_ok=True)
+            da.to_netcdf(nc_path, encoding={da.name: nc_encoding(da)})
+            write_manifest(nc_path, meta)
+        if need_tif:
+            from .spatial import write_geotiff
+
+            write_geotiff(da, tif_path, labels=time_labels(da, "daily"))
+            write_manifest(tif_path, meta)
+
+    return {
+        canon: {
+            "short": short,
+            "source": ",".join(
+                [source] if isinstance(source, str) else list(source)
+            ) if source else satellite,
+            "nc": nc_path if nc_path.exists() else None,
+            "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "data": da,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------
