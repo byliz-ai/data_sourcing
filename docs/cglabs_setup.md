@@ -12,25 +12,34 @@ Install the package + env once, in a location everyone can reach — same comman
 as [README §2.2](../README.md#22-install) (`git clone` → `conda env create
 -f environment.yml` → `conda activate agwise_data` → `pip install -e ".[all]"`).
 
-## 2. Data roots (once per user)
+## 2. Data roots — already configured on CGLabs
 
 The **three data folders** — and *why* there are three — are explained in
 [README §1.2](../README.md#12-the-three-data-folders--each-with-one-job). On the
-shared server, persist the two roots in your `~/.bashrc` (R users: `.Renviron`)
-and create your use-case folder:
+standard CGLabs tree **you do not set anything**: the layer defaults to the
+shared folders automatically (see `CGLABS_LANDING`/`CGLABS_PROCESSED` in
+`src/agwise_data/config.py`), and NFS file locking is handled for you. A new
+user reuses the already-downloaded data and the shared cache out of the box.
+
+| Role | Default folder | Env override |
+| --- | --- | --- |
+| reusable raw inputs (read-only) | `…/Global_GeoData/Landing` | `AGWISE_LOCAL_ROOT` |
+| shared download cache (read/write) | `…/Global_GeoData/Processed` | `AGWISE_DATA_ROOT` |
+| your outputs | you choose per call | each writer's `out_dir` |
+
+Only set the env vars to **relocate** the layer — e.g. on a laptop, or to write
+to a private cache while testing:
 
 ```bash
-DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
-export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing     # raw inputs (read-only)
-export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed    # shared download cache (read/write)
-export HDF5_USE_FILE_LOCKING=FALSE                                # Landing/Processed are on NFS
-mkdir -p "$DATASOURCING/useCase_<Country>_<Name>/result"          # your outputs (writer out_dir)
+export AGWISE_DATA_ROOT=~/agwise_data/cache        # a private download cache
+export AGWISE_LOCAL_ROOT=/path/to/Global_GeoData/Landing   # or leave unset to just download
 ```
 
-Reuse is maximised by requesting stable regions (`country=`/`admin_level=`) or,
-on a bulk server, `AGWISE_DATA_SCOPE=domain` (fetch the whole continent once —
-see [performance tuning](#performance-tuning-optional)). Off CGLabs (laptop),
-leave `AGWISE_LOCAL_ROOT` unset and use a personal `AGWISE_DATA_ROOT`.
+To move the whole team to a different tree, edit the two paths in
+`config.py` once. Reuse is maximised by requesting stable regions
+(`country=`/`admin_level=`) or, on a bulk server, `AGWISE_DATA_SCOPE=domain`
+(fetch the whole continent once — see
+[performance tuning](#performance-tuning-optional)).
 
 ## 3. Credentials (per user)
 

@@ -123,15 +123,20 @@ pip install -e ".[all]"                  # package + CDS + Earth Engine clients
 Smaller installs: `.[geo]` (clipping + GeoTIFF), `.[cds]` (AgERA5/SEAS5),
 `.[gee]` (MODIS + crop mask), `.[dev]` (test suite).
 
-Point the two shared roots at the data folders (details and R/`.Renviron`
-setup in **[docs/cglabs_setup.md](docs/cglabs_setup.md)**):
+**On CGLabs there is nothing to configure** — the two shared data folders are
+the built-in defaults, so a new user reuses the already-downloaded data and the
+shared cache out of the box:
+
+- reusable raw inputs (read-only): `…/Global_GeoData/Landing`
+- shared download cache (read/write): `…/Global_GeoData/Processed`
+
+Override them only to relocate the layer (e.g. on a laptop) — details and
+R/`.Renviron` setup in **[docs/cglabs_setup.md](docs/cglabs_setup.md)**:
 
 ```bash
-DATASOURCING=/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data
-export AGWISE_LOCAL_ROOT=$DATASOURCING/Global_GeoData/Landing    # reusable raw inputs (read-only)
-export AGWISE_DATA_ROOT=$DATASOURCING/Global_GeoData/Processed   # shared download cache (read/write)
-export HDF5_USE_FILE_LOCKING=FALSE                              # Landing/Processed are on NFS
-# Laptop / off CGLabs: leave AGWISE_LOCAL_ROOT unset; AGWISE_DATA_ROOT=~/agwise_data/cache
+# Optional — only if you are NOT on the standard CGLabs tree:
+export AGWISE_DATA_ROOT=~/agwise_data/cache      # your own download cache
+export AGWISE_LOCAL_ROOT=/path/to/Global_GeoData/Landing   # or leave unset to just download
 ```
 
 ### 2.3 Folder structure after installation

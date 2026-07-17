@@ -3,6 +3,25 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.18.0 — CGLabs data folders are the built-in defaults (zero-config reuse)
+- **A new user on CGLabs now reuses the already-downloaded data with no setup.**
+  `Config.load()` defaults the download cache to the shared
+  `…/Global_GeoData/Processed` and the reusable raw inputs to
+  `…/Global_GeoData/Landing` whenever that tree exists — so `AGWISE_DATA_ROOT`
+  and `AGWISE_LOCAL_ROOT` become *optional overrides*, not required setup.
+  Off CGLabs (tree absent) it falls back to `~/agwise_data` with local reuse
+  off, exactly as before. New `config.default_data_root()`/`default_local_root()`
+  + `CGLABS_LANDING`/`CGLABS_PROCESSED` constants (edit those to relocate the
+  whole team).
+- **NFS file locking handled automatically:** `HDF5_USE_FILE_LOCKING=FALSE` is
+  now set by default (the shared folders are on NFS), removing a step a new user
+  had to know. A value you set yourself is left untouched.
+- Verified live as a brand-new user (nothing exported): soil at 10 Kenya points
+  came from `Landing` in **7 s** and CHIRPS rainfall in **6 s** (`Local source
+  hit`), versus timing out while downloading before. +5 tests (`test_config.py`).
+- Docs updated (README §2.2, cglabs_setup §2): on CGLabs there is nothing to
+  export; env vars are for relocating only.
+
 ## 0.17.0 — upload your own area of interest (`geometry=` / `--aoi` / `aoi=`)
 - **New region selector:** every gridded call (`get_climate`, `get_static` and
   its `get_dem`/`get_soil`/`get_cropmask` wrappers, `get_seasonal`, `get_modis`/

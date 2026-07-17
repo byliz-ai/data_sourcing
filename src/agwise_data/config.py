@@ -1,10 +1,13 @@
 """Configuration and cache layout for the AgWise data access layer.
 
 The single most important setting is the *data root*: the directory where
-all raw downloads, harmonized yearly files and derived products live.
-On CGLabs point it at a shared location so one download serves everyone::
+all raw downloads, harmonized yearly files and derived products live. **On
+CGLabs it defaults to the shared tree automatically** (``CGLABS_PROCESSED``
+below), and reusable raw inputs default to ``CGLABS_LANDING`` — so a new user
+reuses the already-downloaded data with no configuration. Override only to
+relocate the layer::
 
-    export AGWISE_DATA_ROOT=/home/jovyan/common_data/agwise_data
+    export AGWISE_DATA_ROOT=~/agwise_data/cache        # off CGLabs / private cache
 
 Layout under the data root::
 
@@ -43,6 +46,37 @@ ENV_WORKERS = "AGWISE_DATA_WORKERS"
 ENV_SCOPE = "AGWISE_DATA_SCOPE"
 ENV_GEE_PROJECT = "AGWISE_GEE_PROJECT"
 ENV_LOCAL_ROOT = "AGWISE_LOCAL_ROOT"
+
+# ---------------------------------------------------------------------------
+# CGLabs shared data tree — the default home for everyone on the server, so a
+# new user reuses the already-downloaded data and one shared download cache
+# WITHOUT setting any environment variable. Everyone on CGLabs uses the same
+# two folders; to relocate the whole layer, edit these paths (or override per
+# user with $AGWISE_LOCAL_ROOT / $AGWISE_DATA_ROOT).
+CGLABS_GEODATA = Path(
+    "/home/jovyan/agwise-datasourcing/dataops/datasourcing/Data/Global_GeoData"
+)
+CGLABS_LANDING = CGLABS_GEODATA / "Landing"      # reusable raw inputs (read-only)
+CGLABS_PROCESSED = CGLABS_GEODATA / "Processed"  # shared download cache (read/write)
+
+
+def default_data_root() -> Optional[str]:
+    """The download-cache root when the user sets nothing.
+
+    On CGLabs this is the shared ``Processed`` folder (download once, reuse for
+    everyone); elsewhere ``None`` so the caller falls back to ``~/agwise_data``.
+    """
+    return str(CGLABS_PROCESSED) if CGLABS_PROCESSED.is_dir() else None
+
+
+def default_local_root() -> Optional[str]:
+    """The read-only reusable-inputs root when the user sets nothing.
+
+    On CGLabs this is the shared ``Landing`` tree, so already-downloaded global
+    data is read from disk instead of re-downloaded; elsewhere ``None`` (the
+    local-source reuse feature stays off).
+    """
+    return str(CGLABS_LANDING) if CGLABS_LANDING.is_dir() else None
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +176,11 @@ class Config:
         The YAML file is looked up at ``$AGWISE_DATA_CONFIG`` or
         ``~/.config/agwise_data.yaml``.
         """
+        # The shared CGLabs roots live on NFS, where HDF5/NetCDF reads need
+        # file locking disabled. Default it so a new user need not know this
+        # (a value the user already set is left untouched).
+        os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
+
         file_cfg: dict = {}
         cfg_path = os.environ.get(ENV_CONFIG) or str(
             Path.home() / ".config" / "agwise_data.yaml"
@@ -150,7 +189,7 @@ class Config:
             with open(Path(cfg_path).expanduser()) as fh:
                 file_cfg = yaml.safe_load(fh) or {}
 
-        root = os.environ.get(ENV_ROOT) or file_cfg.get("root")
+        root = os.environ.get(ENV_ROOT) or file_cfg.get("root") or default_data_root()
         domain = os.environ.get(ENV_DOMAIN) or file_cfg.get("domain", "africa")
         keep_raw = bool(file_cfg.get("keep_raw", False))
         domains = file_cfg.get("domains")
@@ -167,7 +206,11 @@ class Config:
             cog_workers=int(file_cfg.get("cog_workers", 8)),
             region_max_area_deg2=float(file_cfg.get("region_max_area_deg2", 400.0)),
             gee_project=os.environ.get(ENV_GEE_PROJECT) or file_cfg.get("gee_project"),
-            local_root=os.environ.get(ENV_LOCAL_ROOT) or file_cfg.get("local_root"),
+            local_root=(
+                os.environ.get(ENV_LOCAL_ROOT)
+                or file_cfg.get("local_root")
+                or default_local_root()
+            ),
         )
 
     # ------------------------------------------------------------------
