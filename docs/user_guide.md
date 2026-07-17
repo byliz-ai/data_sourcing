@@ -27,16 +27,20 @@ Pass the area the same way to every gridded call (`get_climate`, `get_static`,
 | A **country** | `country=` (name or ISO3) | `country="Rwanda"` (or `"RWA"`) |
 | An **administrative unit** (region/district) | `country=` + `admin_level=` + `admin_name=` — clips to that admin polygon | `country="Kenya", admin_level=1, admin_name="Nakuru"` |
 | **Coordinates** (a rectangle) | `bbox=[west, south, east, north]` | `bbox=[29.9, -2.1, 30.4, -1.7]` |
+| **Your own zone** (upload a polygon) | `geometry=` — a shapefile/GeoJSON path, a GeoDataFrame, a shapely geometry, or a GeoJSON dict | `geometry="my_zone.geojson"` |
 | **Points** (specific locations) | `points=` a CSV/DataFrame with lon/lat columns | `points="trials.csv"` |
 
 - `admin_level`: `0` = whole country, `1` = first level (region/province),
   `2` = second level (district). `admin_name` names the unit at that level.
+- **`geometry` (upload your own area):** point it at a file you uploaded
+  (`.shp`, `.geojson`, GeoPackage, …) or pass an in-memory geometry. Every
+  feature is kept (so a multi-district or MultiPolygon selection clips as one
+  AOI), and it is reprojected to lon/lat for you — no matter the file's CRS.
+  `geometry` takes priority over `country`/`bbox`. On the CLI use `--aoi`, in R
+  `aoi=`.
 - **Points** are for the point-extraction and crop-model functions
   (`extract_points`, `extract_static_points`, `to_dssat`, …), which return a
   table or write files rather than a gridded cube.
-- **Not yet supported:** an arbitrary user polygon / shapefile / GeoJSON as the
-  area. Use a bounding box or an admin unit instead (see
-  [Section 7](../CONTRIBUTING.md) — this is a planned improvement).
 
 ```python
 from agwise_data import get_climate
@@ -46,6 +50,20 @@ get_climate("PRCP", years=2023, country="Rwanda")
 get_climate("PRCP", years=2023, country="Kenya", admin_level=1, admin_name="Nakuru")
 # a bounding box
 get_climate("PRCP", years=2023, bbox=[29.9, -2.1, 30.4, -1.7])
+# your own uploaded zone (shapefile / GeoJSON)
+get_climate("PRCP", years=2023, geometry="my_zone.geojson")
+```
+
+The uploaded-zone option in all three interfaces:
+
+```python
+get_climate("PRCP", years=2023, geometry="my_zone.geojson")   # Python
+```
+```r
+ad_get_climate("PRCP", 2023, aoi = "my_zone.geojson")          # R
+```
+```bash
+agwise-data get --vars PRCP --years 2023:2023 --aoi my_zone.geojson   # CLI
 ```
 
 ### 4.2 Decision 2 — select the datasets

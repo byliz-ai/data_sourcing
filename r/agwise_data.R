@@ -49,7 +49,7 @@ ad_run <- function(args) {
 #' @return a named list of terra::SpatRaster (one per variable), or a single
 #'   SpatRaster when one variable is requested
 ad_get_climate <- function(vars, years, country = NULL, bbox = NULL,
-                           admin_level = 0, admin_name = NULL,
+                           admin_level = 0, admin_name = NULL, aoi = NULL,
                            freq = "monthly", source = NULL,
                            overwrite = FALSE) {
   args <- c("get",
@@ -61,6 +61,7 @@ ad_get_climate <- function(vars, years, country = NULL, bbox = NULL,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (!is.null(source))     args <- c(args, "--source", source)
   if (overwrite)            args <- c(args, "--overwrite")
 
@@ -135,7 +136,7 @@ ad_extract_points <- function(points, vars, start, end, freq = "daily",
 #' @return a named list of terra::SpatRaster (one per variable), or a single
 #'   SpatRaster when one variable is requested
 ad_get_static <- function(vars, country = NULL, bbox = NULL,
-                          admin_level = 0, admin_name = NULL,
+                          admin_level = 0, admin_name = NULL, aoi = NULL,
                           depths = NULL, source = NULL, overwrite = FALSE) {
   args <- c("get-static",
             "--vars", paste(vars, collapse = ","),
@@ -144,6 +145,7 @@ ad_get_static <- function(vars, country = NULL, bbox = NULL,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (!is.null(depths))     args <- c(args, "--depths", paste(depths, collapse = ","))
   if (!is.null(source))     args <- c(args, "--source", source)
   if (overwrite)            args <- c(args, "--overwrite")
@@ -190,7 +192,7 @@ ad_get_cropmask <- function(...) {
 #' @param ensemble   "members" (default), "mean" or "median"
 #' @return named list of NetCDF paths (one per variable)
 ad_get_seasonal <- function(vars, init_month, years, country = NULL,
-                            bbox = NULL, admin_level = 0, admin_name = NULL,
+                            bbox = NULL, admin_level = 0, admin_name = NULL, aoi = NULL,
                             ensemble = "members", source = NULL,
                             overwrite = FALSE) {
   args <- c("get-seasonal",
@@ -202,6 +204,7 @@ ad_get_seasonal <- function(vars, init_month, years, country = NULL,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (!is.null(source))     args <- c(args, "--source", source)
   if (overwrite)            args <- c(args, "--overwrite")
 
@@ -227,7 +230,7 @@ ad_get_seasonal <- function(vars, init_month, years, country = NULL,
 #' @return a named list of terra::SpatRaster (one per variable), or a single
 #'   SpatRaster when one variable is requested
 ad_get_modis <- function(vars = "NDVI", years, country = NULL, bbox = NULL,
-                         admin_level = 0, admin_name = NULL,
+                         admin_level = 0, admin_name = NULL, aoi = NULL,
                          satellite = "both", overwrite = FALSE) {
   args <- c("get-modis",
             "--vars", paste(vars, collapse = ","),
@@ -238,6 +241,7 @@ ad_get_modis <- function(vars = "NDVI", years, country = NULL, bbox = NULL,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (overwrite)            args <- c(args, "--overwrite")
 
   res <- ad_run(args)
@@ -262,7 +266,7 @@ ad_get_modis <- function(vars = "NDVI", years, country = NULL, bbox = NULL,
 #' @param gapfill      gap-fill method: "linear" (default) or legacy "mean"
 #' @return a terra::SpatRaster of the smoothed NDVI stack
 ad_smooth_ndvi <- function(years, country = NULL, bbox = NULL,
-                           admin_level = 0, admin_name = NULL,
+                           admin_level = 0, admin_name = NULL, aoi = NULL,
                            satellite = "both", cropmask = TRUE,
                            window = 9, polyorder = 3, gapfill = "linear",
                            overwrite = FALSE) {
@@ -277,6 +281,7 @@ ad_smooth_ndvi <- function(years, country = NULL, bbox = NULL,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (!cropmask)            args <- c(args, "--no-cropmask")
   if (overwrite)            args <- c(args, "--overwrite")
 
@@ -309,7 +314,7 @@ ad_smooth_ndvi <- function(years, country = NULL, bbox = NULL,
 #' @return SpatRaster list (region) or a data.frame (points)
 ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
                           country = NULL, bbox = NULL, admin_level = 0,
-                          admin_name = NULL, points = NULL,
+                          admin_name = NULL, aoi = NULL, points = NULL,
                           planting_col = NULL, harvest_col = NULL,
                           lon_col = NULL, lat_col = NULL, freq = "daily",
                           satellite = "both", source = NULL,
@@ -343,6 +348,7 @@ ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (overwrite)            args <- c(args, "--overwrite")
 
   res <- ad_run(args)
@@ -362,7 +368,7 @@ ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
 #' analysis-ready output.
 ad_bias_correct <- function(vars, init_month, forecast_year, calib_years,
                             country = NULL, bbox = NULL, admin_level = 0,
-                            admin_name = NULL, window_days = NULL,
+                            admin_name = NULL, aoi = NULL, window_days = NULL,
                             source = NULL, overwrite = FALSE) {
   args <- c("bias-correct",
             "--vars", paste(vars, collapse = ","),
@@ -373,6 +379,7 @@ ad_bias_correct <- function(vars, init_month, forecast_year, calib_years,
   if (!is.null(bbox))        args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)       args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name))  args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))         args <- c(args, "--aoi", aoi)
   if (!is.null(window_days)) args <- c(args, "--window-days", as.character(window_days))
   if (!is.null(source))      args <- c(args, "--source", source)
   if (overwrite)             args <- c(args, "--overwrite")
@@ -391,7 +398,7 @@ ad_bias_correct <- function(vars, init_month, forecast_year, calib_years,
 ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
                                  out_dir = NULL, ensemble = "mean",
                                  window_days = NULL, country = NULL, bbox = NULL,
-                                 admin_level = 0, admin_name = NULL,
+                                 admin_level = 0, admin_name = NULL, aoi = NULL,
                                  lon_col = NULL, lat_col = NULL, id_col = NULL,
                                  station_col = NULL, country_name = NULL,
                                  soil_source = NULL, weather_source = NULL) {
@@ -411,6 +418,7 @@ ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
   if (!is.null(bbox))           args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)          args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name))     args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))            args <- c(args, "--aoi", aoi)
   if (!is.null(lon_col))        args <- c(args, "--lon-col", lon_col)
   if (!is.null(lat_col))        args <- c(args, "--lat-col", lat_col)
   if (!is.null(id_col))         args <- c(args, "--id-col", id_col)
@@ -430,7 +438,7 @@ ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
 #' data.frame (lon, lat, country, NAME_1, NAME_2). With bbox only, returns the
 #' full rectangular grid (no clip, no admin tags).
 ad_make_grid <- function(country = NULL, bbox = NULL, admin_level = 0,
-                         admin_name = NULL, res_km = 5, tag_admin_level = 2) {
+                         admin_name = NULL, aoi = NULL, res_km = 5, tag_admin_level = 2) {
   out_csv <- tempfile(fileext = ".csv")
   args <- c("make-grid", "--out", out_csv,
             "--res-km", as.character(res_km),
@@ -439,6 +447,7 @@ ad_make_grid <- function(country = NULL, bbox = NULL, admin_level = 0,
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)
   if (!is.null(admin_name)) args <- c(args, "--admin-name", admin_name)
+  if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
 }

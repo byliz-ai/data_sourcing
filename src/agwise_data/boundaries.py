@@ -96,6 +96,75 @@ def geometry_bbox(gdf) -> Tuple[float, float, float, float]:
     return float(w), float(s), float(e), float(n)
 
 
+def load_aoi(geometry):
+    """Load a user-supplied area of interest into an EPSG:4326 GeoDataFrame.
+
+    ``geometry`` may be:
+
+    * a **file path** to any vector format geopandas reads — a shapefile
+      (``.shp``), GeoJSON (``.geojson``/``.json``), GeoPackage, etc.;
+    * a ``GeoDataFrame`` or ``GeoSeries``;
+    * a shapely geometry;
+    * a GeoJSON-like ``dict`` (FeatureCollection, Feature, or bare geometry).
+
+    The result is always reprojected to EPSG:4326 (the data CRS) so the bbox
+    and the clip geometry are in degrees. All features are kept, so a
+    multi-part selection (several districts, a MultiPolygon) clips as one AOI.
+    """
+    import geopandas as gpd
+    from shapely.geometry import shape
+    from shapely.geometry.base import BaseGeometry
+
+    if isinstance(geometry, gpd.GeoDataFrame):
+        gdf = geometry.copy()
+    elif isinstance(geometry, gpd.GeoSeries):
+        gdf = gpd.GeoDataFrame(geometry=geometry)
+    elif isinstance(geometry, BaseGeometry):
+        gdf = gpd.GeoDataFrame(geometry=[geometry], crs="EPSG:4326")
+    elif isinstance(geometry, dict):
+        gtype = geometry.get("type")
+        if gtype == "FeatureCollection":
+            gdf = gpd.GeoDataFrame.from_features(geometry["features"])
+        elif gtype == "Feature":
+            gdf = gpd.GeoDataFrame.from_features([geometry])
+        else:  # a bare GeoJSON geometry
+            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+    elif isinstance(geometry, (str, Path)):
+        gdf = gpd.read_file(str(geometry))
+    else:
+        raise TypeError(
+            "geometry must be a file path, GeoDataFrame/GeoSeries, shapely "
+            f"geometry, or a GeoJSON mapping (got {type(geometry).__name__})"
+        )
+
+    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
+    if gdf.empty:
+        raise ValueError("The supplied AOI has no usable geometry")
+    if gdf.crs is None:
+        gdf = gdf.set_crs("EPSG:4326")
+    elif gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs("EPSG:4326")
+    return gdf.reset_index(drop=True)
+
+
+def aoi_tag(gdf, ref=None) -> str:
+    """Stable, filesystem-safe tag for a user AOI, used for product paths.
+
+    Derived from a hash of the geometry (so two different shapes never collide
+    in the cache) and, when ``ref`` is a file path, its readable stem.
+    """
+    import hashlib
+
+    payload = b"".join(g.wkb for g in gdf.geometry if g is not None)
+    h = hashlib.sha1(payload).hexdigest()[:12]
+    stem = ""
+    if isinstance(ref, (str, Path)):
+        p = Path(str(ref))
+        if p.suffix:  # a real file path, not a WKT/name blob
+            stem = re.sub(r"[^A-Za-z0-9]+", "-", p.stem).strip("-")[:32]
+    return f"aoi_{stem}_{h}" if stem else f"aoi_{h}"
+
+
 def region_tag(
     country: Optional[str] = None,
     level: int = 0,

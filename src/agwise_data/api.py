@@ -88,8 +88,16 @@ def _resolve_region(
     bbox: Optional[Sequence[float]],
     admin_level: int,
     admin_name: Optional[str],
+    geometry=None,
 ):
-    """Returns (gdf_or_None, bbox, region_tag)."""
+    """Returns (gdf_or_None, bbox, region_tag).
+
+    Region priority: an uploaded ``geometry`` (AOI), then ``country``
+    (optionally an admin unit), then ``bbox``.
+    """
+    if geometry is not None:
+        gdf = boundaries.load_aoi(geometry)
+        return gdf, boundaries.geometry_bbox(gdf), boundaries.aoi_tag(gdf, geometry)
     if country:
         gdf = boundaries.load_geometry(config, country, admin_level, admin_name)
         return (
@@ -102,7 +110,7 @@ def _resolve_region(
         if len(bbox) != 4:
             raise ValueError("bbox must be (west, south, east, north)")
         return None, bbox, boundaries.region_tag(bbox=bbox)
-    raise ValueError("Provide either country=... or bbox=(w, s, e, n)")
+    raise ValueError("Provide geometry=..., country=... or bbox=(w, s, e, n)")
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +212,7 @@ def get_climate(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     freq: str = "daily",
     source: Optional[str] = None,
     domain: Optional[str] = None,
@@ -231,7 +240,7 @@ def get_climate(
     write_tif = "tif" in formats
 
     gdf, region_bbox, tag = _resolve_region(
-        config, country, bbox, admin_level, admin_name
+        config, country, bbox, admin_level, admin_name, geometry
     )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
 
@@ -611,6 +620,7 @@ def get_static(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     depths: Optional[Sequence[str]] = None,
     source: Optional[str] = None,
     domain: Optional[str] = None,
@@ -636,7 +646,7 @@ def get_static(
     write_tif = "tif" in formats
 
     gdf, region_bbox, tag = _resolve_region(
-        config, country, bbox, admin_level, admin_name
+        config, country, bbox, admin_level, admin_name, geometry
     )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
 
@@ -790,6 +800,7 @@ def get_seasonal(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     ensemble: str = "members",
     source: Optional[str] = None,
     domain: Optional[str] = None,
@@ -829,7 +840,7 @@ def get_seasonal(
         )
 
     gdf, region_bbox, tag = _resolve_region(
-        config, country, bbox, admin_level, admin_name
+        config, country, bbox, admin_level, admin_name, geometry
     )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
 
@@ -956,6 +967,7 @@ def get_modis(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     satellite: str = "both",
     source: Union[str, Sequence[str], None] = None,
     domain: Optional[str] = None,
@@ -999,7 +1011,7 @@ def get_modis(
         )
 
     gdf, region_bbox, tag = _resolve_region(
-        config, country, bbox, admin_level, admin_name
+        config, country, bbox, admin_level, admin_name, geometry
     )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
 
@@ -1094,6 +1106,7 @@ def smooth_ndvi(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     satellite: str = "both",
     source: Union[str, Sequence[str], None] = None,
     domain: Optional[str] = None,
@@ -1154,7 +1167,9 @@ def smooth_ndvi(
     if gapfill != "linear":
         suffix += f"_{gapfill}"
 
-    _, _, tag = _resolve_region(config, country, bbox, admin_level, admin_name)
+    _, _, tag = _resolve_region(
+        config, country, bbox, admin_level, admin_name, geometry
+    )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
     stem = f"Smoothed_{short}_{years[0]}_{years[-1]}{suffix}_SG"
     nc_path = out_root / f"{stem}.nc"
@@ -1168,7 +1183,8 @@ def smooth_ndvi(
     else:
         region_kwargs = dict(
             country=country, bbox=bbox, admin_level=admin_level,
-            admin_name=admin_name, out_dir=out_dir, config=config,
+            admin_name=admin_name, geometry=geometry, out_dir=out_dir,
+            config=config,
         )
         raw = get_modis(
             variables=[canon], years=years, satellite=satellite, source=source,
@@ -1354,6 +1370,7 @@ def get_season(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     points=None,
     planting_col: Optional[str] = None,
     harvest_col: Optional[str] = None,
@@ -1442,13 +1459,16 @@ def get_season(
             raise ValueError(f"Unknown output format '{f}' (use 'nc' and/or 'tif')")
     write_tif = "tif" in formats
 
-    _, _, tag = _resolve_region(config, country, bbox, admin_level, admin_name)
+    _, _, tag = _resolve_region(
+        config, country, bbox, admin_level, admin_name, geometry
+    )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
     years = list(range(pl.year, hv.year + 1))
     tif_labels_freq = "monthly" if freq == "monthly" else "daily"
     region_kwargs = dict(
         country=country, bbox=bbox, admin_level=admin_level,
-        admin_name=admin_name, out_dir=out_dir, config=config,
+        admin_name=admin_name, geometry=geometry, out_dir=out_dir,
+        config=config,
     )
 
     results: Dict[str, dict] = {}
@@ -2046,6 +2066,7 @@ def bias_correct(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     window_days: Optional[int] = None,
     obs: Optional[dict] = None,
     hind: Optional[dict] = None,
@@ -2082,10 +2103,12 @@ def bias_correct(
         if f not in ("nc",):
             raise ValueError("bias_correct writes NetCDF only (ensemble cube)")
 
-    _, _, tag = _resolve_region(config, country, bbox, admin_level, admin_name)
+    _, _, tag = _resolve_region(
+        config, country, bbox, admin_level, admin_name, geometry
+    )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
     region = dict(country=country, bbox=bbox, admin_level=admin_level,
-                  admin_name=admin_name, config=config)
+                  admin_name=admin_name, geometry=geometry, config=config)
 
     results: Dict[str, dict] = {}
     for var in variables:
@@ -2151,6 +2174,7 @@ def forecast_to_dssat(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     lon_col: Optional[str] = None,
     lat_col: Optional[str] = None,
     id_col: Optional[str] = None,
@@ -2182,7 +2206,7 @@ def forecast_to_dssat(
         corrected = bias_correct(
             _FORECAST_WEATHER_VARS, init_month, forecast_year, calib_years,
             country=country, bbox=bbox, admin_level=admin_level,
-            admin_name=admin_name, window_days=window_days,
+            admin_name=admin_name, geometry=geometry, window_days=window_days,
             source=weather_source, config=config,
         )
 
@@ -2270,6 +2294,7 @@ def make_grid(
     bbox: Optional[Sequence[float]] = None,
     admin_level: int = 0,
     admin_name: Optional[str] = None,
+    geometry=None,
     res_km: float = 5.0,
     tag_admin_level: int = 2,
     config: Optional[Config] = None,
@@ -2285,7 +2310,12 @@ def make_grid(
     """
     config = config or Config.load()
     geom = None
-    if country:
+    if geometry is not None:
+        gdf = boundaries.load_aoi(geometry)
+        region_bbox = boundaries.geometry_bbox(gdf)
+        geom = gdf.geometry.union_all() if hasattr(gdf.geometry, "union_all") \
+            else gdf.geometry.unary_union
+    elif country:
         gdf = boundaries.load_geometry(config, country, admin_level, admin_name)
         region_bbox = boundaries.geometry_bbox(gdf)
         geom = gdf.geometry.union_all() if hasattr(gdf.geometry, "union_all") \
@@ -2295,7 +2325,7 @@ def make_grid(
         if len(region_bbox) != 4:
             raise ValueError("bbox must be (west, south, east, north)")
     else:
-        raise ValueError("Provide either country=... or bbox=(w, s, e, n)")
+        raise ValueError("Provide geometry=..., country=... or bbox=(w, s, e, n)")
 
     lons, lats = _grid_points(region_bbox, res_km)
     if geom is not None:

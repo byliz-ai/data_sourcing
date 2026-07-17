@@ -46,6 +46,11 @@ def _add_region_args(p: argparse.ArgumentParser) -> None:
         "--bbox",
         help="west,south,east,north (alternative to --country)",
     )
+    p.add_argument(
+        "--aoi",
+        help="Path to your own area file (shapefile/GeoJSON/…) to clip to "
+        "(alternative to --country/--bbox)",
+    )
 
 
 def cmd_get(args) -> dict:
@@ -59,6 +64,7 @@ def cmd_get(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         freq=args.freq,
         source=args.source,
         domain=args.domain,
@@ -132,6 +138,7 @@ def cmd_get_static(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         depths=depths,
         source=args.source,
         domain=args.domain,
@@ -166,6 +173,7 @@ def cmd_get_seasonal(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         ensemble=args.ensemble,
         source=args.source,
         domain=args.domain,
@@ -199,6 +207,7 @@ def cmd_get_modis(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         satellite=args.satellite,
         source=args.source,
         domain=args.domain,
@@ -254,6 +263,7 @@ def cmd_get_season(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         freq=args.freq,
         satellite=args.satellite,
         source=args.source,
@@ -286,6 +296,7 @@ def cmd_smooth_ndvi(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         satellite=args.satellite,
         source=args.source,
         domain=args.domain,
@@ -322,6 +333,7 @@ def cmd_get_cropmask(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         domain=args.domain,
         out_format=[f.strip() for f in args.format.split(",")],
         out_dir=Path(args.out_dir) if args.out_dir else None,
@@ -498,6 +510,7 @@ def cmd_bias_correct(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         window_days=args.window_days,
         source=args.source,
         out_dir=Path(args.out_dir) if args.out_dir else None,
@@ -529,6 +542,7 @@ def cmd_forecast_to_dssat(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         lon_col=args.lon_col,
         lat_col=args.lat_col,
         id_col=args.id_col,
@@ -557,6 +571,7 @@ def cmd_make_grid(args) -> dict:
         bbox=bbox,
         admin_level=args.admin_level,
         admin_name=args.admin_name,
+        geometry=args.aoi,
         res_km=args.res_km,
         tag_admin_level=args.tag_admin_level,
     )

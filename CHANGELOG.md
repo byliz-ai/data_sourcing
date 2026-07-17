@@ -3,6 +3,28 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.17.0 — upload your own area of interest (`geometry=` / `--aoi` / `aoi=`)
+- **New region selector:** every gridded call (`get_climate`, `get_static` and
+  its `get_dem`/`get_soil`/`get_cropmask` wrappers, `get_seasonal`, `get_modis`/
+  `get_ndvi`, `get_season`, `smooth_ndvi`), plus `make_grid`, `bias_correct` and
+  `forecast_to_dssat`, now accepts **`geometry=`** — a user-uploaded area of
+  interest. Accepts a **file path** (shapefile, GeoJSON, GeoPackage — anything
+  geopandas reads), a `GeoDataFrame`/`GeoSeries`, a shapely geometry, or a
+  GeoJSON-like `dict`. CLI: **`--aoi <path>`**; R: **`aoi=`**.
+- The AOI is reprojected to EPSG:4326 automatically (any input CRS), all
+  features are kept (a multi-district / MultiPolygon selection clips as one
+  AOI), and it takes priority over `country`/`bbox`. Products are cached under a
+  stable, collision-free tag derived from the geometry (`aoi_<stem>_<hash>`), so
+  two different shapes never share a cache entry.
+- New `boundaries.load_aoi()` + `boundaries.aoi_tag()`; `_resolve_region` gained
+  a `geometry` argument. Uses the geopandas/shapely stack the boundary loader
+  already depends on — no new dependency. +7 tests. Verified live: an uploaded
+  GeoJSON polygon clipped real Copernicus DEM (no credentials) to the exact
+  polygon bounds.
+- Docs updated: area-selection is now country / admin unit / bbox / **uploaded
+  zone** / points (README, user guide §4.1 with Python/R/CLI examples, REFERENCE
+  §6 `geometry` parameter on all region functions).
+
 ## 0.16.0 — smooth_ndvi (gap-fill + Savitzky-Golay of the MODIS NDVI stack)
 - **New:** `smooth_ndvi(years, country=|bbox=, ...)` — turns the raw MODIS NDVI
   composites (with cloud/QA gaps left as NaN by the drivers) into the

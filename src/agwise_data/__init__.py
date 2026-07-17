@@ -49,7 +49,7 @@ from .api import (
 )
 from .config import Config
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 __all__ = [
     "get_climate",

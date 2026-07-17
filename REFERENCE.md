@@ -27,9 +27,12 @@ the lookup you return to.
 ## Conventions
 
 **Region** (for every gridded/writer call): `country="Rwanda"` (name or ISO3
-`"RWA"`), optionally with `admin_level=1|2` + `admin_name="..."`, **or**
-`bbox=[west, south, east, north]`. Point functions instead take `points=` (a CSV
-or DataFrame with lon/lat). Full guidance: [user guide §4.1](docs/user_guide.md#41-decision-1--select-the-study-area).
+`"RWA"`), optionally with `admin_level=1|2` + `admin_name="..."`; **or**
+`bbox=[west, south, east, north]`; **or** `geometry=` — **your own uploaded area**
+(a shapefile/GeoJSON path, a GeoDataFrame, a shapely geometry, or a GeoJSON
+mapping), which takes priority and is reprojected to EPSG:4326 for you. Point
+functions instead take `points=` (a CSV or DataFrame with lon/lat). Full
+guidance: [user guide §4.1](docs/user_guide.md#41-decision-1--select-the-study-area).
 
 **Return shapes** referenced in the tables below:
 
@@ -85,6 +88,7 @@ Fetch a harmonized daily/monthly **climate cube** for a region.
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `freq` | str | No | `'daily'` | Time step of the returned climate values. Values: `"daily"`, `"monthly"`. |
 | `source` | str | No | `None` | Force one source for every variable. Default: `PRCP`→CHIRPS, the rest→AgERA5. Values: `"chirps"`, `"agera5"`. |
 | `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
@@ -113,6 +117,7 @@ Fetch harmonized **soil / terrain** layers (no time axis).
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `depths` | list[str] | No | `None` | Soil depth layers to return (default: all). Values: SoilGrids `0-5cm,5-15cm,15-30cm,30-60cm,60-100cm,100-200cm`; iSDA `0-20cm,20-50cm`. |
 | `source` | str | No | `None` | Soil source (terrain always comes from Copernicus DEM). Values: `"soilgrids"` (default), `"isda"`. |
 | `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
@@ -186,6 +191,7 @@ Fetch a **SEAS5 seasonal forecast / hindcast** cube (one init month across years
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `ensemble` | str | No | `'members'` | Ensemble handling. `members` keeps all; `mean`/`median` reduce (required for a GeoTIFF). Values: `"members"`, `"mean"`, `"median"`. |
 | `source` | str | No | `None` | Forecast source. Values: `"seas5"` (default). |
 | `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
@@ -214,6 +220,7 @@ Fetch **MODIS NDVI/EVI composite** stacks (Terra+Aqua interleaved).
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `satellite` | str | No | `'both'` | MODIS satellite: `both` interleaves Terra+Aqua (46/yr); a single one gives 23/yr. Values: `"both"`, `"terra"`, `"aqua"`. |
 | `source` | str \| list[str] | No | `None` | Override the MODIS source id(s) (advanced). Values: `"mod13q1"` (Terra), `"myd13q1"` (Aqua). |
 | `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
@@ -255,6 +262,7 @@ get_ndvi(years=2021, country="Rwanda")["RS.NDVI"]["data"]
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `satellite` | str | No | `'both'` | MODIS satellite: `both` interleaves Terra+Aqua (46/yr); a single one gives 23/yr. Values: `"both"`, `"terra"`, `"aqua"`. |
 | `source` | str \| list[str] | No | `None` | Override the MODIS source id(s) (advanced). |
 | `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
@@ -288,6 +296,7 @@ Climate and/or NDVI **already sliced to a growing season** (cross-year aware).
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `points` | str \| DataFrame | No | `None` | Optional **point mode**: a CSV/DataFrame with lon/lat. If given, returns a long DataFrame instead of cubes. |
 | `planting_col` | str | No | `None` | Column in `points` holding each row's planting date (per-trial seasons). |
 | `harvest_col` | str | No | `None` | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
@@ -536,6 +545,7 @@ Build a **regular point grid** clipped to a country/admin boundary (or a bbox).
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `res_km` | float | No | `5.0` | Grid spacing in kilometres. Values: e.g. `5.0`, `1.0`, `0.25`. |
 | `tag_admin_level` | int | No | `2` | Tag each grid point with admin names up to this level. Values: `0`, `1`, `2`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
@@ -583,6 +593,7 @@ tagged = tag_admin("trials.csv", country="Rwanda", admin_level=2)
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `window_days` | int | No | `None` | Restrict QDM calibration to ±this many days-of-year of each step; `None` pools the whole season. |
 | `obs` | dict | No | `None` | Advanced/testing: supply the observation cubes directly to skip fetching. |
 | `hind` | dict | No | `None` | Advanced/testing: supply the hindcast cubes directly to skip fetching. |
@@ -618,6 +629,7 @@ bias_correct(["PRCP", "TMAX"], init_month=2, forecast_year=2024,
 | `bbox` | list[float] | No | `None` | Region as a bounding box `[west, south, east, north]` in degrees. Use this *or* `country`. |
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
+| `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
 | `id_col` | str | No | `None` | Column in `points` used as the point identifier in output file names. |

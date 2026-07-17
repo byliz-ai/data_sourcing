@@ -99,10 +99,11 @@ true as the module grows:
    `scripts/gen_reference.py` + a CI check (regenerate → `git diff --exit-code`)
    would guarantee the reference stays correct with zero manual upkeep. *(High
    value, low effort — the biggest maintenance win.)*
-2. **Accept an arbitrary AOI polygon.** Today the area is `country` / admin unit
-   / `bbox` / `points` only. Adding a `geometry=` (shapefile/GeoJSON) input to
-   `_resolve_region` would remove the most common "how do I clip to my polygon?"
-   question and is a natural extension of the existing admin-polygon clip.
+2. **~~Accept an arbitrary AOI polygon.~~ Done (v0.17.0).** `geometry=` (a
+   shapefile/GeoJSON path, GeoDataFrame, shapely geometry, or GeoJSON mapping;
+   `--aoi` on the CLI, `aoi=` in R) now clips every gridded call and `make_grid`
+   to a user-uploaded zone via `boundaries.load_aoi`. Possible follow-ups: cache
+   the uploaded geometry itself, and accept a remote URL.
 3. **Surface progress for slow fetches.** A cold AgERA5/SEAS5 pull sits in the
    CDS queue for minutes with no feedback; a one-line "expect minutes; cached
    after" message (or a progress hook) would prevent "is it stuck?" confusion.
