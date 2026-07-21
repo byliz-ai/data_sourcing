@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from .. import cache
+from .. import cache, progress
 from ..catalog import primary_access
 from ..config import Config
 from ..harmonize import (
@@ -245,11 +245,19 @@ class ModisGeeDriver(ModisDriver):
             return pd.Timestamp(t0, unit="ms"), values
 
         workers = max(1, int(self.config.cog_workers))
+        desc = f"MODIS {rs_short_name(variable)} {year}"
         if workers > 1 and len(listing) > 1:
             with ThreadPoolExecutor(max_workers=workers) as ex:
-                results = list(ex.map(fetch_composite, listing))
+                results = list(
+                    progress.track(
+                        ex.map(fetch_composite, listing), total=len(listing), desc=desc
+                    )
+                )
         else:
-            results = [fetch_composite(item) for item in listing]
+            results = [
+                fetch_composite(item)
+                for item in progress.track(listing, desc=desc)
+            ]
 
         times = [t for t, _ in results]
         stack = np.stack([v for _, v in results])

@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from .. import progress
 from ..catalog import primary_access
 from ..harmonize import apply_conversion
 from . import register
@@ -105,7 +106,9 @@ class CopDem30Driver(StaticDriver):
         n_local = 0
         try:
             with rasterio.Env(**_GDAL_ENV):
-                for lat, lon in coords:
+                for lat, lon in progress.track(
+                    coords, desc=f"DEM tiles ({len(coords)})"
+                ):
                     src = None
                     if local:
                         path = local[0] / _tile_url(local[1], lat, lon)

@@ -25,6 +25,8 @@ import numpy as np
 import xarray as xr
 from scipy.signal import savgol_filter
 
+from . import progress
+
 
 def _validate_savgol(window: int, polyorder: int, n_time: int) -> None:
     if window < 3 or window % 2 == 0:
@@ -71,7 +73,9 @@ def _linear_gapfill(values: np.ndarray, x: np.ndarray) -> np.ndarray:
     """
     flat = values.reshape(values.shape[0], -1)
     out = flat.copy()
-    for j in range(flat.shape[1]):
+    for j in progress.track(
+        range(flat.shape[1]), desc=f"NDVI gap-fill ({flat.shape[1]} px)"
+    ):
         col = flat[:, j]
         valid = ~np.isnan(col)
         nvalid = int(valid.sum())

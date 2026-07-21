@@ -27,6 +27,8 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 
+from . import progress
+
 # scaling.type per variable short-name (from 03_bias_correction_forecast_multiVar.R)
 DEFAULT_KIND = {
     "PRCP": "multiplicative",
@@ -124,7 +126,7 @@ def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):
             hsel = np.abs(((hind_doy - d + 182) % 365) - 182) <= window_days
             groups.append((fsel, osel, hsel))
 
-    for y in range(H):
+    for y in progress.track(range(H), desc=f"Bias-correcting ({H}x{W} px)"):
         for x in range(W):
             o_px = obs_v[:, y, x]
             h_px = hind_v[:, :, y, x]

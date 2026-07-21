@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from .. import cache
+from .. import cache, progress
 from ..catalog import primary_access, variable_spec
 from ..harmonize import apply_conversion
 from ..spatial import subset_bbox
@@ -199,11 +199,16 @@ class ChirpsDriver(Driver):
             return out
 
         workers = max(1, int(self.config.cog_workers))
+        desc = f"CHIRPS(EE) {year}"
         if workers > 1 and len(batches) > 1:
             with ThreadPoolExecutor(max_workers=workers) as ex:
-                parts = list(ex.map(fetch_batch, batches))
+                parts = list(
+                    progress.track(
+                        ex.map(fetch_batch, batches), total=len(batches), desc=desc
+                    )
+                )
         else:
-            parts = [fetch_batch(b) for b in batches]
+            parts = [fetch_batch(b) for b in progress.track(batches, desc=desc)]
 
         day_arrays = {}
         for part in parts:

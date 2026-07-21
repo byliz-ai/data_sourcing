@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from . import boundaries, catalog, drivers
+from . import boundaries, catalog, drivers, progress
 from .cache import write_manifest
 from .config import Config, region_domain_name, round_region_bbox
 from .drivers.base import nc_encoding
@@ -220,7 +220,7 @@ def _prefetch(config: Config, tasks: List[tuple]) -> None:
     the per-file locks in the cache make duplicate tasks harmless.
     """
     if config.max_workers <= 1 or len(tasks) <= 1:
-        for drv, var, year, dom in tasks:
+        for drv, var, year, dom in progress.track(tasks, desc="Fetching climate"):
             drv.ensure_daily_year(var, year, dom)
         return
     with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
@@ -228,8 +228,7 @@ def _prefetch(config: Config, tasks: List[tuple]) -> None:
             ex.submit(drv.ensure_daily_year, var, year, dom)
             for drv, var, year, dom in tasks
         ]
-        for fut in futures:
-            fut.result()  # propagate the first failure
+        progress.drain_futures(futures, desc="Fetching climate")
 
 
 def _open_product_da(nc_path) -> xr.DataArray:
@@ -629,15 +628,14 @@ def _static_domain(
 def _prefetch_static(config: Config, tasks: List[tuple]) -> None:
     """Ensure many (driver, variable, domain) static files, in parallel."""
     if config.max_workers <= 1 or len(tasks) <= 1:
-        for drv, var, dom in tasks:
+        for drv, var, dom in progress.track(tasks, desc="Fetching soil/terrain"):
             drv.ensure_static(var, dom)
         return
     with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
         futures = [
             ex.submit(drv.ensure_static, var, dom) for drv, var, dom in tasks
         ]
-        for fut in futures:
-            fut.result()  # propagate the first failure
+        progress.drain_futures(futures, desc="Fetching soil/terrain")
 
 
 def _depth_tag(depths) -> str:
@@ -1930,7 +1928,10 @@ def to_dssat(
     )
 
     written = []
-    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+    for n, (idx, prow) in enumerate(
+        progress.track(df.iterrows(), total=len(df), desc="Writing crop-model files"),
+        start=1,
+    ):
         wide = _point_weather_wide(weather, idx)
         if wide.empty:
             logger.warning("Point %s has no weather in season; skipped", idx)
@@ -1991,7 +1992,10 @@ def to_apsim(
     )
 
     written = []
-    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+    for n, (idx, prow) in enumerate(
+        progress.track(df.iterrows(), total=len(df), desc="Writing crop-model files"),
+        start=1,
+    ):
         wide = _point_weather_wide(weather, idx)
         if wide.empty:
             logger.warning("Point %s has no weather in season; skipped", idx)
@@ -2058,7 +2062,10 @@ def to_wofost(
     )
 
     written = []
-    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+    for n, (idx, prow) in enumerate(
+        progress.track(df.iterrows(), total=len(df), desc="Writing crop-model files"),
+        start=1,
+    ):
         wide = _point_weather_wide(weather, idx)
         if wide.empty:
             logger.warning("Point %s has no weather in season; skipped", idx)
@@ -2110,7 +2117,10 @@ def to_oryza(
     )
 
     written = []
-    for n, (idx, prow) in enumerate(df.iterrows(), start=1):
+    for n, (idx, prow) in enumerate(
+        progress.track(df.iterrows(), total=len(df), desc="Writing crop-model files"),
+        start=1,
+    ):
         wide = _point_weather_wide(weather, idx)
         if wide.empty:
             logger.warning("Point %s has no weather in season; skipped", idx)

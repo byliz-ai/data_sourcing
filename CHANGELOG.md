@@ -3,6 +3,23 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.24.0 — progress bars for long fetches and per-point/per-tile loops
+- **Long-running calls now show a progress bar** so a slow job is
+  distinguishable from a hung one — the last gap from the new-user QA
+  walkthrough. Instrumented: the parallel climate (variable, year) and
+  soil/terrain fetches, MODIS composite pulls, the CHIRPS→Earth-Engine batches,
+  Copernicus DEM tile reads, the per-point crop-model writers
+  (`to_dssat`/`to_apsim`/`to_wofost`/`to_oryza`), and the two per-pixel compute
+  loops (`bias_correct`, `smooth_ndvi`).
+- **It never corrupts the CLI's output.** The bar is drawn on **stderr**; the
+  CLI's single JSON line still goes to stdout untouched, so anything parsing it
+  keeps working. By default the bar shows only when stderr is a terminal, so
+  piped/cron/CI runs stay clean; force it with `AGWISE_PROGRESS=always` or
+  silence it with `AGWISE_PROGRESS=never`.
+- Uses `tqdm` when present (rate + ETA) and a built-in fallback otherwise, so it
+  works with or without the dependency (now declared). New
+  `agwise_data.progress` (`track`, `drain_futures`, `enabled`). +5 tests.
+
 ## 0.23.0 — CGLabs defaults rainfall to local CHIRPS v3.0 (user can still pick v2.0)
 - **On CGLabs, `PRCP` now defaults to the local CHIRPS v3.0 series** staged in
   `Landing/Rainfall/chirps_v3` — fast, no network, no account — for the years it
