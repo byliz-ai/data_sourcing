@@ -88,6 +88,22 @@ def test_bias_correct_cube_window():
     assert abs(float(out.mean()) - 21.0) < 0.8
 
 
+def test_bias_correct_cube_single_cell_source_not_all_nan():
+    """A coarse forecast that is a single cell (small AOI on the 1° SEAS5 grid)
+    must still downscale onto the fine obs grid — linear interp alone would
+    leave every obs cell NaN (no extrapolation), dropping all points."""
+    obs, hind, fcst = _cubes()
+    # collapse hind/fcst to a single coarse cell whose centre sits outside the
+    # obs grid's centre range, so linear interp yields all-NaN without the
+    # nearest fallback.
+    hind1 = hind.isel(lat=[0], lon=[0])
+    fcst1 = fcst.isel(lat=[0], lon=[0])
+    out = bias_correct_cube(obs, hind1, fcst1, "additive")
+    assert dict(out.sizes) == {"member": 4, "time": 150, "lat": 2, "lon": 2}
+    assert not bool(np.isnan(out).all())          # was 100% NaN before the fix
+    assert float(np.isfinite(out).mean()) > 0.99  # every obs cell filled
+
+
 # --------------------------------------------------------------------------
 # bias_correct API (injection path, no network)
 # --------------------------------------------------------------------------

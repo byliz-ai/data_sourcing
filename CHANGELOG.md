@@ -3,6 +3,21 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.24.3 — bias-corrected forecast no longer comes out all-NaN for a small AOI
+- **`bias_correct` / `forecast_to_dssat` produced an all-NaN corrected cube when
+  the SEAS5 forecast covered only one grid cell** (a small AOI on the coarse 1°
+  grid — common for a district). `bias_correct_cube` downscaled the coarse
+  hindcast/forecast onto the fine observation grid with linear interpolation
+  only, and `xarray.interp` does not extrapolate: obs cells beyond the single
+  source cell's centre stayed NaN, so QDM emitted all-NaN and every point was
+  dropped with "no weather in season" (0 files written). The regrid now fills
+  those NaNs with a nearest-cell downscaling (`reindex(method="nearest")`),
+  which maps every obs cell to its nearest source cell — so the corrected cube
+  is complete regardless of how few SEAS5 cells the AOI spans. Linear smoothing
+  is still used where the source has ≥2 cells per axis. Found in the Addis QA
+  run (first live `forecast_to_dssat`); the re-run then wrote all 50 points'
+  bias-corrected DSSAT files in ~19 s. +1 test.
+
 ## 0.24.2 — seasonal-forecast fetch works for a small AOI on the coarse SEAS5 grid
 - **`get_seasonal` (and the forecast → DSSAT chain) no longer fails for an AOI
   smaller than one SEAS5 cell.** SEAS5 is on a 1° grid; a sub-degree area of

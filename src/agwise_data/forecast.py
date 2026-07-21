@@ -89,6 +89,23 @@ def _doy(times) -> np.ndarray:
     return xr.DataArray(times).dt.dayofyear.values
 
 
+def _regrid_to(src, obs):
+    """Downscale a coarse forecast/hindcast cube onto the fine ``obs`` grid.
+
+    Linear interpolation smooths where the source has >=2 cells per axis, but
+    yields all-NaN when the source is a single cell (a small AOI on the coarse
+    1-degree SEAS5 grid is often just 1x1). Fill those NaNs with a nearest-cell
+    downscaling so the corrected cube is never empty — otherwise every point
+    samples NaN and is dropped as "no weather in season".
+    """
+    lin = src.interp(lat=obs["lat"], lon=obs["lon"], method="linear")
+    # interp does not extrapolate: obs cells beyond the (few) source cell
+    # centres stay NaN. reindex-nearest maps every obs cell to its nearest
+    # source cell (edge cells included), so the fallback never leaves NaN.
+    near = src.reindex(lat=obs["lat"], lon=obs["lon"], method="nearest")
+    return lin.fillna(near)
+
+
 def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):
     """QDM-correct a forecast cube against hindcast+observation cubes.
 
@@ -100,8 +117,8 @@ def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):
     days-of-year of each forecast step; ``None`` pools the whole season.
     Returns a corrected cube shaped like the regridded ``fcst``.
     """
-    hind = hind.interp(lat=obs["lat"], lon=obs["lon"], method="linear")
-    fcst = fcst.interp(lat=obs["lat"], lon=obs["lon"], method="linear")
+    hind = _regrid_to(hind, obs)
+    fcst = _regrid_to(fcst, obs)
 
     obs_doy = _doy(obs["time"].values)
     hind_doy = _doy(hind["time"].values)
