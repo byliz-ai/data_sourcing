@@ -56,3 +56,51 @@ def test_load_defaults_to_cglabs_when_present(monkeypatch, tmp_path):
     cfg = Config.load()
     assert str(cfg.root) == str(proc)
     assert str(cfg.local_root) == str(land)
+
+
+# ---------------------------------------------------------------------------
+# Rainfall source preference: CGLabs prefers local CHIRPS v3 for PRCP.
+
+
+def test_rainfall_source_prefers_chirps_v3_when_staged(tmp_path):
+    land = tmp_path / "Landing"
+    (land / "Rainfall" / "chirps_v3").mkdir(parents=True)
+    cfg = Config(root=tmp_path / "cache", local_root=land)
+    assert cfg.rainfall_source == "chirps_v3"
+
+
+def test_rainfall_source_none_when_v3_absent(tmp_path):
+    land = tmp_path / "Landing"
+    land.mkdir()  # no Rainfall/chirps_v3 subtree
+    cfg = Config(root=tmp_path / "cache", local_root=land)
+    assert cfg.rainfall_source is None
+
+
+def test_rainfall_source_none_off_cglabs(tmp_path):
+    cfg = Config(root=tmp_path / "cache")           # no local_root at all
+    assert cfg.rainfall_source is None
+
+
+def test_rainfall_source_explicit_arg_wins(tmp_path):
+    land = tmp_path / "Landing"
+    (land / "Rainfall" / "chirps_v3").mkdir(parents=True)
+    cfg = Config(root=tmp_path / "c", local_root=land, rainfall_source="chirps")
+    assert cfg.rainfall_source == "chirps"          # forced back to v2
+
+
+def test_effective_source_applies_rainfall_preference():
+    from agwise_data.api import _effective_source
+    from agwise_data.config import Config
+
+    cfg = Config(root="/tmp/x")
+    cfg.rainfall_source = "chirps_v3"
+    # PRCP, no explicit source, years covered by v3 (1981-2023) -> chirps_v3
+    assert _effective_source("PRCP", None, cfg, [2023]) == "chirps_v3"
+    # a year outside v3's coverage -> fall back to the catalog default (None)
+    assert _effective_source("PRCP", None, cfg, [2024]) is None
+    # unknown years -> can't promise coverage -> default
+    assert _effective_source("PRCP", None, cfg, None) is None
+    # an explicit source always wins
+    assert _effective_source("PRCP", "chirps", cfg, [2023]) == "chirps"
+    # non-rainfall variables are untouched by the preference
+    assert _effective_source("TMAX", None, cfg, [2023]) is None

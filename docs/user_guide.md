@@ -83,10 +83,14 @@ Full variable list and units are in
 | **MODIS vegetation** | `NDVI, EVI` | `get_modis`, `get_ndvi`, `smooth_ndvi` | MODIS (Terra+Aqua) | Google Earth Engine |
 | **Cropland mask** | `CROPLAND` | `get_cropmask` | ESA WorldCover | Google Earth Engine |
 
-¹ CHIRPS currently falls back to Earth Engine while the UCSB host is 403-blocked,
-so `PRCP` effectively needs GEE today — see the note in
-[Section 3](credentials_setup.md). ² iSDA reads from the shared `Landing`
-folder (`AGWISE_LOCAL_ROOT`).
+¹ **On CGLabs, `PRCP` comes from the local CHIRPS v3.0 series by default** (the
+complete 1981–2023 set is staged in `Landing`), so rainfall needs no account and
+no network. For years it does not cover — or off CGLabs — `PRCP` falls back to
+CHIRPS v2.0, which currently uses Earth Engine while the UCSB host is
+403-blocked (so needs GEE there). Force a version any time with
+`source="chirps"` (v2.0) or `source="chirps_v3"`; set a site-wide default with
+`AGWISE_RAINFALL_SOURCE`. ² iSDA reads from the shared `Landing` folder
+(`AGWISE_LOCAL_ROOT`).
 
 Choose the **soil source** on any soil call: default SoilGrids (6 depths,
 global) or `source="isda"` (iSDA Africa, 2 depths, adds extractable P).

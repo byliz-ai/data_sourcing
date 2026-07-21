@@ -46,6 +46,7 @@ ENV_WORKERS = "AGWISE_DATA_WORKERS"
 ENV_SCOPE = "AGWISE_DATA_SCOPE"
 ENV_GEE_PROJECT = "AGWISE_GEE_PROJECT"
 ENV_LOCAL_ROOT = "AGWISE_LOCAL_ROOT"
+ENV_RAINFALL_SOURCE = "AGWISE_RAINFALL_SOURCE"
 
 # ---------------------------------------------------------------------------
 # CGLabs shared data tree — the default home for everyone on the server, so a
@@ -131,6 +132,7 @@ class Config:
         region_max_area_deg2: float = 400.0,
         gee_project: Optional[str] = None,
         local_root: Optional[os.PathLike] = None,
+        rainfall_source: Optional[str] = None,
     ):
         self.root = Path(root).expanduser() if root else Path.home() / "agwise_data"
         self.domain = domain
@@ -165,6 +167,18 @@ class Config:
         # matching local file (clipping to the region) instead of downloading —
         # see drivers/local.py. Default None = feature off.
         self.local_root = Path(local_root).expanduser() if local_root else None
+        # Preferred rainfall source when the caller pins none. On CGLabs the
+        # complete CHIRPS v3.0 series is staged locally, so default PRCP to it
+        # (fast, no network) for the years it covers; off CGLabs, or for years
+        # it does not cover, the climate layer falls back to CHIRPS v2.0. An
+        # explicit value (env AGWISE_RAINFALL_SOURCE / this arg) always wins;
+        # a user can still pass source="chirps" on any call to force v2.
+        if rainfall_source is not None:
+            self.rainfall_source = rainfall_source or None
+        elif self.local_root and (self.local_root / "Rainfall" / "chirps_v3").is_dir():
+            self.rainfall_source = "chirps_v3"
+        else:
+            self.rainfall_source = None
         self._discover_region_domains()
 
     # ------------------------------------------------------------------
@@ -210,6 +224,10 @@ class Config:
                 os.environ.get(ENV_LOCAL_ROOT)
                 or file_cfg.get("local_root")
                 or default_local_root()
+            ),
+            rainfall_source=(
+                os.environ.get(ENV_RAINFALL_SOURCE)
+                or file_cfg.get("rainfall_source")
             ),
         )
 

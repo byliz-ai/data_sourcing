@@ -76,8 +76,53 @@ def _as_years(years: Union[int, Sequence[int]]) -> List[int]:
     return out
 
 
-def _driver_for(variable: str, source: Optional[str], config: Config):
-    source_id = catalog.source_for(variable, source)
+def _source_covers_years(source_id: str, years) -> bool:
+    """Does ``source_id``'s catalog temporal extent cover every year in ``years``?
+
+    Used to decide whether a preferred local rainfall source can serve the
+    request; if ``years`` is unknown (None/empty) we cannot promise coverage,
+    so the caller keeps the safe catalog default.
+    """
+    if not years:
+        return False
+    temporal = catalog.get_entry(source_id).get("extent", {}).get("temporal", {})
+    start, end = temporal.get("start"), temporal.get("end")
+    lo = int(str(start)[:4]) if start else None
+    hi = int(str(end)[:4]) if end else None
+    ys = [int(y) for y in years]
+    if lo is not None and min(ys) < lo:
+        return False
+    if hi is not None and max(ys) > hi:
+        return False
+    return True
+
+
+def _effective_source(variable: str, source, config: Config, years=None):
+    """Resolve the source for ``variable``, applying the rainfall preference.
+
+    An explicit ``source`` (a source id, or a mapping that names this variable)
+    always wins. Otherwise, for rainfall (``PRCP``) only, honour
+    ``config.rainfall_source`` (e.g. local CHIRPS v3 on CGLabs) when it covers
+    all requested years — falling back to the catalog default (CHIRPS v2) for
+    uncovered years or off-CGLabs. Returns a source id or ``None`` (= default).
+    """
+    forced = catalog._source_override(source, canonical_name(variable))
+    if forced is not None:
+        return forced
+    pref = getattr(config, "rainfall_source", None)
+    if (
+        pref
+        and canonical_name(variable) == canonical_name("PRCP")
+        and _source_covers_years(pref, years)
+    ):
+        return pref
+    return None
+
+
+def _driver_for(variable: str, source, config: Config, years=None):
+    source_id = catalog.source_for(
+        variable, _effective_source(variable, source, config, years)
+    )
     entry = catalog.get_entry(source_id)
     return drivers.get_driver(entry, config), source_id
 
@@ -248,7 +293,7 @@ def get_climate(
     plans = []
     tasks = []
     for var in variables:
-        driver, source_id = _driver_for(var, source, config)
+        driver, source_id = _driver_for(var, source, config, years)
         var_domain = _effective_domain(
             config, source_id, var, years, region_bbox, domain
         )
@@ -350,7 +395,7 @@ def _plan_extraction(
     """Resolve drivers/domains per variable and prefetch all years in parallel."""
     plans = []
     for var in variables:
-        driver, source_id = _driver_for(var, source, config)
+        driver, source_id = _driver_for(var, source, config, years)
         dom = _effective_domain(config, source_id, var, years, bbox, None)
         plans.append((var, driver, dom))
     _prefetch(
@@ -1326,7 +1371,7 @@ def _season_long_points(
             da = subset_bbox(da, bbox, buffer=0.05)
             label = rs_short_name(canon)
         else:
-            driver, source_id = _driver_for(canon, source, config)
+            driver, source_id = _driver_for(canon, source, config, years)
             dom = _effective_domain(config, source_id, canon, years, bbox, None)
             _prefetch(config, [(driver, canon, y, dom) for y in years])
             da = driver.open_years(canon, years, dom)

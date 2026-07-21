@@ -93,6 +93,12 @@ export AGWISE_DATA_WORKERS=6
 # one cache serves every country (small requests otherwise fetch only
 # their own window, which is much faster for one-off runs):
 export AGWISE_DATA_SCOPE=domain     # default: auto
+
+# rainfall source when a call pins none. On CGLabs this defaults to the
+# local CHIRPS v3.0 (staged in Landing) for the years it covers; set it
+# explicitly to pin one version team-wide:
+export AGWISE_RAINFALL_SOURCE=chirps       # force CHIRPS v2.0 everywhere
+# export AGWISE_RAINFALL_SOURCE=chirps_v3  # (the CGLabs default already)
 ```
 
 The biggest speed-up is **not downloading at all**: `AGWISE_LOCAL_ROOT`

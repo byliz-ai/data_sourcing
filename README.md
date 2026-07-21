@@ -171,10 +171,12 @@ Got a NetCDF path back? You're ready. Add credentials
 ([Section 3](docs/credentials_setup.md)) for the sources that need them, then
 follow the **[user workflow (Section 4)](docs/user_guide.md)**.
 
-> **Rainfall (CHIRPS) note:** CHIRPS normally needs no account, but the UCSB
-> host (`data.chc.ucsb.edu`) is **currently returning HTTP 403**. When that
-> happens the driver automatically falls back to CHIRPS on **Earth Engine**, so
-> today fetching `PRCP` effectively needs Earth Engine set up (same as MODIS).
+> **Rainfall (CHIRPS) note:** On CGLabs `PRCP` is served from the **local
+> CHIRPS v3.0** series staged in `Landing` (1981–2023) — no account, no network.
+> Elsewhere, or for years outside that range, it falls back to CHIRPS v2.0;
+> because the UCSB host (`data.chc.ucsb.edu`) is **currently returning HTTP
+> 403**, v2.0 is pulled from **Earth Engine** (so needs GEE set up, like MODIS).
+> Force a version with `source="chirps"` / `source="chirps_v3"`.
 
 ---
 

@@ -3,6 +3,25 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.23.0 — CGLabs defaults rainfall to local CHIRPS v3.0 (user can still pick v2.0)
+- **On CGLabs, `PRCP` now defaults to the local CHIRPS v3.0 series** staged in
+  `Landing/Rainfall/chirps_v3` — fast, no network, no account — for the years it
+  covers (1981–2023). For years outside that range, or off CGLabs, it falls back
+  to the CHIRPS v2.0 default automatically, so a request never hard-fails on an
+  unstaged year. The preference applies **only to rainfall and only when the
+  caller pins no source**; every other variable is unchanged. This flows through
+  everything that sources rainfall, including the crop-model writers — so
+  `to_dssat(...)` with no `weather_source` now takes rainfall from local v3.0.
+- **The user still chooses:** pass `source="chirps"` (v2.0) or
+  `source="chirps_v3"` on any call to force a version, or set a site-wide default
+  with the new `AGWISE_RAINFALL_SOURCE` env var (`config.rainfall_source`). Off
+  CGLabs (no staged v3.0) the default is unchanged (CHIRPS v2.0).
+- New `Config.rainfall_source` (auto-detects the staged v3.0 tree),
+  `api._effective_source`/`_source_covers_years`. Docs updated (README §2.4,
+  user_guide §4.2, cglabs_setup). +5 tests. Live-verified on Kisumu: default
+  `PRCP` and `to_dssat` read `chirps_v3/2023.nc` locally (~1.7 s), `source=
+  "chirps"` routes to v2.0.
+
 ## 0.22.0 — elevation in DSSAT/ORYZA weather headers + QA doc fixes
 - **DSSAT and ORYZA weather files now carry the point's real elevation.** The
   `.WTH` `ELEV` field and the ORYZA CABO `Elevation:` line used to be `-99` / `0`
