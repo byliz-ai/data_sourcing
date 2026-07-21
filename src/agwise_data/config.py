@@ -183,6 +183,12 @@ class Config:
         # Region-scoped fetching kicks in below this bbox area (deg^2);
         # 400 = a 20x20 degree box, comfortably any single country.
         self.region_max_area_deg2 = float(region_max_area_deg2)
+        # Real per-process memory ceiling from the cgroup (NOT the host RAM),
+        # and the usable budget after headroom. None off a limited container.
+        from . import memory as _mem
+
+        self.mem_limit_bytes = _mem.detect_limit_bytes()
+        self.mem_budget_bytes = _mem.usable_budget_bytes(self.mem_limit_bytes)
         # Google Cloud project registered for Earth Engine (GEE drivers).
         # Credentials themselves stay personal (~/.config/earthengine) —
         # see REFERENCE.md.
@@ -232,7 +238,18 @@ class Config:
         domain = os.environ.get(ENV_DOMAIN) or file_cfg.get("domain", "africa")
         keep_raw = bool(file_cfg.get("keep_raw", False))
         domains = file_cfg.get("domains")
-        workers = int(os.environ.get(ENV_WORKERS) or file_cfg.get("max_workers", 4))
+        # max_workers: an explicit env/YAML value wins; otherwise derive it from
+        # the memory budget so a smaller container shrinks the pool instead of
+        # OOM-ing (it never raises above the baseline — see memory.derive_max_workers).
+        from . import memory as _mem
+
+        explicit_workers = os.environ.get(ENV_WORKERS) or file_cfg.get("max_workers")
+        if explicit_workers is not None:
+            workers = int(explicit_workers)
+        else:
+            workers = _mem.derive_max_workers(
+                _mem.usable_budget_bytes(), os.cpu_count() or 1, baseline=4
+            )
         scope = os.environ.get(ENV_SCOPE) or file_cfg.get("fetch_scope", "auto")
         # Bound dask's implicit threaded scheduler — a bare .load() otherwise
         # spins up one thread per core (~40 here), an invisible pool that

@@ -5,6 +5,33 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.27.0 — CGLabs resource optimization, phase 2 (memory budget + streaming)
+Builds the memory-budget foundation and stops the biggest per-call accumulator.
+- **New `agwise_data.memory`** detects the process's real ceiling from the
+  cgroup (`/sys/fs/cgroup/memory.max` v2 / `memory.limit_in_bytes` v1; a near-
+  INT64 sentinel = unlimited) — **never** from `psutil`/`free`/`/proc/meminfo`,
+  which report the ~220 GB *host*, 7x the real ~32 GB cap and a guaranteed OOM
+  if sized against. `usable_budget_bytes` reserves headroom (default 8 GB,
+  `AGWISE_MEM_HEADROOM_GB`); `AGWISE_MEM_LIMIT_GB` overrides the limit. Also
+  `estimate_peak_bytes` and `warn_if_over_budget`. `Config` exposes
+  `mem_limit_bytes` / `mem_budget_bytes`.
+- **`max_workers` auto-derives from the budget** when not set explicitly: on a
+  smaller container the pool shrinks so concurrent fetches can't OOM (a 6 GB
+  container → 1 worker), while the standard box stays at the baseline of 4. It
+  only ever *reduces* — raising concurrency for throughput is a separate,
+  rate-limit-aware change. An explicit `AGWISE_DATA_WORKERS`/YAML value wins.
+- **Product fetches no longer `.load()` the whole cube before writing.**
+  `get_climate`/`get_static`/`get_seasonal`/`get_modis`/`get_season` now pass
+  the lazy region cube straight to the (atomic) NetCDF write — which streams it
+  chunk-by-chunk — then return it reopened lazily from disk. A multi-variable
+  request now peaks at **one** variable's cube, not the sum of all of them (a
+  9-variable `get_soil` no longer holds nine loaded cubes at once). The
+  geometry-clip branch still materializes (rioxarray clip needs it).
+- **A budget guard warns** before a materialization whose estimated peak exceeds
+  the budget, pointing at a smaller region/period or `AGWISE_MEM_LIMIT_GB`
+  (advisory — it does not block).
+- +11 tests (`test_memory.py`). Suite 221 passing.
+
 ## 0.26.0 — CGLabs resource optimization, phase 1 (memory quick wins)
 First batch of the memory/throughput plan for the shared ~32 GB CGLabs
 container (see `CGLABS_OPTIMIZATION_PLAN.md`). Each item cuts peak memory or

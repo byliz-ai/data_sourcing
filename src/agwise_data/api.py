@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from . import boundaries, catalog, drivers, progress
+from . import boundaries, catalog, drivers, memory, progress
 from .cache import atomic_write, write_manifest
 from .config import Config, region_domain_name, round_region_bbox
 from .drivers.base import nc_encoding
@@ -374,10 +374,13 @@ def get_climate(
             da = driver.open_years(var, years, var_domain)
             da = subset_bbox(da, region_bbox, buffer=0.05)
             if gdf is not None:
-                da = clip_geometry(da, gdf)
+                da = clip_geometry(da, gdf).load()  # clip materializes anyway
             if freq == "monthly":
                 da = to_monthly(da, var)
-            da = da.load()
+            memory.warn_if_over_budget(
+                config.mem_budget_bytes, da.sizes, 4, logger,
+                f"get_climate {short_name(var)}",
+            )
 
             meta = {
                 "source_id": source_id,
@@ -392,10 +395,12 @@ def get_climate(
                 _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
-                from .spatial import write_geotiff
-
                 _write_tif_product(da, tif_path, labels=time_labels(da, freq))
                 write_manifest(tif_path, meta)
+            # Return the product lazily from disk rather than the loaded cube, so
+            # a multi-variable request peaks at one variable, not the sum of all
+            # their cubes (the write above streamed the lazy array chunk-by-chunk).
+            da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
         results[var] = {
             "short": short_name(var),
@@ -797,8 +802,11 @@ def get_static(
             da = subset_bbox(da, region_bbox, buffer=0.05)
             da = _subset_depths(da, depths)
             if gdf is not None:
-                da = clip_geometry(da, gdf)
-            da = da.load()
+                da = clip_geometry(da, gdf).load()  # clip materializes anyway
+            memory.warn_if_over_budget(
+                config.mem_budget_bytes, da.sizes, 4, logger,
+                f"get_static {static_short_name(var)}",
+            )
 
             meta = {
                 "source_id": source_id,
@@ -813,8 +821,6 @@ def get_static(
                 _write_nc_product(da, nc_path, {da.name: static_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
-                from .spatial import write_geotiff
-
                 labels = (
                     [str(d) for d in da["depth"].values]
                     if "depth" in da.dims
@@ -822,6 +828,7 @@ def get_static(
                 )
                 _write_tif_product(da, tif_path, labels=labels)
                 write_manifest(tif_path, meta)
+            da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
         results[var] = {
             "short": static_short_name(var),
@@ -995,10 +1002,13 @@ def get_seasonal(
             da = driver.open_inits(var, init_month, years, var_domain)
             da = subset_bbox(da, region_bbox, buffer=0.05)
             if gdf is not None:
-                da = clip_geometry(da, gdf)
+                da = clip_geometry(da, gdf).load()  # clip materializes anyway
             if ensemble != "members":
                 da = getattr(da, ensemble)(dim="member", keep_attrs=True)
-            da = da.load()
+            memory.warn_if_over_budget(
+                config.mem_budget_bytes, da.sizes, 4, logger,
+                f"get_seasonal {short_name(var)}",
+            )
 
             meta = {
                 "source_id": source_id,
@@ -1014,10 +1024,9 @@ def get_seasonal(
                 _write_nc_product(da, nc_path, {da.name: seasonal_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
-                from .spatial import write_geotiff
-
                 _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
                 write_manifest(tif_path, meta)
+            da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
         results[var] = {
             "short": short_name(var),
@@ -1178,8 +1187,11 @@ def get_modis(
             da = da.sortby("time")
             da = subset_bbox(da, region_bbox, buffer=0.05)
             if gdf is not None:
-                da = clip_geometry(da, gdf)
-            da = da.load()
+                da = clip_geometry(da, gdf).load()  # clip materializes anyway
+            memory.warn_if_over_budget(
+                config.mem_budget_bytes, da.sizes, 4, logger,
+                f"get_modis {rs_short_name(var)}",
+            )
 
             meta = {
                 "source_ids": [sid for sid, _, _ in parts],
@@ -1195,10 +1207,9 @@ def get_modis(
                 _write_nc_product(da, nc_path, {da.name: composite_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
-                from .spatial import write_geotiff
-
                 _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
                 write_manifest(tif_path, meta)
+            da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
         results[var] = {
             "short": rs_short_name(var),
@@ -1309,6 +1320,9 @@ def smooth_ndvi(
             cm = get_cropmask(source=cropmask_source, domain=domain, **region_kwargs)
             mask = next(iter(cm.values()))["data"]
             raw = apply_cropmask(raw, mask)
+        memory.warn_if_over_budget(
+            config.mem_budget_bytes, raw.sizes, 4, logger, f"smooth_ndvi {short}"
+        )
         da = smooth_stack(
             raw, window=window, polyorder=polyorder, gapfill=gapfill
         ).load()
@@ -1332,8 +1346,6 @@ def smooth_ndvi(
             _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
             write_manifest(nc_path, meta)
         if need_tif:
-            from .spatial import write_geotiff
-
             _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
             write_manifest(tif_path, meta)
 
@@ -1612,12 +1624,15 @@ def get_season(
                     variables=[canon], years=years, freq=freq,
                     source=source, **region_kwargs,
                 )[canon]["data"]
-            da = full.sel(time=slice(pl, hv)).load()
+            da = full.sel(time=slice(pl, hv))
             if da.sizes.get("time", 0) == 0:
                 raise ValueError(
                     f"No {short} time steps fell inside "
                     f"{pl.date()}..{hv.date()}"
                 )
+            memory.warn_if_over_budget(
+                config.mem_budget_bytes, da.sizes, 4, logger, f"get_season {short}"
+            )
             meta = {
                 "variable": canon,
                 "region": tag,
@@ -1631,10 +1646,9 @@ def get_season(
                 _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
-                from .spatial import write_geotiff
-
                 _write_tif_product(da, tif_path, labels=time_labels(da, tif_labels_freq))
                 write_manifest(tif_path, meta)
+            da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
         results[canon] = {
             "short": short,

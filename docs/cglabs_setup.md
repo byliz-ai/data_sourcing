@@ -94,6 +94,13 @@ export AGWISE_DATA_WORKERS=6
 # their own window, which is much faster for one-off runs):
 export AGWISE_DATA_SCOPE=domain     # default: auto
 
+# memory budget (advisory). The layer reads the container's real cgroup
+# limit (~32 GB on CGLabs) — not the host RAM `free` shows — sizes the
+# worker pool from it, and warns before an op would exceed it. Override
+# only if the container is actually larger/smaller, or to change the reserve:
+export AGWISE_MEM_LIMIT_GB=32       # force the assumed limit
+export AGWISE_MEM_HEADROOM_GB=8     # bytes kept free (NFS write-back + a co-user)
+
 # how many times a CDS download (AgERA5/SEAS5) retries on a transient
 # network/queue failure before giving up (default 3). A cold seasonal
 # forecast issues many requests, so a dropped download retries instead of
