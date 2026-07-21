@@ -98,12 +98,21 @@ def _regrid_to(src, obs):
     downscaling so the corrected cube is never empty — otherwise every point
     samples NaN and is dropped as "no weather in season".
     """
-    lin = src.interp(lat=obs["lat"], lon=obs["lon"], method="linear")
-    # interp does not extrapolate: obs cells beyond the (few) source cell
-    # centres stay NaN. reindex-nearest maps every obs cell to its nearest
-    # source cell (edge cells included), so the fallback never leaves NaN.
-    near = src.reindex(lat=obs["lat"], lon=obs["lon"], method="nearest")
-    return lin.fillna(near)
+    # Keep the regridded cube in float32 (interp promotes to float64): these
+    # member x time x fine-grid cubes are the biggest allocation here, and the
+    # per-pixel QDM upcasts its 1-D inputs to float64 anyway, so mapping
+    # precision is unchanged while peak roughly halves.
+    lin = src.interp(lat=obs["lat"], lon=obs["lon"], method="linear").astype("float32")
+    # interp does not extrapolate: obs cells beyond the (few) source cell centres
+    # stay NaN. Only then fall back to a nearest-cell regrid (which maps every
+    # obs cell to its nearest source cell) — skip building that second full cube
+    # entirely when linear already covered everything (the common multi-cell case).
+    if bool(np.isnan(lin).any()):
+        near = src.reindex(
+            lat=obs["lat"], lon=obs["lon"], method="nearest"
+        ).astype("float32")
+        lin = lin.fillna(near)
+    return lin
 
 
 def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):

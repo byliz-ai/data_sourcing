@@ -48,6 +48,25 @@ ENV_GEE_PROJECT = "AGWISE_GEE_PROJECT"
 ENV_LOCAL_ROOT = "AGWISE_LOCAL_ROOT"
 ENV_RAINFALL_SOURCE = "AGWISE_RAINFALL_SOURCE"
 ENV_CDS_RETRIES = "AGWISE_CDS_RETRIES"
+ENV_COG_WORKERS = "AGWISE_COG_WORKERS"
+ENV_REGION_MAX_AREA = "AGWISE_REGION_MAX_AREA_DEG2"
+ENV_DOWNLOAD_PARTS = "AGWISE_DOWNLOAD_PARTS"
+
+
+def _cap_dask_scheduler(num_workers: int) -> None:
+    """Bound dask's default threaded scheduler to ``num_workers`` (best-effort).
+
+    Without this, each ``.load()`` fires dask's thread pool sized to
+    ``os.cpu_count()`` (~40 on CGLabs) — an invisible pool that oversubscribes
+    the cores and drives per-load peak memory, unaccounted by the layer's own
+    worker knobs. No-op if dask is unavailable.
+    """
+    try:
+        import dask
+
+        dask.config.set(scheduler="threads", num_workers=max(1, int(num_workers)))
+    except Exception:  # noqa: BLE001 — dask missing or config shape changed
+        pass
 
 # ---------------------------------------------------------------------------
 # CGLabs shared data tree — the default home for everyone on the server, so a
@@ -129,7 +148,7 @@ class Config:
         max_workers: int = 4,
         fetch_scope: str = "auto",
         download_parts: int = 4,
-        cog_workers: int = 3,
+        cog_workers: int = 8,
         cds_retries: int = 3,
         region_max_area_deg2: float = 400.0,
         gee_project: Optional[str] = None,
@@ -153,9 +172,12 @@ class Config:
         self.fetch_scope = fetch_scope
         # Parallel HTTP range connections for large single-file downloads.
         self.download_parts = int(download_parts)
-        # Parallel per-day COG window reads inside one year fetch. Kept low
-        # on purpose: data providers rate-limit aggressive clients (UCSB
-        # answers HTTP 403 and can temporarily ban the IP).
+        # Parallel per-day COG window reads / tile pulls inside ONE year
+        # fetch. Note this is a per-fetch fan-out: when the outer prefetch pool
+        # runs several fetches in parallel, the drivers force this down to 1 so
+        # peak concurrency is never max_workers x cog_workers (see api._prefetch
+        # and the chirps/modis drivers). Providers rate-limit aggressive clients
+        # (UCSB HTTP 403 / EE quotas), so keep it modest.
         self.cog_workers = int(cog_workers)
         self.cds_retries = int(cds_retries)
         # Region-scoped fetching kicks in below this bbox area (deg^2);
@@ -210,8 +232,13 @@ class Config:
         domain = os.environ.get(ENV_DOMAIN) or file_cfg.get("domain", "africa")
         keep_raw = bool(file_cfg.get("keep_raw", False))
         domains = file_cfg.get("domains")
-        workers = os.environ.get(ENV_WORKERS) or file_cfg.get("max_workers", 4)
+        workers = int(os.environ.get(ENV_WORKERS) or file_cfg.get("max_workers", 4))
         scope = os.environ.get(ENV_SCOPE) or file_cfg.get("fetch_scope", "auto")
+        # Bound dask's implicit threaded scheduler — a bare .load() otherwise
+        # spins up one thread per core (~40 here), an invisible pool that
+        # oversubscribes CPU and inflates per-load peak memory beyond the
+        # max_workers/cog_workers accounting. Cap it to the fetch worker count.
+        _cap_dask_scheduler(workers)
         return cls(
             root=root,
             domain=domain,
@@ -219,12 +246,19 @@ class Config:
             domains=domains,
             max_workers=int(workers),
             fetch_scope=scope,
-            download_parts=int(file_cfg.get("download_parts", 4)),
-            cog_workers=int(file_cfg.get("cog_workers", 8)),
+            download_parts=int(
+                os.environ.get(ENV_DOWNLOAD_PARTS) or file_cfg.get("download_parts", 4)
+            ),
+            cog_workers=int(
+                os.environ.get(ENV_COG_WORKERS) or file_cfg.get("cog_workers", 8)
+            ),
             cds_retries=int(
                 os.environ.get(ENV_CDS_RETRIES) or file_cfg.get("cds_retries", 3)
             ),
-            region_max_area_deg2=float(file_cfg.get("region_max_area_deg2", 400.0)),
+            region_max_area_deg2=float(
+                os.environ.get(ENV_REGION_MAX_AREA)
+                or file_cfg.get("region_max_area_deg2", 400.0)
+            ),
             gee_project=os.environ.get(ENV_GEE_PROJECT) or file_cfg.get("gee_project"),
             local_root=(
                 os.environ.get(ENV_LOCAL_ROOT)

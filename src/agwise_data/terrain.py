@@ -63,30 +63,39 @@ def _gradients(elev: xr.DataArray):
     return dzdy, dzdx
 
 
-def _neighbor_stack(z: np.ndarray) -> np.ndarray:
-    """(8, H, W) stack of the 8 neighbors, edge-padded."""
+def _neighbor_views(z: np.ndarray):
+    """Yield the 8 edge-padded neighbour views of ``z`` (each shaped like ``z``).
+
+    A generator of views, not a materialized ``(8, H, W)`` stack: reducing over
+    it with a running accumulator keeps peak memory at ~2-3x the elevation array
+    instead of ~9x (near the DEM pixel cap the stack alone would be >10 GB).
+    """
     p = np.pad(z, 1, mode="edge")
-    return np.stack(
-        [
-            p[i : i + z.shape[0], j : j + z.shape[1]]
-            for i in (0, 1, 2)
-            for j in (0, 1, 2)
-            if not (i == 1 and j == 1)
-        ]
-    )
+    h, w = z.shape
+    for i in (0, 1, 2):
+        for j in (0, 1, 2):
+            if i == 1 and j == 1:
+                continue
+            yield p[i : i + h, j : j + w]
 
 
 def tpi(elev: xr.DataArray) -> xr.DataArray:
     """Topographic position index: cell minus mean of its 8 neighbors."""
     z = elev.values.astype("float32")
-    out = z - _neighbor_stack(z).mean(axis=0, dtype="float32")
+    acc = np.zeros_like(z)
+    for nb in _neighbor_views(z):
+        acc += nb
+    out = z - acc / np.float32(8.0)
     return elev.copy(data=out.astype("float32"))
 
 
 def tri(elev: xr.DataArray) -> xr.DataArray:
     """Terrain ruggedness index: mean |cell - neighbor| over the 8 neighbors."""
     z = elev.values.astype("float32")
-    out = np.abs(_neighbor_stack(z) - z).mean(axis=0, dtype="float32")
+    acc = np.zeros_like(z)
+    for nb in _neighbor_views(z):
+        acc += np.abs(nb - z)
+    out = acc / np.float32(8.0)
     return elev.copy(data=out.astype("float32"))
 
 

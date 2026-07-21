@@ -5,6 +5,51 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.26.0 — CGLabs resource optimization, phase 1 (memory quick wins)
+First batch of the memory/throughput plan for the shared ~32 GB CGLabs
+container (see `CGLABS_OPTIMIZATION_PLAN.md`). Each item cuts peak memory or
+tames uncontrolled concurrency; behaviour is numerically unchanged.
+- **Bounded dask's hidden thread pool.** Every `.load()` used to fire dask's
+  default threaded scheduler at `os.cpu_count()` (~40 threads on CGLabs) — a
+  third pool invisible to `max_workers`/`cog_workers` that oversubscribed cores
+  and inflated per-load peak. `Config.load()` now caps it to the fetch worker
+  count (`config._cap_dask_scheduler`).
+- **Terrain TPI/TRI no longer build an (8, H, W) neighbour stack** — they
+  accumulate over the 8 shifted views instead (`terrain._neighbor_views`),
+  cutting peak from ~9x the elevation array to ~2–3x (near the DEM pixel cap the
+  stack alone exceeded 10 GB). Output is bit-identical.
+- **Terrain derivatives run serially**, deriving from one loaded elevation,
+  instead of concurrently under the static prefetch pool (each held its own
+  copy). Network-bound soil/DEM layers still fetch in parallel
+  (`_prefetch_static`). No I/O to overlap, so no speed cost.
+- **Honest `cog_workers` default** — the constructor said 3 while `Config.load()`
+  used 8; both are 8 now (the operative value), so memory-budget reasoning isn't
+  understated 2.6x.
+- **Env overrides for the memory-governing knobs:** `AGWISE_COG_WORKERS`,
+  `AGWISE_REGION_MAX_AREA_DEG2`, `AGWISE_DOWNLOAD_PARTS` (previously YAML-only).
+- **Windowed reads of the huge global NetCDFs no longer read the whole globe.**
+  The local CHIRPS v3 (~24 GB/yr) and the CHIRPS v2 yearly-global fallback were
+  opened with a dask chunk spanning the entire lat/lon plane, so a region window
+  read/decompressed multi-GB blocks per time-step just to discard all but the
+  window. They now open without dask chunks, so the netCDF4 backend reads an
+  indexed hyperslab of exactly the window (`local.fetch_local_year`,
+  `chirps._fetch_year_netcdf`). Verified on the real 24 GB file: same values,
+  **~8 s vs a >3 min timeout**, and a tiny fraction of the memory.
+- **Break the `max_workers x cog_workers` fan-out.** While the outer prefetch
+  pool runs several climate fetches at once, the inner per-fetch fan-out
+  (`cog_workers`, the CHIRPS COG/GEE window/tile reads) is pinned to 1
+  (`api._pinned_cog_workers`), so peak concurrency is `max_workers` — not the
+  4x8=32 in-flight reads plus four year-arrays that were the OOM shape. A serial
+  (single-task) fetch keeps the full inner fan-out.
+- **QDM regrid/bias-correction in float32.** `bias_correct_cube`'s downscaled
+  member x time x fine-grid cubes are the largest allocation; the regrid now
+  stays float32 (the per-pixel quantile mapping still upcasts to float64, so
+  precision is unchanged) and skips building the second full nearest-fill cube
+  when linear interpolation already covered every cell — roughly halving peak.
+- **Preallocate-and-fill instead of `list + np.stack`** in the array assemblers
+  (`modis`, `soil`, `local` static/composite), removing a full-cube transient
+  copy at the tail of each fetch. Output is bit-identical.
+
 ## Session summary — 2026-07-21 (v0.19.0 → v0.25.0)
 
 A hardening pass driven by three brand-new-user QA/QC walkthroughs (Kisumu, 10

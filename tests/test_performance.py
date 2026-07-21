@@ -180,3 +180,51 @@ def test_write_nc_product_is_atomic_on_failure(tmp_path):
         _write_nc_product(da, p, {"v": {"dtype": "not-a-real-dtype"}})
     assert not p.exists()                                   # nothing left behind
     assert not list(tmp_path.glob(".prod.nc*.tmp"))         # no orphan temp
+
+
+def test_prefetch_pins_cog_workers_when_parallel(config):
+    """A parallel prefetch batch pins the inner fan-out (cog_workers) to 1 to
+    break the max_workers x cog_workers multiplier, and restores it after."""
+    from agwise_data import api
+
+    config.max_workers = 4
+    config.cog_workers = 8
+    seen = []
+
+    class _Rec:
+        def ensure_daily_year(self, var, year, dom):
+            seen.append(config.cog_workers)
+
+    tasks = [(_Rec(), "AGRO.PRCP", y, "africa") for y in range(2015, 2019)]
+    api._prefetch(config, tasks)
+    assert seen and all(v == 1 for v in seen)   # pinned during the parallel batch
+    assert config.cog_workers == 8              # restored afterwards
+
+
+def test_prefetch_serial_keeps_full_cog_workers(config):
+    """A single-task (serial) prefetch keeps the full inner fan-out."""
+    from agwise_data import api
+
+    config.max_workers = 4
+    config.cog_workers = 8
+    seen = []
+
+    class _Rec:
+        def ensure_daily_year(self, var, year, dom):
+            seen.append(config.cog_workers)
+
+    api._prefetch(config, [(_Rec(), "AGRO.PRCP", 2015, "africa")])
+    assert seen == [8]
+
+
+def test_pinned_cog_workers_restores_on_error(config):
+    from agwise_data.api import _pinned_cog_workers
+
+    config.cog_workers = 8
+    try:
+        with _pinned_cog_workers(config, 1):
+            assert config.cog_workers == 1
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+    assert config.cog_workers == 8

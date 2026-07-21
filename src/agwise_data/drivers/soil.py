@@ -47,9 +47,11 @@ class SoilGridsDriver(StaticDriver):
         url = access["url"].format(property=prop)
         nodata = spec.get("nodata", 0)
 
-        layers = []
+        # Fill a preallocated (depth, lat, lon) cube instead of appending to a
+        # list and np.stack-ing it (which briefly holds two full copies).
+        cube = None
         grid: dict = {}
-        for depth in depths:
+        for di, depth in enumerate(depths):
             coverage = f"{prop}_{depth}_{spec.get('statistic', 'mean')}"
             parts = [
                 self._get_coverage(url, coverage, chunk)
@@ -70,15 +72,16 @@ class SoilGridsDriver(StaticDriver):
                 grid["lons"] = transform.c + transform.a * (np.arange(w) + 0.5)
                 grid["lats"] = transform.f + transform.e * (np.arange(h) + 0.5)
                 grid["shape"] = z.shape
+                cube = np.empty((len(depths), h, w), dtype=z.dtype)
             if z.shape != grid["shape"]:
                 raise RuntimeError(
                     f"SoilGrids depth {depth} of {prop} came back on a "
                     f"different grid ({z.shape} vs {grid['shape']})"
                 )
-            layers.append(z)
+            cube[di] = z
 
         da = xr.DataArray(
-            np.stack(layers),
+            cube,
             coords={"depth": depths, "lat": grid["lats"], "lon": grid["lons"]},
             dims=("depth", "lat", "lon"),
             name=prop,

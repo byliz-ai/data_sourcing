@@ -87,7 +87,13 @@ def fetch_local_year(
 
     spec = variable_spec(source_id, variable)
     bbox = config.bbox_for(domain)
-    with xr.open_dataset(path, chunks={"time": 40}) as ds:
+    # Open WITHOUT dask chunks: these legacy files are global (up to ~24 GB/yr)
+    # and a dask chunk that spans the whole lat/lon plane would read/decompress
+    # the entire globe per time-block just to keep the region window. The
+    # netCDF4 backend instead reads an indexed hyperslab of exactly the window
+    # (subset_bbox below runs before .load()), which is both far lighter and
+    # much faster (verified: seconds vs minutes on the 24 GB CHIRPS v3 files).
+    with xr.open_dataset(path) as ds:
         names = [
             v for v in ds.data_vars
             if v not in _NON_DATA and not str(v).endswith("_bnds")
@@ -157,8 +163,8 @@ def fetch_local_static(
     nodata = spec.get("nodata")  # None -> rely on the tif's own nodata only
     bbox = config.bbox_for(domain)
 
-    layers, lats, lons = [], None, None
-    for depth in depths:
+    cube, lats, lons = None, None, None
+    for di, depth in enumerate(depths):
         path = Path(root) / block["path"].format(var=prop, depth=depth)
         if not path.is_file():
             return None  # need every depth; otherwise download the whole set
@@ -171,10 +177,11 @@ def fetch_local_static(
             z[z == nodata] = np.nan
         if lats is None:
             lats, lons = la, lo
-        layers.append(z)
+            cube = np.empty((len(depths), *z.shape), dtype=z.dtype)
+        cube[di] = z  # fill preallocated cube (no list + np.stack transient)
 
     da = xr.DataArray(
-        np.stack(layers),
+        cube,
         coords={"depth": depths, "lat": lats, "lon": lons},
         dims=("depth", "lat", "lon"),
         name=prop,
@@ -250,8 +257,13 @@ def fetch_local_composite(
     if not layers:
         return None
     order = np.argsort(times)
+    # Fill a preallocated cube in time order rather than np.stack-ing a second
+    # reordered list (which would hold another full copy of the year).
+    cube = np.empty((len(layers), *layers[0].shape), dtype=layers[0].dtype)
+    for k, i in enumerate(order):
+        cube[k] = layers[i]
     da = xr.DataArray(
-        np.stack([layers[i] for i in order]),
+        cube,
         coords={"time": [times[i] for i in order], "lat": lats, "lon": lons},
         dims=("time", "lat", "lon"),
         name=spec["source_name"],

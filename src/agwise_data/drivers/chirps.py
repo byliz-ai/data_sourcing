@@ -249,7 +249,11 @@ class ChirpsDriver(Driver):
 
         spec = variable_spec(self.source_id, variable)
         with cache.NC_LOCK:
-            with xr.open_dataset(raw, chunks={"time": 92}) as ds:
+            # No dask chunks: the yearly global NetCDF is huge and a lat/lon-
+            # spanning dask chunk would read the whole globe per time-block to
+            # keep the region window. subset_bbox runs before .load(), so the
+            # netCDF4 backend reads only the window's hyperslab.
+            with xr.open_dataset(raw) as ds:
                 da = ds[spec["source_name"]]
                 da = subset_bbox(da, self.config.bbox_for(domain))
                 da = apply_conversion(da, spec.get("conversion"))

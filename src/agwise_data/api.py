@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
@@ -47,6 +48,7 @@ from .harmonize import (
     rs_short_name,
     short_name,
     static_canonical_name,
+    static_derived_from,
     static_has_depth,
     static_short_name,
     time_labels,
@@ -218,17 +220,41 @@ def _prefetch(config: Config, tasks: List[tuple]) -> None:
 
     Downloads and CDS queue waits are I/O bound, so threads overlap them;
     the per-file locks in the cache make duplicate tasks harmless.
+
+    When this runs several fetches at once, the inner per-fetch fan-out
+    (``cog_workers``, used by the CHIRPS COG/GEE paths) is pinned to 1 for the
+    duration so peak concurrency is ``max_workers`` — never the
+    ``max_workers x cog_workers`` product that could put 30+ window/tile reads
+    and several year-arrays in flight at once. A single-task (serial) prefetch
+    keeps the full inner fan-out.
     """
     if config.max_workers <= 1 or len(tasks) <= 1:
         for drv, var, year, dom in progress.track(tasks, desc="Fetching climate"):
             drv.ensure_daily_year(var, year, dom)
         return
-    with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
-        futures = [
-            ex.submit(drv.ensure_daily_year, var, year, dom)
-            for drv, var, year, dom in tasks
-        ]
-        progress.drain_futures(futures, desc="Fetching climate")
+    with _pinned_cog_workers(config, 1):
+        with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
+            futures = [
+                ex.submit(drv.ensure_daily_year, var, year, dom)
+                for drv, var, year, dom in tasks
+            ]
+            progress.drain_futures(futures, desc="Fetching climate")
+
+
+@contextmanager
+def _pinned_cog_workers(config: Config, value: int):
+    """Temporarily set ``config.cog_workers`` (restore on exit).
+
+    Used to break the nested outer-pool x inner-fan-out multiplier: while an
+    outer prefetch pool is active, inner fetches should not each spawn their
+    own ``cog_workers`` threads.
+    """
+    saved = config.cog_workers
+    config.cog_workers = value
+    try:
+        yield
+    finally:
+        config.cog_workers = saved
 
 
 def _write_nc_product(da: xr.DataArray, path, encoding: dict) -> None:
@@ -656,16 +682,32 @@ def _static_domain(
 
 
 def _prefetch_static(config: Config, tasks: List[tuple]) -> None:
-    """Ensure many (driver, variable, domain) static files, in parallel."""
-    if config.max_workers <= 1 or len(tasks) <= 1:
-        for drv, var, dom in progress.track(tasks, desc="Fetching soil/terrain"):
+    """Ensure many (driver, variable, domain) static files.
+
+    Network-bound layers (soil, DEM elevation) run in parallel. Derived terrain
+    variables (slope/aspect/TPI/TRI) are pure local compute off one shared
+    elevation cache — running them concurrently only multiplies peak memory
+    (each holds a full derivative array) with no I/O to overlap, so they run
+    serially, after the parallel batch has populated any parent elevation.
+    """
+    def _is_derived(var):
+        return bool(static_derived_from(static_canonical_name(var)))
+
+    base = [t for t in tasks if not _is_derived(t[1])]
+    derived = [t for t in tasks if _is_derived(t[1])]
+
+    if config.max_workers <= 1 or len(base) <= 1:
+        for drv, var, dom in progress.track(base, desc="Fetching soil/terrain"):
             drv.ensure_static(var, dom)
-        return
-    with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
-        futures = [
-            ex.submit(drv.ensure_static, var, dom) for drv, var, dom in tasks
-        ]
-        progress.drain_futures(futures, desc="Fetching soil/terrain")
+    elif base:
+        with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
+            futures = [
+                ex.submit(drv.ensure_static, var, dom) for drv, var, dom in base
+            ]
+            progress.drain_futures(futures, desc="Fetching soil/terrain")
+
+    for drv, var, dom in progress.track(derived, desc="Deriving terrain"):
+        drv.ensure_static(var, dom)
 
 
 def _depth_tag(depths) -> str:

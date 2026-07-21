@@ -273,7 +273,13 @@ class ModisGeeDriver(ModisDriver):
             ]
 
         times = [t for t, _ in results]
-        stack = np.stack([v for _, v in results])
+        # Preallocate and fill instead of list + np.stack: the list of composite
+        # arrays and the stacked cube would otherwise coexist (a full extra copy
+        # of a whole MODIS year, the largest transient of this fetch).
+        first = results[0][1]
+        stack = np.empty((len(results), *first.shape), dtype=first.dtype)
+        for i, (_t, v) in enumerate(results):
+            stack[i] = v
         # pixel-center coordinates, top row first (standardize sorts lat)
         lats, lons = grid_coords(bbox, res)
         da = xr.DataArray(
