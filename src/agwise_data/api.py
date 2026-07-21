@@ -1771,16 +1771,21 @@ _CM_SOIL_VARS = ["CLAY", "SAND", "SILT", "SOC", "NITROGEN", "PH", "CEC", "BDOD"]
 def _cm_inputs(
     points, planting_date, harvest_date, planting_col, harvest_col,
     lon_col, lat_col, weather, soil, weather_source, soil_source, config,
-    weather_vars=None,
+    weather_vars=None, need_elev=False,
 ):
     """Resolve the per-point weather (long) and soil (wide) inputs for a writer.
 
     Fetches them from the layer when not supplied, so a caller can either let
     ``to_dssat``/``to_apsim``/``to_wofost`` source everything or pass
     pre-extracted frames. ``weather_vars`` overrides the weather set fetched
-    (WOFOST needs RHUM + WIND on top of the DSSAT/APSIM four).
+    (WOFOST needs RHUM + WIND on top of the DSSAT/APSIM four). When
+    ``need_elev`` is set, elevation at each point is also returned (indexed
+    like ``df``) for the writers whose weather header carries it (DSSAT,
+    ORYZA); it is best-effort — a fetch failure logs a warning and yields no
+    elevation rather than blocking the file generation.
     """
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+    sourcing_statics = soil is None  # user is letting us pull from the layer
     if weather is None:
         weather = get_season(
             weather_vars or _CM_WEATHER_VARS, planting_date=planting_date,
@@ -1793,7 +1798,33 @@ def _cm_inputs(
             df, _CM_SOIL_VARS, lon_col=lon_col, lat_col=lat_col,
             source=soil_source, config=config,
         )
-    return df, lon_col, lat_col, weather, soil
+    # Elevation enriches the DSSAT/ORYZA weather header. Only fetch it when we
+    # are already sourcing point statics from the layer (soil not supplied) —
+    # a caller who injected their own soil is in offline/reuse mode and should
+    # not trigger a surprise DEM fetch. Best-effort either way.
+    elev = None
+    if need_elev and sourcing_statics:
+        try:
+            elev = extract_static_points(
+                df, ["ELEV"], lon_col=lon_col, lat_col=lat_col, config=config,
+            )["ELEV"]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Could not fetch elevation for the weather header (%s) — "
+                "writing it as missing", exc,
+            )
+    return df, lon_col, lat_col, weather, soil, elev
+
+
+def _point_elev(elev, idx):
+    """One point's elevation (float) from the ``_cm_inputs`` elevation series."""
+    if elev is None:
+        return None
+    try:
+        val = float(elev.loc[idx])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None if pd.isna(val) else val
 
 
 def _point_weather_wide(weather_long: pd.DataFrame, point_id) -> pd.DataFrame:
@@ -1847,9 +1878,10 @@ def to_dssat(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "DSSAT"
-    df, lon_col, lat_col, weather, soil = _cm_inputs(
+    df, lon_col, lat_col, weather, soil, elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
+        need_elev=True,
     )
 
     written = []
@@ -1866,6 +1898,7 @@ def to_dssat(
         wth = dssat_w.write_wth(
             wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
             path=d / f"WHTE{n:04d}.WTH", station=name,
+            elev=_point_elev(elev, idx),
         )
         sol = soil_w.write_sol(
             soil.loc[idx], lat=float(prow[lat_col]), lon=float(prow[lon_col]),
@@ -1907,7 +1940,7 @@ def to_apsim(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "APSIM"
-    df, lon_col, lat_col, weather, soil = _cm_inputs(
+    df, lon_col, lat_col, weather, soil, _elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
     )
@@ -1973,7 +2006,7 @@ def to_wofost(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "WOFOST"
-    df, lon_col, lat_col, weather, soil = _cm_inputs(
+    df, lon_col, lat_col, weather, soil, _elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
         weather_vars=_WOFOST_WEATHER_VARS,
@@ -2025,10 +2058,10 @@ def to_oryza(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "ORYZA"
-    df, lon_col, lat_col, weather, soil = _cm_inputs(
+    df, lon_col, lat_col, weather, soil, elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
-        weather_vars=_WOFOST_WEATHER_VARS,
+        weather_vars=_WOFOST_WEATHER_VARS, need_elev=True,
     )
 
     written = []
@@ -2043,7 +2076,7 @@ def to_oryza(
         d = out_dir / f"EXTE{n:04d}"
         wth = oryza_w.write_weather(
             wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
-            out_dir=d, id_name=name, stn=n,
+            out_dir=d, id_name=name, stn=n, elev=_point_elev(elev, idx) or 0.0,
         )
         sol = oryza_w.write_soil(
             soil.loc[idx], path=d / f"soil_{n}.sol", id_name=station_code(name),

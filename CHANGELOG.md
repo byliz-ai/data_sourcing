@@ -3,6 +3,23 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.22.0 — elevation in DSSAT/ORYZA weather headers + QA doc fixes
+- **DSSAT and ORYZA weather files now carry the point's real elevation.** The
+  `.WTH` `ELEV` field and the ORYZA CABO `Elevation:` line used to be `-99` / `0`
+  even though the Copernicus DEM was available; `to_dssat`/`to_oryza` now read
+  `ELEV` at each point (from the local DEM tiles on CGLabs — fast) and write it.
+  It is **best-effort and only when sourcing statics from the layer**: a caller
+  who injects their own `soil=` (offline/reuse mode) triggers no DEM fetch and
+  keeps the `-99` sentinel, and a failed fetch logs a warning rather than
+  blocking file generation. Live-verified: Kisumu points wrote 1189 m / 1152 m /
+  1659 m into both engines. (`TAV`/`AMP` are computed from the supplied weather
+  window as before — near-zero `AMP` is correct for equatorial sites.) +2 tests.
+- **Docs:** documented the CLI `--bbox west,south,east,north` (comma-separated)
+  form; clarified the two point-output shapes (`extract_points` long/tidy vs
+  `extract_growing_season`/`extract_static_points` wide/ML-ready); and added a
+  CGLabs memory-ceiling note (~32 GB container; run heavy jobs sequentially).
+  All from the new-user QA walkthrough.
+
 ## 0.21.0 — per-variable source override (mix rainfall + temperature sources)
 - **`source=` / `weather_source=` now also accept a `{variable: source}`
   mapping**, not just a single source id. A variable not in the mapping keeps

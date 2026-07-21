@@ -372,6 +372,30 @@ def test_to_dssat_skips_point_without_weather(tmp_path):
     assert len(res) == 1 and res[0]["point"] == 0
 
 
+def test_point_elev_helper():
+    """_point_elev pulls a per-point elevation, tolerating None/NaN/missing."""
+    from agwise_data.api import _point_elev
+
+    assert _point_elev(None, 0) is None                 # no elevation fetched
+    s = pd.Series([1189.0, np.nan], index=[0, 1])
+    assert _point_elev(s, 0) == 1189.0                  # a real value
+    assert _point_elev(s, 1) is None                    # NaN -> None (sentinel)
+    assert _point_elev(s, 99) is None                   # missing index -> None
+
+
+def test_to_dssat_with_injected_soil_writes_elev_sentinel(tmp_path):
+    """Injected soil = offline/reuse mode: no DEM fetch, ELEV stays -99."""
+    from agwise_data.api import to_dssat
+
+    pts = pd.DataFrame({"lon": [30.06], "lat": [-1.95], "site": ["Kigali"]})
+    res = to_dssat(
+        pts, out_dir=tmp_path / "D", station_col="site",
+        weather=_season_weather_long(pts), soil=_soil_frame(pts),
+    )
+    general = res[0]["wth"].read_text().splitlines()[4]
+    assert "   -99" in general  # no elevation fetched when soil is supplied
+
+
 # --------------------------------------------------------------------------
 # WOFOST writer (weather table + soil parameters)
 # --------------------------------------------------------------------------

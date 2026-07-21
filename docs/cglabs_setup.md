@@ -99,6 +99,14 @@ The biggest speed-up is **not downloading at all**: `AGWISE_LOCAL_ROOT`
 (§2) reads already-staged data from `Landing` — a region-year then loads in
 seconds instead of minutes on the CDS queue.
 
+> **Memory ceiling.** A single call is light (a country-scale climate or DEM
+> request peaks around 1–3 GB), but the CGLabs container is capped near
+> **32 GB** — and `free` reports the host's much larger RAM, not your limit.
+> Two heavy gridded/Earth-Engine jobs running at once (e.g. a MODIS pull and a
+> DEM derive) can add up and get one of them OOM-killed. If you script bulk
+> runs, prefer running them **sequentially**, and lower `AGWISE_DATA_WORKERS`
+> (rather than raising it) when a job clips large regions.
+
 With the default `auto` scope, a country-scale CHIRPS request reads only
 that country's window from UCSB's daily COGs (a Rwanda year stores ~1 MB);
 Africa-scale requests download the yearly global NetCDF (~1.1 GB) once

@@ -26,7 +26,7 @@ Pass the area the same way to every gridded call (`get_climate`, `get_static`,
 | --- | --- | --- |
 | A **country** | `country=` (name or ISO3) | `country="Rwanda"` (or `"RWA"`) |
 | An **administrative unit** (region/district) | `country=` + `admin_level=` + `admin_name=` — clips to that admin polygon | `country="Kenya", admin_level=1, admin_name="Nakuru"` |
-| **Coordinates** (a rectangle) | `bbox=[west, south, east, north]` | `bbox=[29.9, -2.1, 30.4, -1.7]` |
+| **Coordinates** (a rectangle) | `bbox=[west, south, east, north]` (CLI: `--bbox west,south,east,north`, comma-separated) | `bbox=[29.9, -2.1, 30.4, -1.7]` · `--bbox 29.9,-2.1,30.4,-1.7` |
 | **Your own zone** (upload a polygon) | `geometry=` — a shapefile/GeoJSON path, a GeoDataFrame, a shapely geometry, or a GeoJSON dict | `geometry="my_zone.geojson"` |
 | **Points** (specific locations) | `points=` a CSV/DataFrame with lon/lat columns | `points="trials.csv"` |
 
@@ -157,6 +157,15 @@ results are equivalent.
   (gridded wrappers return a `terra::SpatRaster`; point/writer wrappers return a
   `data.frame`). See [cglabs_setup §4](cglabs_setup.md#4-use-from-r-no-reticulate-needed).
 - **CLI** — `agwise-data <subcommand>` (prints a JSON line describing the outputs)
+
+> **Two shapes of point output.** `extract_points` returns a **long/tidy**
+> table — one row per point × date × variable, columns `point, lon, lat, time,
+> variable, value` — for time-series work. `extract_growing_season` returns a
+> **wide, ML-ready** table — one row per point with per-month columns
+> (`Precipitation_m1…`, and `totalRF`/`nrRainyDays` for rainfall; pass
+> `--agwise-names` for `PRCP_m1…` style). `extract_static_points` is also wide
+> (one row per point, a column per property × depth). Pick long for plotting a
+> series, wide for a feature matrix.
 
 ### 5.1 The same tasks, three ways
 
