@@ -34,6 +34,26 @@ def _parse_years(text: str):
     return [int(text)]
 
 
+def _parse_source(text: str):
+    """A source override: a plain source id, or a per-variable mapping.
+
+    ``"agera5"`` → forced for every variable. ``"PRCP=chirps_v3"`` or
+    ``"PRCP=chirps_v3,TMAX=agera5"`` → a ``{variable: source}`` mapping, so a
+    call can mix sources (e.g. local rainfall + AgERA5 temperature) instead of
+    forcing one source for variables it does not provide.
+    """
+    text = text.strip()
+    if "=" not in text:
+        return text
+    mapping = {}
+    for pair in text.split(","):
+        if not pair.strip():
+            continue
+        var, _, src = pair.partition("=")
+        mapping[var.strip()] = src.strip()
+    return mapping
+
+
 def _emit(payload: dict) -> None:
     print(json.dumps(payload, default=str))
 
@@ -654,7 +674,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_region_args(p_get)
     p_get.add_argument("--freq", choices=["daily", "monthly"], default="monthly")
     p_get.add_argument("--format", default="nc", help="nc, tif or nc,tif")
-    p_get.add_argument("--source", help="Override the default source for the variables")
+    p_get.add_argument("--source", type=_parse_source,
+                       help="Override source: an id (all vars) or per-variable "
+                            "'PRCP=chirps_v3,TMAX=agera5'")
     p_get.add_argument("--domain", help="Cache domain (default: auto)")
     p_get.add_argument("--out-dir", dest="out_dir")
     p_get.add_argument("--overwrite", action="store_true")
@@ -676,7 +698,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use PRCP_m1 style columns instead of legacy Precipitation_m1",
     )
-    p_ex.add_argument("--source")
+    p_ex.add_argument("--source", type=_parse_source,
+                      help="Source id (all vars) or per-variable "
+                           "'PRCP=chirps_v3,TMAX=agera5'")
     p_ex.set_defaults(func=cmd_extract)
 
     p_se = sub.add_parser(
@@ -811,7 +835,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_region_args(p_gs)
     p_gs.add_argument("--depths", help="e.g. 0-5cm,5-15cm (soil layers only)")
     p_gs.add_argument("--format", default="nc", help="nc, tif or nc,tif")
-    p_gs.add_argument("--source", help="Override the default source for the variables")
+    p_gs.add_argument("--source", type=_parse_source,
+                      help="Override source: an id (all vars) or per-variable "
+                           "'PRCP=chirps_v3,TMAX=agera5'")
     p_gs.add_argument("--domain", help="Cache domain (default: auto)")
     p_gs.add_argument("--out-dir", dest="out_dir")
     p_gs.add_argument("--overwrite", action="store_true")
@@ -826,7 +852,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_es.add_argument("--depths", help="e.g. 0-5cm,5-15cm (soil layers only)")
     p_es.add_argument("--lon-col", dest="lon_col")
     p_es.add_argument("--lat-col", dest="lat_col")
-    p_es.add_argument("--source")
+    p_es.add_argument("--source", type=_parse_source,
+                      help="Soil source id (all vars) or per-variable "
+                           "'CLAY=isda,SOC=soilgrids'")
     p_es.add_argument(
         "--fill-nearest-m",
         dest="fill_nearest_m",
@@ -863,8 +891,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--id-col", dest="id_col", help="Point identifier column")
         p.add_argument("--station-col", dest="station_col",
                        help="Station/place-name column (used for the 4-char code)")
-        p.add_argument("--weather-source", dest="weather_source")
-        p.add_argument("--soil-source", dest="soil_source")
+        p.add_argument("--weather-source", dest="weather_source", type=_parse_source,
+                       help="Source id (all weather vars) or per-variable "
+                            "'PRCP=chirps_v3' (rest keep their defaults)")
+        p.add_argument("--soil-source", dest="soil_source", type=_parse_source)
 
     p_dssat = sub.add_parser(
         "to-dssat",
@@ -934,8 +964,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_f2d.add_argument("--station-col", dest="station_col")
     p_f2d.add_argument("--country-name", dest="country_name",
                        help="Country label for the soil profile header")
-    p_f2d.add_argument("--soil-source", dest="soil_source")
-    p_f2d.add_argument("--weather-source", dest="weather_source")
+    p_f2d.add_argument("--soil-source", dest="soil_source", type=_parse_source)
+    p_f2d.add_argument("--weather-source", dest="weather_source", type=_parse_source)
     p_f2d.set_defaults(func=cmd_forecast_to_dssat)
 
     p_grid = sub.add_parser(

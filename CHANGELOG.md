@@ -3,6 +3,20 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.21.0 — per-variable source override (mix rainfall + temperature sources)
+- **`source=` / `weather_source=` now also accept a `{variable: source}`
+  mapping**, not just a single source id. A variable not in the mapping keeps
+  its catalog default. This is what lets one crop-model call take rainfall from
+  the fast local `chirps_v3` while temperature, radiation, humidity and wind
+  come from AgERA5 — previously impossible, because a single forced source was
+  applied to *every* weather variable and `to_dssat(..., weather_source=
+  "chirps_v3")` failed with `Source 'chirps_v3' does not provide AGRO.TMAX`
+  (found in the new-user QA walkthrough). The same mapping works for soil
+  (`source={"CLAY": "isda"}`) and on the CLI (`--weather-source PRCP=chirps_v3`,
+  `--source CLAY=isda,SOC=soilgrids`). A bare source id still forces all
+  variables as before, and forcing a variable onto a source that lacks it still
+  raises the same clear error. +3 tests.
+
 ## 0.20.1 — CHIRPS→Earth Engine is fast again (batched), and a docs fix
 - **The CHIRPS Earth Engine fallback no longer takes an hour.** `_fetch_year_gee`
   used to pull one daily image per `computePixels` call — 365 sequential

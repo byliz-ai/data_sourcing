@@ -9,6 +9,7 @@ submission — see :mod:`agwise_data.stac` for the STAC serialization.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -63,10 +64,41 @@ def register_entry(entry: dict) -> None:
     _runtime_entries[entry["id"]] = entry
 
 
-def source_for(variable: str, source: Optional[str] = None) -> str:
-    """Resolve which source serves ``variable`` (honouring an override)."""
+def _short(name: str) -> str:
+    """The bare variable name, without namespace prefix, upper-cased.
+
+    ``"AGRO.PRCP"`` / ``"agro.prcp"`` / ``"PRCP"`` all -> ``"PRCP"`` so a
+    user's mapping key matches the canonical regardless of how it is written.
+    """
+    return str(name).split(".")[-1].strip().upper()
+
+
+def _source_override(source, canonical: str) -> Optional[str]:
+    """The forced source for ``canonical``, honouring a per-variable mapping.
+
+    ``source`` may be a plain source id (forced for every variable) or a
+    ``{variable: source_id}`` mapping — the latter lets one call mix sources,
+    e.g. rainfall from a local ``chirps_v3`` and temperature from ``agera5``.
+    A variable absent from the mapping keeps its catalog default (returns
+    None here, so the caller falls back to the default source).
+    """
+    if isinstance(source, Mapping):
+        target = _short(canonical)
+        for key, val in source.items():
+            if _short(key) == target:
+                return val
+        return None
+    return source
+
+
+def source_for(variable: str, source=None) -> str:
+    """Resolve which source serves ``variable`` (honouring an override).
+
+    ``source`` is a source id forced for the variable, a ``{variable: source}``
+    mapping, or None (catalog default).
+    """
     canonical = canonical_name(variable)
-    source_id = source or DEFAULT_SOURCE[canonical]
+    source_id = _source_override(source, canonical) or DEFAULT_SOURCE[canonical]
     entry = get_entry(source_id)
     if canonical not in entry.get("variables", {}):
         raise ValueError(
@@ -86,7 +118,7 @@ def static_source_for(variable: str, source: Optional[str] = None) -> str:
     from .harmonize import static_derived_from
 
     canonical = static_canonical_name(variable)
-    source_id = source or DEFAULT_STATIC_SOURCE[canonical]
+    source_id = _source_override(source, canonical) or DEFAULT_STATIC_SOURCE[canonical]
     entry = get_entry(source_id)
     lookup = static_derived_from(canonical) or canonical
     if lookup not in entry.get("variables", {}):

@@ -91,6 +91,26 @@ folder (`AGWISE_LOCAL_ROOT`).
 Choose the **soil source** on any soil call: default SoilGrids (6 depths,
 global) or `source="isda"` (iSDA Africa, 2 depths, adds extractable P).
 
+**Mixing sources in one call.** `source=` (and `weather_source=` on the
+crop-model writers, `--source`/`--weather-source` on the CLI) accepts either a
+single source id — forced for every variable — *or* a per-variable mapping, so
+one call can draw different variables from different sources. This is the way to
+pull rainfall from the fast local CHIRPS v3 while temperature/radiation come
+from AgERA5:
+
+```python
+# Python: a dict maps variable -> source; unlisted vars keep their default
+to_dssat("trials.csv", planting_date="2023-03-01", harvest_date="2023-07-31",
+         out_dir="DSSAT", station_col="site",
+         weather_source={"PRCP": "chirps_v3"})   # temp/rad still AgERA5
+```
+```bash
+# CLI: VAR=source pairs (comma-separated); a bare id still forces all vars
+agwise-data to-dssat --points trials.csv --planting-date 2023-03-01 \
+    --harvest-date 2023-07-31 --station-col site \
+    --weather-source PRCP=chirps_v3 --out-dir DSSAT
+```
+
 ### 4.3 Decision 3 — select the time period
 
 | You want… | Use | Example |
