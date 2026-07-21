@@ -61,3 +61,52 @@ def test_gee_failure_falls_through_to_netcdf(config, monkeypatch):
 
     da, meta = drv._fetch_year("AGRO.PRCP", 2023, config.domain)
     assert da == "NC_DA" and meta["access"] == "netcdf"
+
+
+# ---------------------------------------------------------------------------
+# CHIRPS v3: a local-only alternative source (source="chirps_v3").
+
+
+def _write_chirps_v3_year(landing, year=2021):
+    import numpy as np
+    import pandas as pd
+    import xarray as xr
+
+    p = landing / "Rainfall" / "chirps_v3"
+    p.mkdir(parents=True)
+    times = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq="D")
+    lat = np.arange(-2.0, 0.001, 0.5)     # ascending, like the real files
+    lon = np.arange(29.0, 31.001, 0.5)
+    data = np.full((len(times), len(lat), len(lon)), 3.5, dtype="float32")
+    ds = xr.Dataset(
+        {"precip": (("time", "latitude", "longitude"), data)},
+        coords={"time": times, "latitude": lat, "longitude": lon},
+    )
+    ds.to_netcdf(p / f"{year}.nc")
+
+
+def test_chirps_v3_is_selectable_and_not_default():
+    assert catalog.source_for("PRCP", "chirps_v3") == "chirps_v3"
+    assert catalog.source_for("PRCP") == "chirps"        # default unchanged
+
+
+def test_chirps_v3_reads_the_local_year(tmp_path, config):
+    import xarray as xr
+
+    landing = tmp_path / "landing"
+    _write_chirps_v3_year(landing, 2021)
+    config.local_root = landing
+    config.register_domain("rw", [28.0, -3.0, 32.0, 1.0])
+    drv = drivers.get_driver(catalog.get_entry("chirps_v3"), config)
+
+    dest = drv.ensure_daily_year("AGRO.PRCP", 2021, "rw")
+    with xr.open_dataarray(dest) as da:
+        assert da.sizes["time"] == 365
+        assert abs(float(da.mean()) - 3.5) < 1e-6        # mm/day, no conversion
+
+
+def test_chirps_v3_without_local_raises_clear_error(config):
+    assert config.local_root is None
+    drv = drivers.get_driver(catalog.get_entry("chirps_v3"), config)
+    with pytest.raises(RuntimeError, match="AGWISE_LOCAL_ROOT"):
+        drv.ensure_daily_year("AGRO.PRCP", 1999, "africa")

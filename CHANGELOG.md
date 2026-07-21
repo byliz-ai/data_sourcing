@@ -3,6 +3,20 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.20.0 — CHIRPS v3.0 as a selectable rainfall source (`source="chirps_v3"`)
+- **New rainfall source:** the complete CHIRPS v3.0 daily series staged on
+  CGLabs (`Landing/Rainfall/chirps_v3`, 1981-2023, 0.05 degree) is now a
+  selectable source on every climate call: `source="chirps_v3"` in
+  `get_climate`/`extract_points`/`extract_growing_season`/`rainy_days`/
+  `get_season` (and `weather_source=` in the crop-model writers). CHIRPS
+  v2.0 stays the default. Local-only by design (no network fetch), which
+  also sidesteps the `data.chc.ucsb.edu` 403 blocking that limits the v2.0
+  global-NetCDF path for large domains. New `catalog/chirps_v3.yaml` +
+  `drivers/chirps_v3.py` (iSDA pattern: clear error without a local root).
+- Live-verified: 10 Kenya points, 2023 — cold windowed read of the 24 GB
+  yearly file in ~2 s; monthly totals correlate 0.93 with v2.0 and show the
+  correct bimodal Kenya pattern. +3 tests (`test_chirps.py`).
+
 ## 0.19.0 — DEM served from the staged CGLabs tiles + bad local files fall back to downloading
 - **Elevation/terrain now reuses the Copernicus GLO-30 tiles staged on CGLabs**
   (`/home/jovyan/common_data/cop30/raw`, full Africa, 3304 tiles — the *same*

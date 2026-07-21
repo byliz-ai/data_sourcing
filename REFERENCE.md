@@ -90,7 +90,7 @@ Fetch a harmonized daily/monthly **climate cube** for a region.
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
 | `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
 | `freq` | str | No | `'daily'` | Time step of the returned climate values. Values: `"daily"`, `"monthly"`. |
-| `source` | str | No | `None` | Force one source for every variable. Default: `PRCP`→CHIRPS, the rest→AgERA5. Values: `"chirps"`, `"agera5"`. |
+| `source` | str | No | `None` | Force one source for every variable. Default: `PRCP`→CHIRPS, the rest→AgERA5. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `domain` | str | No | `None` | Cache-domain override (advanced); leave unset to let the tool choose. |
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
@@ -331,7 +331,7 @@ Long-format climate **time series at point locations** between two dates.
 | `start` | str | Yes | — | First date to extract. Values: ISO `YYYY-MM-DD`. |
 | `end` | str | Yes | — | Last date to extract. Values: ISO `YYYY-MM-DD`. |
 | `freq` | str | No | `'daily'` | Time step of the returned climate values. Values: `"daily"`, `"monthly"`. |
-| `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"agera5"`. |
+| `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
@@ -355,7 +355,7 @@ Per-trial **growing-season climate** in the fertilizer-ML wide format.
 | `planting_col` | str | Yes | — | Column in `points` holding each row's planting date (per-trial seasons). |
 | `harvest_col` | str | Yes | — | Column in `points` holding each row's harvest date. Pass **both** `*_col` or neither. |
 | `legacy_names` | bool | No | `True` | Use pre-2026 column names (`Precipitation_m1`, …) so existing ML code works; `False` uses short names (`PRCP_m1`, …). Values: `True`, `False`. |
-| `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"agera5"`. |
+| `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
@@ -430,7 +430,7 @@ Write **DSSAT** weather (`.WTH`) + soil (`.SOL`) files for every point.
 | `country` | str | No | `'-99'` | DSSAT country **code** written into the files (not a region selector). |
 | `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
-| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
 | `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
@@ -461,7 +461,7 @@ Write **APSIM** weather (`.met`) + soil files for every point.
 | `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
 | `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
-| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -491,7 +491,7 @@ Write **WOFOST** weather + soil files for every point.
 | `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
 | `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
-| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -521,7 +521,7 @@ Write **ORYZA** CABO weather + PADDY soil files for every point.
 | `station_col` | str | No | `None` | Column in `points` for the weather-station id/name written into the files. |
 | `weather` | DataFrame | No | `None` | Reuse a weather `DataFrame` you already extracted instead of re-fetching. |
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
-| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -638,7 +638,7 @@ bias_correct(["PRCP", "TMAX"], init_month=2, forecast_year=2024,
 | `corrected` | dict | No | `None` | Advanced/testing: a precomputed `bias_correct` result, to skip the QDM step. |
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
-| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"agera5"`. |
+| `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python

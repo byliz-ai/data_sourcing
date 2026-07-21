@@ -33,6 +33,7 @@ def get_driver(entry: dict, config: Config):
 from . import (  # noqa: E402,F401
     agera5,
     chirps,
+    chirps_v3,
     dem,
     isda,
     modis,
