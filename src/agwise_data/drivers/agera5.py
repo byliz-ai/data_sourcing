@@ -88,8 +88,12 @@ class Agera5Driver(Driver):
         raw_dir.mkdir(parents=True, exist_ok=True)
         zip_path = raw_dir / f"{self.source_id}_{variable.replace('.', '_')}_{year}_{domain}.zip"
 
-        client = cdsapi.Client()
-        client.retrieve(access["dataset"], request, str(zip_path))
+        from .. import cds
+
+        cds.retrieve(
+            access["dataset"], request, zip_path,
+            attempts=self.config.cds_retries,
+        )
 
         with tempfile.TemporaryDirectory(dir=raw_dir) as tmpdir:
             with zipfile.ZipFile(zip_path) as zf:

@@ -94,6 +94,12 @@ export AGWISE_DATA_WORKERS=6
 # their own window, which is much faster for one-off runs):
 export AGWISE_DATA_SCOPE=domain     # default: auto
 
+# how many times a CDS download (AgERA5/SEAS5) retries on a transient
+# network/queue failure before giving up (default 3). A cold seasonal
+# forecast issues many requests, so a dropped download retries instead of
+# aborting the whole run:
+export AGWISE_CDS_RETRIES=5
+
 # rainfall source when a call pins none. On CGLabs this defaults to the
 # local CHIRPS v3.0 (staged in Landing) for the years it covers; set it
 # explicitly to pin one version team-wide:

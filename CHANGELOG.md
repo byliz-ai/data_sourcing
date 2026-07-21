@@ -3,6 +3,17 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.25.0 — resilient CDS downloads (retry + backoff)
+- **A dropped CDS download no longer aborts the whole run.** Both the AgERA5 and
+  SEAS5 drivers now go through a shared `cds.retrieve` helper that retries a
+  failed `cdsapi` download with exponential backoff (default 3 attempts),
+  deleting the partial file and rebuilding the client between tries. A cold
+  seasonal-forecast run issues many CDS requests back to back, so a single
+  network hiccup mid-download used to lose the entire run; it now retries just
+  that request. Tunable with `AGWISE_CDS_RETRIES` (or `config.cds_retries`).
+  New `agwise_data.cds` module. +4 tests; live-verified that a real AgERA5
+  download still flows through the wrapper (279 s cold, correct cube).
+
 ## 0.24.4 — product writes are atomic (a failed write can't poison the cache)
 - **Every product NetCDF/GeoTIFF is now written to a temp file and atomically
   renamed** (`get_climate`, `get_static`, `get_seasonal`, `get_modis`,

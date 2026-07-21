@@ -194,8 +194,12 @@ class Seas5Driver(SeasonalDriver):
             f"_{year}_{domain}.nc"
         )
 
-        client = cdsapi.Client()
-        client.retrieve(access["dataset"], request, str(raw_path))
+        from .. import cds
+
+        cds.retrieve(
+            access["dataset"], request, raw_path,
+            attempts=self.config.cds_retries,
+        )
 
         with cache.NC_LOCK:
             with xr.open_dataset(raw_path) as ds:

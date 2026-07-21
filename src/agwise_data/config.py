@@ -47,6 +47,7 @@ ENV_SCOPE = "AGWISE_DATA_SCOPE"
 ENV_GEE_PROJECT = "AGWISE_GEE_PROJECT"
 ENV_LOCAL_ROOT = "AGWISE_LOCAL_ROOT"
 ENV_RAINFALL_SOURCE = "AGWISE_RAINFALL_SOURCE"
+ENV_CDS_RETRIES = "AGWISE_CDS_RETRIES"
 
 # ---------------------------------------------------------------------------
 # CGLabs shared data tree — the default home for everyone on the server, so a
@@ -129,6 +130,7 @@ class Config:
         fetch_scope: str = "auto",
         download_parts: int = 4,
         cog_workers: int = 3,
+        cds_retries: int = 3,
         region_max_area_deg2: float = 400.0,
         gee_project: Optional[str] = None,
         local_root: Optional[os.PathLike] = None,
@@ -155,6 +157,7 @@ class Config:
         # on purpose: data providers rate-limit aggressive clients (UCSB
         # answers HTTP 403 and can temporarily ban the IP).
         self.cog_workers = int(cog_workers)
+        self.cds_retries = int(cds_retries)
         # Region-scoped fetching kicks in below this bbox area (deg^2);
         # 400 = a 20x20 degree box, comfortably any single country.
         self.region_max_area_deg2 = float(region_max_area_deg2)
@@ -218,6 +221,9 @@ class Config:
             fetch_scope=scope,
             download_parts=int(file_cfg.get("download_parts", 4)),
             cog_workers=int(file_cfg.get("cog_workers", 8)),
+            cds_retries=int(
+                os.environ.get(ENV_CDS_RETRIES) or file_cfg.get("cds_retries", 3)
+            ),
             region_max_area_deg2=float(file_cfg.get("region_max_area_deg2", 400.0)),
             gee_project=os.environ.get(ENV_GEE_PROJECT) or file_cfg.get("gee_project"),
             local_root=(
