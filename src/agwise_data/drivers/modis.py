@@ -183,10 +183,23 @@ class ModisDriver:
     def open_years(
         self, variable: str, years: List[int], domain: str
     ) -> xr.DataArray:
-        """Open the harmonized composite series for several years (lazy)."""
-        paths = [self.ensure_composite_year(variable, y, domain) for y in years]
+        """Open the harmonized composite series for several years (lazy).
+
+        Concatenate along ``time`` and take the grid from the first year (see
+        :meth:`Driver.open_years`): years fetched from different paths (a local
+        composite vs an Earth Engine pull) can have ~1e-14 grid differences that
+        ``combine="by_coords"`` would wrongly concatenate along ``lon``.
+        """
+        paths = [self.ensure_composite_year(variable, y, domain) for y in sorted(years)]
         ds = xr.open_mfdataset(
-            paths, combine="by_coords", parallel=False, chunks=dict(COMPOSITE_CHUNKS)
+            paths,
+            combine="nested",
+            concat_dim="time",
+            join="override",
+            compat="override",
+            coords="minimal",
+            parallel=False,
+            chunks=dict(COMPOSITE_CHUNKS),
         )
         return ds[rs_short_name(variable)]
 

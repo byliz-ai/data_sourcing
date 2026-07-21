@@ -3,6 +3,21 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.24.1 — fix cross-year fetch when years come from different sources
+- **A multi-year request no longer fails when its years were fetched by
+  different paths.** `open_years` combined the per-year cached files with
+  `xr.open_mfdataset(combine="by_coords")`; when one year was read locally and
+  another downloaded (e.g. the December 2022 slice from the local AgERA5 file
+  and the 2023 slice from CDS because the local 2023 file was the unusable
+  partial one), their lat/lon coordinates differed by ~1e-14 of floating-point
+  noise, so `by_coords` treated them as distinct points and concatenated along
+  `lon` — raising `Resulting object does not have monotonic global indexes
+  along dimension lon`. It now concatenates strictly along `time` and takes the
+  grid from the first year (`combine="nested", concat_dim="time",
+  join="override"`), which is correct because all years of a (source, domain)
+  share the same grid by construction. Same fix on the MODIS composite reader.
+  Found in a new-user QA walkthrough on a Dec 2022 → Jul 2023 season. +1 test.
+
 ## 0.24.0 — progress bars for long fetches and per-point/per-tile loops
 - **Long-running calls now show a progress bar** so a slow job is
   distinguishable from a hung one — the last gap from the new-user QA

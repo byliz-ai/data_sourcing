@@ -124,10 +124,28 @@ class Driver:
     def open_years(
         self, variable: str, years: List[int], domain: str
     ) -> xr.DataArray:
-        """Open the harmonized daily series for several years (lazy)."""
-        paths = [self.ensure_daily_year(variable, y, domain) for y in years]
+        """Open the harmonized daily series for several years (lazy).
+
+        Concatenate strictly along ``time`` and take the lat/lon grid from the
+        first year (``join="override"``). All years of a (source, domain) are
+        clipped to the same bbox at the same resolution, so their grids are the
+        same up to floating-point noise — but when years come from *different*
+        fetch paths (e.g. one year read locally, another downloaded because its
+        local file was unusable) the grids can differ by ~1e-14, and the old
+        ``combine="by_coords"`` treated those as distinct points and
+        concatenated along ``lon`` instead, raising "not monotonic". Ordering by
+        year keeps the concatenated time axis ascending.
+        """
+        paths = [self.ensure_daily_year(variable, y, domain) for y in sorted(years)]
         ds = xr.open_mfdataset(
-            paths, combine="by_coords", parallel=False, chunks=dict(STORAGE_CHUNKS)
+            paths,
+            combine="nested",
+            concat_dim="time",
+            join="override",
+            compat="override",
+            coords="minimal",
+            parallel=False,
+            chunks=dict(STORAGE_CHUNKS),
         )
         return ds[short_name(variable)]
 

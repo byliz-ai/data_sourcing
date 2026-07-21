@@ -138,3 +138,30 @@ def test_nc_encoding_chunks_capped_to_dims():
     enc = nc_encoding(da)
     assert enc["chunksizes"] == (10, 5, 7)
     assert enc["complevel"] == 1 and enc["zlib"] is True
+
+
+def test_open_years_concats_time_not_lon_on_grid_epsilon(config):
+    """Two years whose grids differ by float noise (as when one year is read
+    locally and another downloaded) must concatenate along time, not lon."""
+    import os
+
+    from agwise_data import catalog, drivers
+
+    drv = drivers.get_driver(catalog.get_entry("fake"), config)
+    p1 = drv.ensure_daily_year("AGRO.PRCP", 2020, "africa")
+    p2 = drv.ensure_daily_year("AGRO.PRCP", 2021, "africa")
+
+    # Nudge 2021's lon by ~1e-14, mimicking a different fetch path's rounding.
+    with xr.open_dataset(p2) as ds:
+        ds = ds.load()
+    lon0 = int(ds.sizes["lon"])
+    ds = ds.assign_coords(lon=ds["lon"].values + 1e-14)
+    tmp = p2.with_suffix(".perturbed.nc")
+    ds.to_netcdf(tmp)
+    os.replace(tmp, p2)
+
+    da = drv.open_years("AGRO.PRCP", [2020, 2021], "africa").load()
+    assert da.sizes["lon"] == lon0                      # not doubled
+    assert da.sizes["time"] == 366 + 365                # 2020 leap + 2021
+    tt = da["time"].values.astype("datetime64[ns]").astype("int64")
+    assert bool((np.diff(tt) > 0).all())                # time strictly ascending
