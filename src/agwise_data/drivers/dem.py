@@ -6,6 +6,12 @@ only the needed window from each (verified end-to-end on CGLabs
 2026-07-03: sub-second windowed reads, no full-tile downloads). Ocean
 tiles simply do not exist — a missing tile becomes NaN, not an error.
 
+When the catalog entry carries a ``local`` access block (and local reuse is
+on), each tile is resolved against the staged copy first — CGLabs keeps the
+full-Africa GLO-30 tile set on disk — and only tiles not staged (or
+unreadable) fall through to the AWS URL. Same product, same grid, no
+network for staged regions.
+
 Slope/aspect/TPI/TRI are *derived* variables: the StaticDriver base
 computes them from the cached elevation (see ``terrain.py``), so only
 elevation is ever fetched.
@@ -15,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import math
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
@@ -47,6 +54,25 @@ def _tile_url(pattern: str, lat_sw: int, lon_sw: int) -> str:
 
 @register("cop_dem30")
 class CopDem30Driver(StaticDriver):
+    def _local_tiles(self):
+        """(dir, filename_pattern) of the staged tile set, or None.
+
+        Local reuse must be on (``local_root`` set — the same switch every
+        other local source uses) and the staged directory must exist; the
+        tile set itself lives outside the Landing tree, at the absolute
+        ``tile_root`` the catalog block names.
+        """
+        if not getattr(self.config, "local_root", None):
+            return None
+        block = next(
+            (b for b in self.entry.get("access", []) if b.get("type") == "local"),
+            None,
+        )
+        if not block:
+            return None
+        root = Path(block["tile_root"])
+        return (root, block["tile_pattern"]) if root.is_dir() else None
+
     def _fetch_static(self, variable: str, domain: str):
         import rasterio
         from rasterio.errors import RasterioIOError
@@ -56,6 +82,7 @@ class CopDem30Driver(StaticDriver):
         w, s, e, n = bbox
         access = primary_access(self.entry, "https-cog")
         pattern = access["url_pattern"]
+        local = self._local_tiles()
 
         res = 1.0 / 3600.0  # GLO-30 native spacing below 50 deg latitude
         est = ((e - w) / res) * ((n - s) / res)
@@ -67,21 +94,40 @@ class CopDem30Driver(StaticDriver):
                 "requests are the intended pattern)"
             )
 
-        tiles = [
-            _tile_url(pattern, lat, lon)
+        coords = [
+            (lat, lon)
             for lat in range(math.floor(s), math.ceil(n))
             for lon in range(math.floor(w), math.ceil(e))
         ]
 
         datasets = []
         missing = []
+        n_local = 0
         try:
             with rasterio.Env(**_GDAL_ENV):
-                for url in tiles:
-                    try:
-                        datasets.append(rasterio.open("/vsicurl/" + url))
-                    except RasterioIOError:
-                        missing.append(url.rsplit("/", 1)[-1])  # ocean tile
+                for lat, lon in coords:
+                    src = None
+                    if local:
+                        path = local[0] / _tile_url(local[1], lat, lon)
+                        if path.is_file():
+                            try:
+                                src = rasterio.open(path)
+                                n_local += 1
+                            except RasterioIOError:
+                                # corrupt staged tile: fall through to AWS
+                                logger.warning(
+                                    "Staged DEM tile %s is unreadable — "
+                                    "fetching it from AWS instead", path.name,
+                                )
+                                src = None
+                    if src is None:
+                        url = _tile_url(pattern, lat, lon)
+                        try:
+                            src = rasterio.open("/vsicurl/" + url)
+                        except RasterioIOError:
+                            missing.append(url.rsplit("/", 1)[-1])  # ocean tile
+                            continue
+                    datasets.append(src)
                 if not datasets:
                     raise RuntimeError(
                         f"No Copernicus DEM tiles exist for bbox {bbox}"
@@ -104,9 +150,10 @@ class CopDem30Driver(StaticDriver):
         da = apply_conversion(da, spec.get("conversion"))
 
         meta = {
-            "access": "cog",
+            "access": "local+cog" if n_local else "cog",
             "source_url_pattern": pattern,
-            "n_tiles": len(tiles),
+            "n_tiles": len(coords),
+            "n_local_tiles": n_local,
             "n_missing_tiles": len(missing),
         }
         if missing:

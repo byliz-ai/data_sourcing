@@ -3,6 +3,34 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.19.0 — DEM served from the staged CGLabs tiles + bad local files fall back to downloading
+- **Elevation/terrain now reuses the Copernicus GLO-30 tiles staged on CGLabs**
+  (`/home/jovyan/common_data/cop30/raw`, full Africa, 3304 tiles — the *same*
+  product the AWS path downloads, so no resolution trade-off). The DEM driver
+  resolves each 1-degree tile against the staged copy first and only falls
+  through to the AWS URL for tiles that are not staged (or unreadable), so a
+  Kenya-sized request that used to hit OpenTopography/AWS per tile now reads
+  local COGs in seconds. New `local` access block in `catalog/dem.yaml`
+  (`tile_root`/`tile_pattern`); provenance gains `n_local_tiles`. Same
+  `AGWISE_LOCAL_ROOT`/CGLabs-default switch as every other local source.
+- **A staged local file that is unreadable, malformed, or truncated no longer
+  fails the whole call.** The daily, static (soil), and MODIS-composite drivers
+  now catch any local-read error — and, for daily data, a past year with
+  missing days — log a warning naming the file and the reason, and download
+  from the network source instead. Found via the 2023 AgERA5 Landing files,
+  which were stored day-grouped (one netCDF group per day) and crashed every
+  TMAX/TMIN/SRAD/RHUM/WIND request with `expected one data variable, found []`.
+  (Those files have also been reorganized to the flat yearly layout on CGLabs,
+  so they now serve locally like every other year; `TemperatureMean/AgEra/
+  2023.nc` remains a partial 114-day file that correctly falls back to CDS.)
+- **Terrain derivatives use half the memory:** slope/aspect/TPI/TRI now compute
+  in float32 (differences of neighbouring 30 m cells are far above float32
+  resolution). A 3°x3° cache domain derive dropped from ~4.4 GB to ~2.5 GB
+  peak — `get_dem()` runs four derivatives in parallel, which could OOM a
+  32 GB container before.
+- +4 tests (`test_local.py`: driver-level fallbacks for daily/static/MODIS,
+  staged-DEM tile reuse).
+
 ## 0.18.0 — CGLabs data folders are the built-in defaults (zero-config reuse)
 - **A new user on CGLabs now reuses the already-downloaded data with no setup.**
   `Config.load()` defaults the download cache to the shared

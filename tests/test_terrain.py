@@ -33,7 +33,7 @@ def test_slope_of_north_tilt_matches_analytic():
     dz_dlat = 1113.2  # m per degree → gradient of 0.01 m/m
     expected = np.degrees(np.arctan(dz_dlat / _M_PER_DEG))
     out = interior(terrain.slope(plane(dz_dlat=dz_dlat)))
-    assert out == pytest.approx(expected, rel=1e-6)
+    assert out == pytest.approx(expected, rel=1e-4)  # float32 gradients
 
 
 def test_aspect_points_downslope():

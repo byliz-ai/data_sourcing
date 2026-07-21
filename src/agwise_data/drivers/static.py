@@ -11,6 +11,7 @@ fetched once however many derivatives are requested.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import xarray as xr
@@ -24,6 +25,8 @@ from ..harmonize import (
     static_short_name,
 )
 from .. import terrain
+
+logger = logging.getLogger("agwise_data")
 
 STATIC_CHUNKS = {"depth": 6, "lat": 512, "lon": 512}
 
@@ -67,9 +70,19 @@ class StaticDriver:
 
             from .local import fetch_local_static
 
-            local = fetch_local_static(
-                self.config, self.entry, self.source_id, canonical, domain
-            )
+            # A staged file that is malformed must not fail the whole call —
+            # the download path is still available.
+            try:
+                local = fetch_local_static(
+                    self.config, self.entry, self.source_id, canonical, domain
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Local file for %s %s is unusable (%s) — "
+                    "downloading instead",
+                    self.source_id, canonical, exc,
+                )
+                local = None
             parent = static_derived_from(canonical)
             if local is not None:
                 da, fetch_meta = local

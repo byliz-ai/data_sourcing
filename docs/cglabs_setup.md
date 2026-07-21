@@ -27,6 +27,11 @@ user reuses the already-downloaded data and the shared cache out of the box.
 | shared download cache (read/write) | `…/Global_GeoData/Processed` | `AGWISE_DATA_ROOT` |
 | your outputs | you choose per call | each writer's `out_dir` |
 
+One staged dataset lives outside `Landing`: the Copernicus GLO-30 DEM tiles
+(full Africa) at `/home/jovyan/common_data/cop30/raw`, used automatically for
+elevation/terrain whenever local reuse is on (its path is set in
+`catalog/dem.yaml`, not by an env var).
+
 Only set the env vars to **relocate** the layer — e.g. on a laptop, or to write
 to a private cache while testing:
 

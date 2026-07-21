@@ -22,6 +22,7 @@ REFERENCE.md. Never hardcode credentials in scripts.
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
@@ -49,6 +50,8 @@ from .gee import (  # noqa: F401  (plan_tiles re-exported for callers/tests)
     grid_shape,
     plan_tiles,
 )
+
+logger = logging.getLogger("agwise_data")
 
 COMPOSITE_CHUNKS = {"time": 23, "lat": 256, "lon": 256}
 
@@ -125,9 +128,19 @@ class ModisDriver:
 
             from .local import fetch_local_composite
 
-            local = fetch_local_composite(
-                self.config, self.entry, self.source_id, variable, year, domain
-            )
+            # A staged file that is malformed must not fail the whole call —
+            # the Earth Engine path is still available.
+            try:
+                local = fetch_local_composite(
+                    self.config, self.entry, self.source_id, variable, year, domain
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Local composites for %s %s %s are unusable (%s) — "
+                    "fetching from Earth Engine instead",
+                    self.source_id, variable, year, exc,
+                )
+                local = None
             da, fetch_meta = local if local is not None else self._fetch_year(
                 variable, year, domain
             )

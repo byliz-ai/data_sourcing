@@ -41,6 +41,15 @@ access:
     # integer degrees of the tile's SW corner. Windowed reads verified on
     # CGLabs (open /vsicurl + from_bounds; AWS_NO_SIGN_REQUEST=YES).
     url_pattern: "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM.tif"
+  - type: local
+    role: alternative
+    # The same GLO-30 tiles staged on CGLabs (full Africa: lat S35-N38,
+    # lon W19-E52, 3304 tiles). Used tile-by-tile before the AWS URL when
+    # local reuse is on (AGWISE_LOCAL_ROOT / the CGLabs default); tiles not
+    # staged, or unreadable, fall through to AWS. Absolute path on purpose:
+    # this set lives in common_data, outside the Landing tree.
+    tile_root: /home/jovyan/common_data/cop30/raw
+    tile_pattern: "Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM.tif"
 
 variables:
   TOPO.ELEV:

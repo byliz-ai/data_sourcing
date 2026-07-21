@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import logging
 from datetime import date
 from pathlib import Path
 from typing import List
@@ -12,6 +13,8 @@ import xarray as xr
 from .. import cache
 from ..config import Config
 from ..harmonize import canonical_name, short_name, standardize
+
+logger = logging.getLogger("agwise_data")
 
 # Storage chunks sized for the two real access patterns (bbox map cubes and
 # point time series); complevel 1 writes ~2-3x faster than 4 for a few
@@ -63,21 +66,37 @@ class Driver:
 
             # Reuse an already-downloaded local file if AGWISE_LOCAL_ROOT is set
             # and one exists for this (variable, year); otherwise download.
+            # A staged file that is malformed or truncated must not fail the
+            # whole call — the download path is still available.
             from .local import fetch_local_year
 
-            local = fetch_local_year(
-                self.config, self.entry, self.source_id, variable, year, domain
-            )
-            da, fetch_meta = local if local is not None else self._fetch_year(
-                variable, year, domain
-            )
-            da = standardize(da, variable, self.source_id)
+            expected = 366 if calendar.isleap(year) else 365
+            da = fetch_meta = None
+            try:
+                local = fetch_local_year(
+                    self.config, self.entry, self.source_id, variable, year, domain
+                )
+                if local is not None:
+                    da, fetch_meta = local
+                    da = standardize(da, variable, self.source_id)
+                    if not partial and da.sizes["time"] != expected:
+                        raise ValueError(
+                            f"{da.sizes['time']} days, expected {expected}"
+                        )
+            except Exception as exc:
+                logger.warning(
+                    "Local file for %s %s %s is unusable (%s) — "
+                    "downloading instead",
+                    self.source_id, variable, year, exc,
+                )
+                da = None
+            if da is None:
+                da, fetch_meta = self._fetch_year(variable, year, domain)
+                da = standardize(da, variable, self.source_id)
 
-            # A past year must be complete: caching a silently truncated
-            # year would poison every downstream product that reuses it.
-            if not partial:
-                expected = 366 if calendar.isleap(year) else 365
-                if da.sizes["time"] != expected:
+                # A past year must be complete: caching a silently truncated
+                # year would poison every downstream product that reuses it.
+                if not partial and da.sizes["time"] != expected:
                     raise RuntimeError(
                         f"{self.source_id} {variable} {year}: fetched "
                         f"{da.sizes['time']} days, expected {expected} — "

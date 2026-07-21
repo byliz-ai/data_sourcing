@@ -44,16 +44,22 @@ def aspect(elev: xr.DataArray) -> xr.DataArray:
 
 
 def _gradients(elev: xr.DataArray):
-    """(dz/dy, dz/dx) in m/m on the geographic grid, north-up."""
+    """(dz/dy, dz/dx) in m/m on the geographic grid, north-up.
+
+    Computed in float32: a 30 m DEM over a cache domain is easily 100+ Mpx,
+    and float64 intermediates put a multi-GB spike on every derivative
+    (get_static runs several in parallel). Elevation differences of
+    neighbouring cells are well within float32 resolution.
+    """
     if list(elev.dims) != ["lat", "lon"]:
         elev = elev.transpose("lat", "lon")
-    z = elev.values.astype("float64")
+    z = elev.values.astype("float32")
     dy, dx = _spacing_m(elev)
     lat_ascending = float(elev["lat"][0]) < float(elev["lat"][-1])
-    dzdy = np.gradient(z, axis=0) / dy
+    dzdy = np.gradient(z, axis=0) / np.float32(dy)
     if not lat_ascending:
         dzdy = -dzdy
-    dzdx = np.gradient(z, axis=1) / dx[:, None]
+    dzdx = np.gradient(z, axis=1) / dx[:, None].astype("float32")
     return dzdy, dzdx
 
 
@@ -72,15 +78,15 @@ def _neighbor_stack(z: np.ndarray) -> np.ndarray:
 
 def tpi(elev: xr.DataArray) -> xr.DataArray:
     """Topographic position index: cell minus mean of its 8 neighbors."""
-    z = elev.values.astype("float64")
-    out = z - _neighbor_stack(z).mean(axis=0)
+    z = elev.values.astype("float32")
+    out = z - _neighbor_stack(z).mean(axis=0, dtype="float32")
     return elev.copy(data=out.astype("float32"))
 
 
 def tri(elev: xr.DataArray) -> xr.DataArray:
     """Terrain ruggedness index: mean |cell - neighbor| over the 8 neighbors."""
-    z = elev.values.astype("float64")
-    out = np.abs(_neighbor_stack(z) - z).mean(axis=0)
+    z = elev.values.astype("float32")
+    out = np.abs(_neighbor_stack(z) - z).mean(axis=0, dtype="float32")
     return elev.copy(data=out.astype("float32"))
 
 
