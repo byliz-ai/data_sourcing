@@ -3,6 +3,54 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+---
+
+## Session summary — 2026-07-21 (v0.19.0 → v0.25.0)
+
+A hardening pass driven by three brand-new-user QA/QC walkthroughs (Kisumu, 10
+points; Addis Ababa, 50 points, cross-year Dec 2022–Jul 2023; and the seasonal
+**forecast** chain at Addis, including a real downloadable July 2026 SEAS5
+init). Every fix below came from a failure or friction hit while following only
+the repo docs end-to-end — download all variables, then write DSSAT/APSIM/
+WOFOST/ORYZA. Per-version detail is in the entries beneath this summary.
+
+**Reuse the data already on CGLabs (faster, fewer downloads)**
+- DEM/terrain served from the staged Copernicus GLO-30 tiles, tile-by-tile,
+  before AWS (v0.19.0); terrain derivatives in float32 (half the memory).
+- CHIRPS v3.0 as a selectable local source (v0.20.0) and, on CGLabs, the
+  **default** rainfall source for PRCP with a safe fall-back to v2.0 for
+  uncovered years / off-CGLabs (v0.23.0).
+- The CHIRPS→Earth-Engine fallback batched into a few requests — a full year of
+  `PRCP` over a site window went from **>1 h to ~2 s** (v0.20.1).
+
+**Don't crash — degrade gracefully**
+- A malformed/truncated/partial local file falls back to downloading instead of
+  failing the call (v0.19.0); the AgERA5 2023 Landing files were also
+  reorganized to the flat yearly layout.
+- Cross-year requests whose years come from different sources no longer trip
+  `open_mfdataset` on ~1e-14 grid noise (v0.24.1).
+- Seasonal fetch and bias-correction work for an AOI smaller than one SEAS5 1°
+  cell (v0.24.2 empty-axis, v0.24.3 all-NaN downscale).
+- Product NetCDF/GeoTIFF writes are atomic, so a failed write can't poison the
+  cache (v0.24.4) — which also removed the `HDF5-DIAG` stderr spam.
+- CDS downloads retry with backoff, so a network drop mid-download doesn't lose
+  a whole cold forecast run (v0.25.0).
+
+**Interface & feedback**
+- `source=` / `weather_source=` accept a per-variable `{variable: source}`
+  mapping, so one call can mix e.g. local rainfall + AgERA5 temperature
+  (v0.21.0).
+- Real elevation written into the DSSAT/ORYZA weather headers (v0.22.0).
+- Progress bars for long fetches and per-point/per-tile loops, on stderr so the
+  CLI's JSON stays clean (v0.24.0).
+- Docs: README first-success needs `conda activate`; `--bbox w,s,e,n` form; the
+  two point-output shapes; the ~32 GB container ceiling; `AGWISE_RAINFALL_SOURCE`
+  and `AGWISE_CDS_RETRIES`.
+
+Test suite grew from 172 to 207 passing (1 pre-existing env-only GDAL failure).
+
+---
+
 ## 0.25.0 — resilient CDS downloads (retry + backoff)
 - **A dropped CDS download no longer aborts the whole run.** Both the AgERA5 and
   SEAS5 drivers now go through a shared `cds.retrieve` helper that retries a
