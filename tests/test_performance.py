@@ -165,3 +165,18 @@ def test_open_years_concats_time_not_lon_on_grid_epsilon(config):
     assert da.sizes["time"] == 366 + 365                # 2020 leap + 2021
     tt = da["time"].values.astype("datetime64[ns]").astype("int64")
     assert bool((np.diff(tt) > 0).all())                # time strictly ascending
+
+
+def test_write_nc_product_is_atomic_on_failure(tmp_path):
+    """A failed product write leaves no file (and no temp), so it can't poison
+    a later cache-hit — the failure mode seen in the forecast QA run."""
+    import pytest
+
+    from agwise_data.api import _write_nc_product
+
+    da = xr.DataArray(np.arange(3.0), dims="x", name="v")
+    p = tmp_path / "prod.nc"
+    with pytest.raises(Exception):
+        _write_nc_product(da, p, {"v": {"dtype": "not-a-real-dtype"}})
+    assert not p.exists()                                   # nothing left behind
+    assert not list(tmp_path.glob(".prod.nc*.tmp"))         # no orphan temp

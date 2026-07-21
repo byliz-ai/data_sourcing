@@ -36,7 +36,7 @@ import pandas as pd
 import xarray as xr
 
 from . import boundaries, catalog, drivers, progress
-from .cache import write_manifest
+from .cache import atomic_write, write_manifest
 from .config import Config, region_domain_name, round_region_bbox
 from .drivers.base import nc_encoding
 from .harmonize import (
@@ -231,6 +231,36 @@ def _prefetch(config: Config, tasks: List[tuple]) -> None:
         progress.drain_futures(futures, desc="Fetching climate")
 
 
+def _write_nc_product(da: xr.DataArray, path, encoding: dict) -> None:
+    """Write a product NetCDF atomically (temp file + rename).
+
+    A crash mid-write must not leave a half-written or zero-variable ``.nc``
+    that a later run treats as a cache hit and fails to open — the failure
+    surfaced in a QA run where a broken write poisoned every subsequent call.
+    """
+    with atomic_write(Path(path)) as tmp:
+        da.to_netcdf(tmp, encoding=encoding)
+
+
+def _write_tif_product(da: xr.DataArray, path, labels) -> None:
+    """Write a product GeoTIFF atomically, preserving the ``.tif`` suffix.
+
+    rioxarray infers the driver from the extension, so the temp file keeps
+    ``.tif`` (unlike the NetCDF path, which is format-sniffed by content).
+    """
+    from .spatial import write_geotiff
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.stem}.tmp{path.suffix}")
+    try:
+        write_geotiff(da, tmp, labels=labels)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _open_product_da(nc_path) -> xr.DataArray:
     """Open a cached product's single data variable.
 
@@ -333,12 +363,12 @@ def get_climate(
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                da.to_netcdf(nc_path, encoding={da.name: nc_encoding(da)})
+                _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 from .spatial import write_geotiff
 
-                write_geotiff(da, tif_path, labels=time_labels(da, freq))
+                _write_tif_product(da, tif_path, labels=time_labels(da, freq))
                 write_manifest(tif_path, meta)
 
         results[var] = {
@@ -738,7 +768,7 @@ def get_static(
                 meta["depths"] = [str(d) for d in da["depth"].values]
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                da.to_netcdf(nc_path, encoding={da.name: static_nc_encoding(da)})
+                _write_nc_product(da, nc_path, {da.name: static_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 from .spatial import write_geotiff
@@ -748,7 +778,7 @@ def get_static(
                     if "depth" in da.dims
                     else [static_short_name(var)]
                 )
-                write_geotiff(da, tif_path, labels=labels)
+                _write_tif_product(da, tif_path, labels=labels)
                 write_manifest(tif_path, meta)
 
         results[var] = {
@@ -939,12 +969,12 @@ def get_seasonal(
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                da.to_netcdf(nc_path, encoding={da.name: seasonal_nc_encoding(da)})
+                _write_nc_product(da, nc_path, {da.name: seasonal_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 from .spatial import write_geotiff
 
-                write_geotiff(da, tif_path, labels=time_labels(da, "daily"))
+                _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
                 write_manifest(tif_path, meta)
 
         results[var] = {
@@ -1120,12 +1150,12 @@ def get_modis(
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                da.to_netcdf(nc_path, encoding={da.name: composite_nc_encoding(da)})
+                _write_nc_product(da, nc_path, {da.name: composite_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 from .spatial import write_geotiff
 
-                write_geotiff(da, tif_path, labels=time_labels(da, "daily"))
+                _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
                 write_manifest(tif_path, meta)
 
         results[var] = {
@@ -1257,12 +1287,12 @@ def smooth_ndvi(
         }
         if need_nc:
             nc_path.parent.mkdir(parents=True, exist_ok=True)
-            da.to_netcdf(nc_path, encoding={da.name: nc_encoding(da)})
+            _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
             write_manifest(nc_path, meta)
         if need_tif:
             from .spatial import write_geotiff
 
-            write_geotiff(da, tif_path, labels=time_labels(da, "daily"))
+            _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
             write_manifest(tif_path, meta)
 
     return {
@@ -1556,12 +1586,12 @@ def get_season(
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                da.to_netcdf(nc_path, encoding={da.name: nc_encoding(da)})
+                _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 from .spatial import write_geotiff
 
-                write_geotiff(da, tif_path, labels=time_labels(da, tif_labels_freq))
+                _write_tif_product(da, tif_path, labels=time_labels(da, tif_labels_freq))
                 write_manifest(tif_path, meta)
 
         results[canon] = {
@@ -2230,9 +2260,9 @@ def bias_correct(
         if overwrite or not nc_path.exists():
             from .drivers.seasonal import seasonal_nc_encoding
 
-            nc_path.parent.mkdir(parents=True, exist_ok=True)
-            corrected.to_netcdf(
-                nc_path, encoding={corrected.name: seasonal_nc_encoding(corrected)}
+            _write_nc_product(
+                corrected, nc_path,
+                {corrected.name: seasonal_nc_encoding(corrected)},
             )
             write_manifest(nc_path, {
                 "variable": var, "region": tag, "method": f"qdm-{kind}",

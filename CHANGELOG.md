@@ -3,6 +3,19 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.24.4 — product writes are atomic (a failed write can't poison the cache)
+- **Every product NetCDF/GeoTIFF is now written to a temp file and atomically
+  renamed** (`get_climate`, `get_static`, `get_seasonal`, `get_modis`,
+  `get_season`, `bias_correct`). Before, a crash mid-write left a half-written
+  or zero-variable `.nc` that a later run treated as a cache hit and then failed
+  to open (`expected one data variable, found []`) — a broken write poisoned
+  every subsequent call for that product. The daily/static caches were already
+  atomic; this extends the same guarantee to the user-facing products.
+- **This also removes the `HDF5-DIAG … unable to open file` stderr spam** seen in
+  the forecast QA run: it came from opening those leftover partial files, so with
+  atomic writes there are none to trip over (a clean build now emits zero HDF5
+  diagnostics). +1 test (`_write_nc_product` leaves nothing behind on failure).
+
 ## 0.24.3 — bias-corrected forecast no longer comes out all-NaN for a small AOI
 - **`bias_correct` / `forecast_to_dssat` produced an all-NaN corrected cube when
   the SEAS5 forecast covered only one grid cell** (a small AOI on the coarse 1°
