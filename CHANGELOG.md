@@ -3,6 +3,18 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.24.2 — seasonal-forecast fetch works for a small AOI on the coarse SEAS5 grid
+- **`get_seasonal` (and the forecast → DSSAT chain) no longer fails for an AOI
+  smaller than one SEAS5 cell.** SEAS5 is on a 1° grid; a sub-degree area of
+  interest (e.g. a district around Addis Ababa) can fall entirely *between* cell
+  centres, and `subset_bbox` — which kept only cells whose centre is inside the
+  box — returned a zero-length axis, so writing the product raised
+  `NetCDF: Invalid argument: (variable 'lat')`. `subset_bbox` now falls back to
+  the nearest covering cell whenever a plain slice would empty an axis, so the
+  cube is never degenerate. Behaviour is unchanged whenever the slice is
+  non-empty (fine grids like CHIRPS/DEM are unaffected). Found in the Addis QA
+  run — the first live SEAS5 fetch. +4 tests (`test_spatial.py`).
+
 ## 0.24.1 — fix cross-year fetch when years come from different sources
 - **A multi-year request no longer fails when its years were fetched by
   different paths.** `open_years` combined the per-year cached files with

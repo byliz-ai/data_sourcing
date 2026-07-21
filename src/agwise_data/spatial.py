@@ -11,18 +11,34 @@ import xarray as xr
 Bbox = Tuple[float, float, float, float]  # west, south, east, north
 
 
+def _axis_indices(vals: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    """Ascending indices of the cells whose centre is in [lo, hi].
+
+    If none are (the box is smaller than the grid and falls between centres —
+    e.g. a sub-degree AOI on the 1° SEAS5 grid), fall back to the single cell
+    nearest the box centre, so the selection covers the AOI instead of
+    emptying the axis into a degenerate, unwritable cube.
+    """
+    idx = np.where((vals >= lo) & (vals <= hi))[0]
+    if idx.size:
+        return idx
+    return np.array([int(np.abs(vals - (lo + hi) / 2.0).argmin())])
+
+
 def subset_bbox(da: xr.DataArray, bbox: Sequence[float], buffer: float = 0.0) -> xr.DataArray:
-    """Select the lat/lon box, handling ascending or descending latitude."""
+    """Select the lat/lon box (any latitude order), keeping the covering cell.
+
+    A box smaller than the grid that falls between cell centres would empty an
+    axis with a plain slice; each axis then falls back to the nearest covering
+    cell so the result is never a degenerate, unwritable cube.
+    """
     w, s, e, n = bbox
     w, s, e, n = w - buffer, s - buffer, e + buffer, n + buffer
     lat_name = "lat" if "lat" in da.dims else "latitude"
     lon_name = "lon" if "lon" in da.dims else "longitude"
-    lat = da[lat_name]
-    if lat.size > 1 and float(lat[0]) > float(lat[-1]):
-        lat_slice = slice(n, s)
-    else:
-        lat_slice = slice(s, n)
-    return da.sel({lon_name: slice(w, e), lat_name: lat_slice})
+    lat_idx = _axis_indices(np.asarray(da[lat_name].values), s, n)
+    lon_idx = _axis_indices(np.asarray(da[lon_name].values), w, e)
+    return da.isel({lat_name: lat_idx, lon_name: lon_idx})
 
 
 def clip_geometry(da: xr.DataArray, gdf) -> xr.DataArray:
