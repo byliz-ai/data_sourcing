@@ -3,6 +3,22 @@
 All notable changes to `agwise-data`. Versions follow the `version` field in
 `pyproject.toml`. Newest first.
 
+## 0.20.1 — CHIRPS→Earth Engine is fast again (batched), and a docs fix
+- **The CHIRPS Earth Engine fallback no longer takes an hour.** `_fetch_year_gee`
+  used to pull one daily image per `computePixels` call — 365 sequential
+  requests per year, which for a trial-site window ran **over an hour** (and
+  dominated any `PRCP` request while the UCSB host stays 403-blocked). It now
+  batches days into a few multi-band requests (each day a renamed band of a
+  stacked image, sized so the response stays under the API's ~48 MB ceiling):
+  **one request for a site/season window, a handful for the largest
+  GEE-eligible domain.** Same CHIRPS v2.0 data, same cube. Live-verified: a
+  full year of `PRCP` over a Kisumu window went from **>1 h (killed) to 1.7 s**;
+  monthly totals show the correct bimodal Kenya pattern.
+- **Docs:** the README §2.4 "first success" block now starts with
+  `conda activate agwise_data`, so the very first `agwise-data …` command isn't
+  a `command not found` for a new user who followed §2.2 but didn't keep the env
+  active. Found in a new-user QA walkthrough.
+
 ## 0.20.0 — CHIRPS v3.0 as a selectable rainfall source (`source="chirps_v3"`)
 - **New rainfall source:** the complete CHIRPS v3.0 daily series staged on
   CGLabs (`Landing/Rainfall/chirps_v3`, 1981-2023, 0.05 degree) is now a

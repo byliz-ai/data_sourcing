@@ -162,24 +162,53 @@ class ChirpsDriver(Driver):
         width, height = grid_shape(bbox, res)
         tiles = plan_tiles(width, height)
 
-        def fetch_day(item):
-            index, t0 = item
-            img = ee.Image(f"{collection}/{index}")
-            arrays = fetch_image_grid(ee, img, [band], bbox, res, tiles, "float32")
-            arr = arrays[band]
-            arr[arr <= -9990.0] = np.nan   # CHIRPS ocean/no-data fill (-9999)
-            arr[arr < 0] = np.nan          # precipitation is non-negative
-            return pd.Timestamp(t0, unit="ms").normalize(), arr
+        # Batch days into few multi-band requests instead of one call per day.
+        # Each day is one band of a stacked image (renamed d<i> so the mapping
+        # back to a date is unambiguous); a batch is sized so its computePixels
+        # response stays under the API's ~48 MB ceiling (bytes = tile area x
+        # days x 4). For a trial-site window that is one request for the whole
+        # year; for the largest GEE-eligible domain it is a handful — versus
+        # 365 sequential requests before (which took over an hour).
+        day_imgs = [
+            ee.Image(f"{collection}/{index}").select([band]).rename([f"d{i}"])
+            for i, (index, _t0) in enumerate(listing)
+        ]
+        times = [
+            pd.Timestamp(t0, unit="ms").normalize() for _index, t0 in listing
+        ]
+        max_tile_area = max(bw * bh for _x, _y, bw, bh in tiles)
+        budget_bytes = 32_000_000
+        batch_days = max(1, min(len(listing), budget_bytes // (max_tile_area * 4)))
+        batches = [
+            list(range(a, min(a + batch_days, len(listing))))
+            for a in range(0, len(listing), batch_days)
+        ]
+
+        def fetch_batch(idxs):
+            stacked = day_imgs[idxs[0]]
+            for i in idxs[1:]:
+                stacked = stacked.addBands(day_imgs[i])
+            names = [f"d{i}" for i in idxs]
+            arrays = fetch_image_grid(ee, stacked, names, bbox, res, tiles, "float32")
+            out = {}
+            for i in idxs:
+                arr = arrays[f"d{i}"]
+                arr[arr <= -9990.0] = np.nan  # CHIRPS ocean/no-data fill (-9999)
+                arr[arr < 0] = np.nan         # precipitation is non-negative
+                out[i] = arr
+            return out
 
         workers = max(1, int(self.config.cog_workers))
-        if workers > 1 and len(listing) > 1:
+        if workers > 1 and len(batches) > 1:
             with ThreadPoolExecutor(max_workers=workers) as ex:
-                results = list(ex.map(fetch_day, listing))
+                parts = list(ex.map(fetch_batch, batches))
         else:
-            results = [fetch_day(item) for item in listing]
+            parts = [fetch_batch(b) for b in batches]
 
-        times = [t for t, _ in results]
-        stack = np.stack([a for _, a in results]).astype("float32")
+        day_arrays = {}
+        for part in parts:
+            day_arrays.update(part)
+        stack = np.stack([day_arrays[i] for i in range(len(listing))]).astype("float32")
         lats, lons = grid_coords(bbox, res)
         da = xr.DataArray(
             stack,

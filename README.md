@@ -157,9 +157,11 @@ data_sourcing/
 
 ### 2.4 First success (no credentials needed)
 
-Confirm the install works — no accounts required:
+Confirm the install works — no accounts required (activate the environment
+first, so the `agwise-data` command is on your PATH):
 
 ```bash
+conda activate agwise_data        # from §2.2 — without it, `agwise-data` is "command not found"
 agwise-data catalog list          # list the data sources and variables you can pull
 agwise-data get-static --vars ELEV --country Kenya --admin-level 1 --admin-name Nakuru
 agwise-data cache info            # see what landed in the cache
