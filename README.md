@@ -112,16 +112,34 @@ with no credentials at all.
 
 ### 2.2 Install
 
+**On a shared server (CGLabs) the module is installed once, not per user.** A
+maintainer clones the repo into a shared location and creates the `agwise_data`
+conda environment there; everyone else just *activates* it. Only clone your own
+copy if you are developing the code, pinning a different version, or working off
+CGLabs (a laptop).
+
+**Maintainer — once per server** (clone into a folder everyone can reach):
+
 ```bash
 git clone https://github.com/byliz-ai/data_sourcing.git
 cd data_sourcing
-conda env create -f environment.yml     # creates the 'agwise_data' env
+conda env create -f environment.yml     # creates the shared 'agwise_data' env
 conda activate agwise_data
 pip install -e ".[all]"                  # package + CDS + Earth Engine clients
 ```
 
-Smaller installs: `.[geo]` (clipping + GeoTIFF), `.[cds]` (AgERA5/SEAS5),
-`.[gee]` (MODIS + crop mask), `.[dev]` (test suite).
+Because this is an editable install (`pip install -e`), a single `git pull` in
+that shared clone updates every user at once. Smaller installs: `.[geo]`
+(clipping + GeoTIFF), `.[cds]` (AgERA5/SEAS5), `.[gee]` (MODIS + crop mask),
+`.[dev]` (test suite).
+
+**Each user — every session** (on a server where it is already installed): no
+clone, no install — just activate the shared env, then set your **own**
+credentials (Section 3):
+
+```bash
+conda activate agwise_data              # puts the `agwise-data` command on your PATH
+```
 
 **On CGLabs there is nothing to configure** — the two shared data folders are
 the built-in defaults, so a new user reuses the already-downloaded data and the
