@@ -8,11 +8,26 @@ data roots per user, using it from R, and performance tuning.
 
 ## 1. Install (once per server)
 
-Install the package + env once, in a location every user can reach. The exact
-commands — clone into the shared mount, create the env at a shared **prefix**,
-`pip install -e`, and the one-time per-user `conda config --append envs_dirs …`
-so `conda activate agwise_data` resolves by name — are in
-[README §2.2](../README.md#22-install).
+Done once per server — **already done on CGLabs** (this is here for standing up a
+new one). Create the env at a shared **prefix** on a mount every user can reach:
+a prefix env (`-p`) is visible to all users at the same path, whereas a plain
+named env lands in the maintainer's own home and no one else can see it.
+
+```bash
+# On CGLabs the shared mount is /home/jovyan/agwise-datasourcing:
+SHARED=/home/jovyan/agwise-datasourcing
+git clone https://github.com/byliz-ai/data_sourcing.git "$SHARED/code/data_sourcing"
+conda env create -p "$SHARED/envs/agwise_data" -f "$SHARED/code/data_sourcing/environment.yml"
+conda activate "$SHARED/envs/agwise_data"           # activate by full path (not named yet)
+pip install -e "$SHARED/code/data_sourcing[all]"    # package + CDS + Earth Engine clients
+```
+
+Because this is an editable install, a single `git pull` in that shared clone
+updates every user's code at once (after a version bump, re-run `pip install -e`
+once to refresh `agwise_data.__version__`). Smaller installs: `.[geo]` (clipping
++ GeoTIFF), `.[cds]` (AgERA5/SEAS5), `.[gee]` (MODIS + crop mask), `.[dev]`
+(tests). Each user then does the one-time `conda config --append envs_dirs …` +
+`conda activate agwise_data` from [README §2.2](../README.md#22-install).
 
 ## 2. Data roots — already configured on CGLabs
 
