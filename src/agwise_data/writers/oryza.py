@@ -147,13 +147,19 @@ def write_weather(
     id_name: str = "AGWS",
     stn: int = 1,
     elev: float = 0.0,
-    angstrom=(0.25, 0.50),
+    angstrom=(0.0, 0.0),
 ) -> List[Path]:
     """Write ORYZA CABO weather files (one per calendar year). Returns the paths.
 
     Files are ``<out_dir>/<code><stn>.<yyy>`` where ``code`` is the 4-char
-    station code from ``id_name``. ``angstrom`` are the (A, B) coefficients on
-    the station line — unused when irradiance is supplied directly, as here.
+    station code from ``id_name``. ``angstrom`` are the (A, B) Angstrom
+    coefficients on the station line. They MUST be left at ``(0.0, 0.0)`` here:
+    daily irradiance is supplied directly, and ORYZA v3's weather reader
+    misinterprets non-zero station-line coefficients — the atmospheric
+    transmission blows up (ATMTR >> 1), biomass goes negative and the crop never
+    matures (verified against the real ORYZA3 binary on the IRRI standard
+    experiment). The IRRI reference weather files likewise carry 0.0 here and
+    provide the real ANGA/ANGB in the experiment (.exp) file.
     """
     df = prepare_weather(daily)
     if df.empty:

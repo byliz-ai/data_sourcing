@@ -551,12 +551,27 @@ def test_oryza_write_weather_splits_by_year(tmp_path):
     names = sorted(p.name for p in paths)
     assert names == ["MUSA1.020", "MUSA1.021"]     # one file per calendar year
     txt = [p for p in paths if p.name.endswith(".020")][0].read_text().splitlines()
-    # station line: lon,lat,elev,angstromA,angstromB
+    # station line: lon,lat,elev,angstromA,angstromB — the Angstrom pair must be
+    # 0.0 (non-zero corrupts ORYZA's ATMTR when irradiance is supplied directly).
     station = [ln for ln in txt if ln.startswith("30.1,")][0]
-    assert station == "30.1,-1.9,1850,0.25,0.5"
+    assert station == "30.1,-1.9,1850,0.0,0.0"
     # data line: stn,year,day,srad,tmin,tmax,vapr,wind,rain — Dec 30 2020 = doy 365
     data = [ln for ln in txt if ln.startswith("1,2020,")][0].split(",")
     assert data[:3] == ["1", "2020", "365"] and data[3] == "19000.0"
+
+
+def test_oryza_weather_angstrom_defaults_to_zero(tmp_path):
+    # Regression: the station-line Angstrom (A, B) pair must default to 0.0.
+    # Non-zero values (a previous 0.25/0.50 default) make the real ORYZA v3
+    # weather reader compute a corrupt atmospheric transmission (ATMTR >> 1),
+    # driving biomass negative so the crop never matures. Verified round-trip
+    # against the ORYZA3 binary on the IRRI standard experiment.
+    paths = oryza.write_weather(
+        _oryza_series(), lat=-1.9, lon=30.1, out_dir=tmp_path, id_name="Musanze",
+    )
+    station = [ln for ln in paths[0].read_text().splitlines()
+               if ln.startswith("30.1,")][0]
+    assert station.split(",")[3:] == ["0.0", "0.0"]
 
 
 def test_oryza_soil_layers_remap_and_units():

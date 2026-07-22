@@ -5,6 +5,39 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.27.1 — ORYZA weather Angstrom fix (live model round-trip verified)
+Found and fixed while running the **real crop models** on `to_oryza`/`to_wofost`
+output for the first time (the long-standing "live model round-trip" backlog
+item).
+- **`to_oryza` weather bug fixed.** `write_weather` wrote the station-line
+  Angstrom coefficients as `(0.25, 0.50)` by default (with a docstring claiming
+  they were "unused when irradiance is supplied directly"). They are **not**
+  unused: the real ORYZA v3 reader (Tao Li build, IRRI) misinterprets non-zero
+  station-line Angstrom values, computes an absurd atmospheric transmission
+  (`ATMTR ≈ 500`, "value very large"), drives biomass negative and the crop
+  never matures. The IRRI standard weather files carry `0.0` here and supply the
+  real ANGA/ANGB in the experiment (`.exp`) file. `write_weather` now defaults to
+  `(0.0, 0.0)`; the `angstrom` argument is retained for overrides. +1 regression
+  test; existing station-line test updated.
+- **ORYZA round-trip verified end-to-end.** A real `to_oryza` product (Mwea,
+  Kenya, 2008; local AgERA5 + CHIRPS v3 + SoilGrids) driven through the IRRI
+  standard ORYZA v3 experiment with the native `ORYZA3` binary: `INITIAL
+  SUCCESS → Crop reached maturity`, 0 ATMTR warnings, `res.dat` written. Both
+  our PADDY `.sol` (parsed, 44 vars) and CABO weather were accepted. The fix was
+  isolated with six controlled weather variants (only the Angstrom pair flips the
+  outcome).
+- **WOFOST round-trip verified end-to-end.** The `to_wofost` weather + soil CSVs
+  load straight into the real `Rwofost`/`meteor` engine (`wofost_model` + `run`,
+  the `ec1` soil template overridden by our SMW/SMFCF/SM0/K0 exactly as the
+  retired `5c_prepare_list_soil.r` did): a maize simulation ran to WSO 5.2 t/ha
+  (dry), LAI 5.6, no errors — confirming our vapour-pressure fix and soil
+  mapping are ingestible as-is.
+- **Known follow-up (not fixed):** the multi-source weather assembly in
+  `to_oryza`/`to_wofost` drops the season's **first day** when it coincides with
+  the fetched year's boundary (e.g. a season starting 1 Jan lost 1 Jan, though
+  the per-variable cube contains it). Edge case only; did not affect the
+  round-trips. Needs a trace through the cross-source wide merge.
+
 ## 0.27.0 — CGLabs resource optimization, phase 2 (memory budget + streaming)
 Builds the memory-budget foundation and stops the biggest per-call accumulator.
 - **New `agwise_data.memory`** detects the process's real ceiling from the
