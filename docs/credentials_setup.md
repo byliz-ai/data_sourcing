@@ -45,13 +45,11 @@ yours alone) plus one **shared folder** (`common_data`) that every AgWise
 user can read and write. The team policy in one line: **data is shared,
 credentials are personal.**
 
-**Data → shared, outputs → your use-case.** Shared raw inputs live in
-`Global_GeoData/Landing` (read via `AGWISE_LOCAL_ROOT`, read-only); new region
-downloads are cached in the shared `Global_GeoData/Processed`
-(`AGWISE_DATA_ROOT`, read/write — download once, reused by all); your own
-outputs go under your `Data/useCase_<Country>_<Name>` folder (each writer's
-`out_dir`). See [cglabs_setup.md](cglabs_setup.md) §2. Nothing secret is ever
-stored in any of them.
+**Data → shared, outputs → your use-case.** How the shared inputs and download
+cache relate to your own outputs is explained in
+[README §1.2](../README.md#12-the-three-data-folders--each-with-one-job)
+(relocation in [cglabs_setup.md §2](cglabs_setup.md#2-data-roots--already-configured-on-cglabs)).
+The credentials-relevant point: **nothing secret is ever stored in any of them.**
 
 **Credentials → personal, always.** Each person creates their **own** free
 accounts and keeps the tokens in their **own** home:
@@ -123,8 +121,8 @@ chmod 600 ~/.cdsapirc
 mkdir -p ~/.config/earthengine
 mv ~/credentials ~/.config/earthengine/credentials
 chmod 600 ~/.config/earthengine/credentials
-# earthengine-api is already installed if you ran `pip install -e ".[all]"`
-# (or ".[gee]"); this line is only a fallback if you skipped that.
+# The GEE client ships in the shared agwise_data env, so it's already there once
+# you've activated it (README §2.2); run this only for a minimal env lacking it.
 pip install earthengine-api
 ```
 

@@ -70,8 +70,8 @@ Builds the memory-budget foundation and stops the biggest per-call accumulator.
 
 ## 0.26.0 — CGLabs resource optimization, phase 1 (memory quick wins)
 First batch of the memory/throughput plan for the shared ~32 GB CGLabs
-container (see `CGLABS_OPTIMIZATION_PLAN.md`). Each item cuts peak memory or
-tames uncontrolled concurrency; behaviour is numerically unchanged.
+container. Each item cuts peak memory or tames uncontrolled concurrency;
+behaviour is numerically unchanged.
 - **Bounded dask's hidden thread pool.** Every `.load()` used to fire dask's
   default threaded scheduler at `os.cpu_count()` (~40 threads on CGLabs) — a
   third pool invisible to `max_workers`/`cog_workers` that oversubscribed cores

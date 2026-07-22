@@ -1,6 +1,6 @@
 # agwise-data quickstart (R).
 #
-# Run from the repo root after installing the package (see the main README):
+# Run from the repo root after activating the shared env (see README §2.2):
 #     Rscript examples/quickstart.R
 # or open in RStudio and source it.
 #

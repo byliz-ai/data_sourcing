@@ -6,8 +6,10 @@ the dev workflow and the conventions the codebase follows.
 ## Dev setup & tests
 
 This is a **personal dev env** (a named env in your own home, with the `[dev]`
-test extras). The **shared-server** install — a shared-prefix env every user
-activates — is different; see [README §2.2](README.md#22-install).
+test extras) — for working on the code. It is separate from the **shared-server**
+install (a shared-prefix env, built per
+[docs/cglabs_setup.md §1](docs/cglabs_setup.md#1-install-once-per-server) and
+activated per [README §2.2](README.md#22-install)).
 
 ```bash
 conda env create -f environment.yml && conda activate agwise_data
@@ -44,12 +46,12 @@ cache it deletes on exit and never touches the shared `Landing` tree. It is
 
 ## Ground rules (shared server / cache)
 
-- **Data is shared, credentials are personal.** Read shared raw inputs from
-  `Global_GeoData/Landing` (`AGWISE_LOCAL_ROOT`, read-only), cache new region
-  downloads in the shared `Global_GeoData/Processed` (`AGWISE_DATA_ROOT`), and
-  write your outputs under `Data/useCase_<name>` (each writer's `out_dir`) —
-  never write into `Landing`. While developing, use a throwaway `AGWISE_DATA_ROOT`.
-  Never commit tokens or put them in a shared folder (see `docs/credentials_setup.md`).
+- **Data is shared, credentials are personal.** The shared inputs/cache vs your
+  outputs are explained in
+  [README §1.2](README.md#12-the-three-data-folders--each-with-one-job); while
+  developing, point `AGWISE_DATA_ROOT` at a throwaway cache, never write into
+  `Landing`, and never commit tokens or put them in a shared folder (see
+  `docs/credentials_setup.md`).
 - Only create/modify files inside the repo (or your own test root). Treat the
   shared `common_data` and other repos as read-only inputs.
 
@@ -79,8 +81,8 @@ README). Each doc has **one job** and one home for each topic:
 
 | Section | File | Owns |
 | --- | --- | --- |
-| 1 How it works, 2 Installation | `README.md` | workflow, folders, install essentials |
-| 2 (server deep-dive) | `docs/cglabs_setup.md` | shared-server roots, R, performance |
+| 1 How it works, 2 Installation | `README.md` | workflow, folders, user activation (already-installed) |
+| 2 (server deep-dive) | `docs/cglabs_setup.md` | from-scratch / shared-server install, roots, R, performance |
 | 3 Credentials | `docs/credentials_setup.md` | CDS + GEE create/configure/verify |
 | 4 Workflow, 5 Interfaces | `docs/user_guide.md` | the dataset/area/period/output tables, Python/R/CLI examples |
 | 6 Function reference | `REFERENCE.md` | every function's parameter tables |

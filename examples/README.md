@@ -1,7 +1,7 @@
 # Examples
 
-Runnable quickstarts. **Run them from the repo root**, after installing the
-package (see [README §2.2](../README.md#22-install)).
+Runnable quickstarts. **Run them from the repo root**, after activating the
+shared env (or installing off CGLabs) — see [README §2.2](../README.md#22-install).
 
 | File | Run it | Needs |
 | --- | --- | --- |

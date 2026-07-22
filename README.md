@@ -99,16 +99,20 @@ hit. Nothing global is re-downloaded once it is in `Landing`.
 
 ### 2.1 Required software
 
+**On CGLabs you already have all of this** — the env is installed and the cache
+is preconfigured, so skip to [§2.2](#22-install) and activate. The table below is
+what a *from-scratch* install (a laptop, or a new server) needs.
+
 | Requirement | Needed for |
 | --- | --- |
-| **conda** (Miniconda/Anaconda) + **git** | creating the `agwise_data` Python ≥ 3.10 environment |
-| A **cache folder** (`AGWISE_DATA_ROOT`) | where downloads are cached (on CGLabs: the shared `Global_GeoData/Processed`) |
+| **conda** (Miniconda/Anaconda) + **git** | a from-scratch install (creating the `agwise_data` Python ≥ 3.10 env); **not needed on CGLabs** |
+| A **cache folder** (`AGWISE_DATA_ROOT`) | where downloads are cached (on CGLabs: the shared `Global_GeoData/Processed`, already set) |
 | *(optional)* **R** ≥ 4.0 | only if you use the `ad_*` R wrappers |
 | *(optional)* Copernicus CDS + Google Earth Engine accounts | only for the sources that need them — see [Section 3](docs/credentials_setup.md) |
 
 Soil (SoilGrids/iSDA), terrain (Copernicus DEM) and admin boundaries
-(geoBoundaries) need **no account**, so you can install and get a first result
-with no credentials at all.
+(geoBoundaries) need **no account**, so you get a first result with no
+credentials at all.
 
 ### 2.2 Install
 
@@ -123,7 +127,6 @@ conda config --append envs_dirs /home/jovyan/agwise-datasourcing/envs
 conda activate agwise_data
 ```
 
-Then set your **own** credentials (Section 3) for the sources that need them.
 (If you also keep a personal env named `agwise_data` — e.g. you develop the
 code — that one wins by name; activate the shared one by its full path instead:
 `conda activate /home/jovyan/agwise-datasourcing/envs/agwise_data`.)
@@ -144,6 +147,9 @@ commands and R/`.Renviron` setup are in
 create -f environment.yml`, `pip install -e ".[all]"` (`.[dev]` for tests). Full
 steps, and the shared-prefix layout that lets one install serve every user, are
 in **[docs/cglabs_setup.md §1](docs/cglabs_setup.md#1-install-once-per-server)**.
+
+For the sources that need an account (CDS, Earth Engine), set your **own**
+credentials next — see [Section 3](docs/credentials_setup.md).
 
 ### 2.3 Folder structure after installation
 

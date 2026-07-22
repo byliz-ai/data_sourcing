@@ -9,7 +9,7 @@
 #   1. conda activate agwise_data                 # see docs/cglabs_setup.md
 #   2. In R:  source("r/agwise_data.R")
 #   3. Optionally set AGWISE_DATA_BIN if agwise-data is not on the PATH:
-#      Sys.setenv(AGWISE_DATA_BIN = "/home/jovyan/.conda-envs/agwise_data/bin/agwise-data")
+#      Sys.setenv(AGWISE_DATA_BIN = "/home/jovyan/agwise-datasourcing/envs/agwise_data/bin/agwise-data")
 #
 # Requires: jsonlite, terra
 

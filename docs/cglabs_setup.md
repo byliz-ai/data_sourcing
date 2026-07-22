@@ -1,10 +1,10 @@
 # CGLabs setup — Section 2 (shared-server deep dive)
 
-Installation basics (required software, `git clone` → `conda` → `pip install`,
-and the folder structure after install) are in
-[README Section 2](../README.md#2-installation). This page covers what is
-**specific to the shared server**: installing once for everyone, persisting the
-data roots per user, using it from R, and performance tuning.
+[README Section 2](../README.md#2-installation) covers the required software,
+**how each user activates the already-installed shared env**, and the folder
+layout. This page owns what is specific to the shared server: the **from-scratch
+install** (§1 below — already done on CGLabs), the data roots (defaulted on
+CGLabs; how to relocate off-tree), using it from R, and performance tuning.
 
 ## 1. Install (once per server)
 

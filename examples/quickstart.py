@@ -1,6 +1,7 @@
 """agwise-data quickstart (Python).
 
-Run from the repo root after installing the package (see README §2.2):
+Run from the repo root after activating the shared env (or installing off
+CGLabs) — see README §2.2:
 
     python examples/quickstart.py
 
@@ -13,15 +14,13 @@ left commented out.
 
 from __future__ import annotations
 
-import os
-
 import pandas as pd
 
 from agwise_data import extract_static_points, get_climate
 
-# Where downloads and products are cached. Use your own folder for testing;
-# on the shared server point this at the common cache (see docs/cglabs_setup.md).
-os.environ.setdefault("AGWISE_DATA_ROOT", os.path.expanduser("~/agwise_data/cache"))
+# Downloads/products are cached automatically — the shared Global_GeoData/Processed
+# on CGLabs, or ~/agwise_data off it. Leave AGWISE_DATA_ROOT unset on CGLabs to use
+# the shared cache; set it to relocate (see docs/cglabs_setup.md §2).
 
 POINTS = pd.DataFrame({"lon": [30.06, 30.10], "lat": [-1.95, -1.90],
                        "site": ["Kigali", "Nyagatare"]})

@@ -78,7 +78,7 @@ Full variable list and units are in
 | | `TMAX, TMIN, TEMP, SRAD, RHUM, WIND` | `get_climate` | AgERA5 | Copernicus CDS |
 | **Seasonal forecast** | `PRCP, TMAX, TMIN, TEMP, SRAD` | `get_seasonal`, `bias_correct` | SEAS5 | Copernicus CDS |
 | **Soil** | `CLAY, SAND, SILT, PH, SOC, NITROGEN, CEC, BDOD, CFVO` | `get_soil`, `get_static`, `extract_static_points` | SoilGrids (default) | none |
-| | same set + `EXTP` | add `source="isda"` | iSDA (Africa) | none² |
+| | texture/PH/SOC/CEC/BDOD + `EXTP` (no NITROGEN/CFVO) | add `source="isda"` | iSDA (Africa) | none² |
 | **Terrain / DEM** | `ELEV, SLOPE, ASPECT, TPI, TRI` | `get_dem`, `get_static` | Copernicus DEM | none |
 | **MODIS vegetation** | `NDVI, EVI` | `get_modis`, `get_ndvi`, `smooth_ndvi` | MODIS (Terra+Aqua) | Google Earth Engine |
 | **Cropland mask** | `CROPLAND` | `get_cropmask` | ESA WorldCover | Google Earth Engine |
