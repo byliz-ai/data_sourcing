@@ -182,6 +182,33 @@ def test_forecast_to_dssat_injection(tmp_path):
     assert data[0].startswith("2021")
 
 
+def test_forecast_to_dssat_infers_region_from_points(tmp_path, monkeypatch):
+    # With no region given, the forecast region is inferred from the points
+    # (like to_dssat), instead of erroring "Provide geometry/country/bbox".
+    import pandas as pd
+    import agwise_data.api as api
+    pts = pd.DataFrame({"lon": [30.02, 30.08], "lat": [-1.98, -1.92],
+                        "site": ["A", "B"]})
+    captured = {}
+
+    def fake_bias_correct(variables, init_month, forecast_year, calib_years, **kw):
+        captured.update(kw)
+        return _corrected_weather()
+
+    monkeypatch.setattr(api, "bias_correct", fake_bias_correct)
+    res = forecast_to_dssat(
+        pts, init_month=2, forecast_year=2021, calib_years=[2001],
+        out_dir=tmp_path / "FC_INFER", station_col="site",
+        soil=_soil_frame(pts.index),
+    )
+    bbox = captured["bbox"]
+    assert bbox is not None, "region should be inferred from points"
+    w, s, e, n = bbox
+    assert w < pts["lon"].min() and e > pts["lon"].max()   # buffered around points
+    assert s < pts["lat"].min() and n > pts["lat"].max()
+    assert len(res) == 2
+
+
 def test_forecast_to_dssat_bad_ensemble(tmp_path):
     import pandas as pd
     pts = pd.DataFrame({"lon": [30.02], "lat": [-1.98]})

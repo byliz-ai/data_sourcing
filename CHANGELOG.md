@@ -5,6 +5,16 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.27.4 — `forecast_to_dssat` infers the region from the points
+- **`forecast_to_dssat(points, …)` no longer requires an explicit region.** It
+  passed `country`/`bbox`/`geometry` straight to `bias_correct`, which errored
+  (`ValueError: Provide geometry=…, country=… or bbox=…`) when none was given —
+  inconsistent with `to_dssat`/`to_apsim`/`to_wofost`/`to_oryza`, which infer the
+  region from the points. It now derives the bbox from the points (`points_bbox`,
+  ~0.5° buffer — which also keeps the coarse SEAS5 AOI above one grid cell) when
+  no region is passed; an explicit region still wins. +1 test. Found in the Addis
+  20-point QA.
+
 ## 0.27.3 — GeoTIFF export resilient to GDAL builds without update mode
 - **`format="tif"` no longer crashes** on rasterio/GDAL builds that lack GTiff
   update (`"r+"`) mode. `spatial.write_geotiff` sets band descriptions by

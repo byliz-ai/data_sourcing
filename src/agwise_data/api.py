@@ -2369,14 +2369,23 @@ def forecast_to_dssat(
     weather is the forecast season; soil comes from ``extract_static_points``
     (or a provided ``soil`` frame). Pass ``corrected`` (the
     :func:`bias_correct` result) to skip the QDM step — the offline-test path.
-    Returns the :func:`to_dssat` manifest.
+    The forecast region can be given explicitly (``country``/``bbox``/
+    ``admin_*``/``geometry``); if none is given it is inferred from the points
+    (like :func:`to_dssat`). Returns the :func:`to_dssat` manifest.
     """
     config = config or Config.load()
     if ensemble not in ("mean", "median"):
         raise ValueError("ensemble must be 'mean' or 'median'")
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
+    lons = df[lon_col].to_numpy(dtype=float)
+    lats = df[lat_col].to_numpy(dtype=float)
 
     if corrected is None:
+        # Infer the region from the points when none is given — matching
+        # to_dssat/to_apsim/to_wofost/to_oryza. points_bbox adds a ~0.5 deg
+        # buffer, which also keeps the coarse SEAS5 AOI above one grid cell.
+        if bbox is None and country is None and admin_name is None and geometry is None:
+            bbox = list(points_bbox(lons, lats))
         corrected = bias_correct(
             _FORECAST_WEATHER_VARS, init_month, forecast_year, calib_years,
             country=country, bbox=bbox, admin_level=admin_level,
@@ -2384,8 +2393,6 @@ def forecast_to_dssat(
             source=weather_source, config=config,
         )
 
-    lons = df[lon_col].to_numpy(dtype=float)
-    lats = df[lat_col].to_numpy(dtype=float)
     frames = []
     for var, info in corrected.items():
         cube = info["data"] if isinstance(info, dict) else info
