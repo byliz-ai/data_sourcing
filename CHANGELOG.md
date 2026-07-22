@@ -5,6 +5,18 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.27.3 — GeoTIFF export resilient to GDAL builds without update mode
+- **`format="tif"` no longer crashes** on rasterio/GDAL builds that lack GTiff
+  update (`"r+"`) mode. `spatial.write_geotiff` sets band descriptions by
+  reopening the file in update mode; on such builds `get_writer_for_path`
+  returns `None` and the whole export died with `TypeError: 'NoneType' object is
+  not callable`. Band labels are now **best-effort**: the GeoTIFF (data + CRS) is
+  written and the labels are skipped with a warning when update mode is
+  unavailable. This unbreaks **every `format="tif"` request** — notably all R
+  gridded `ad_get_*` wrappers, which always request a tif to build a
+  `terra::SpatRaster` and were failing on CGLabs. Found in the Addis 20-point QA
+  (R phase); CI (where GTiff update works) still sets labels.
+
 ## 0.27.2 — `__version__` tracks the real package version
 - **`agwise_data.__version__` was hardcoded at `0.18.0`** and drifted from the
   actual `pyproject.toml` version. It now derives from the installed

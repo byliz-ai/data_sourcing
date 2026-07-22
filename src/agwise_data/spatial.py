@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
 import xarray as xr
+
+logger = logging.getLogger(__name__)
 
 Bbox = Tuple[float, float, float, float]  # west, south, east, north
 
@@ -56,7 +59,17 @@ def clip_geometry(da: xr.DataArray, gdf) -> xr.DataArray:
 
 
 def write_geotiff(da: xr.DataArray, path: Path, labels: Optional[list] = None) -> Path:
-    """Export a (time, lat, lon) cube as a multi-band GeoTIFF with named bands."""
+    """Export a (time, lat, lon) cube as a multi-band GeoTIFF with named bands.
+
+    Band descriptions are **best-effort**: setting them reopens the file in GDAL
+    update mode (``"r+"``), which some rasterio/GDAL builds do not support (the
+    GTiff driver then has no ``"r+"`` writer and ``get_writer_for_path`` returns
+    ``None`` -> ``TypeError: 'NoneType' object is not callable``). When that
+    happens we keep the already-written GeoTIFF — its data and CRS are intact —
+    and skip only the band labels instead of failing the whole export. Without
+    this, every ``format="tif"`` request (e.g. all R gridded ``ad_get_*``
+    wrappers, which read the tif into a SpatRaster) breaks on such environments.
+    """
     import rioxarray  # noqa: F401
     import rasterio
 
@@ -69,9 +82,15 @@ def write_geotiff(da: xr.DataArray, path: Path, labels: Optional[list] = None) -
     path.parent.mkdir(parents=True, exist_ok=True)
     out.rio.to_raster(path)
     if labels:
-        with rasterio.open(path, "r+") as dst:
-            for i, label in enumerate(labels[: dst.count]):
-                dst.set_band_description(i + 1, str(label))
+        try:
+            with rasterio.open(path, "r+") as dst:
+                for i, label in enumerate(labels[: dst.count]):
+                    dst.set_band_description(i + 1, str(label))
+        except Exception as exc:  # GTiff update mode unavailable in this GDAL build
+            logger.warning(
+                "GeoTIFF written but band labels skipped (GDAL update mode "
+                "unavailable: %s)", exc,
+            )
     return path
 
 
