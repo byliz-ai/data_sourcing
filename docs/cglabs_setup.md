@@ -8,9 +8,11 @@ data roots per user, using it from R, and performance tuning.
 
 ## 1. Install (once per server)
 
-Install the package + env once, in a location everyone can reach — same commands
-as [README §2.2](../README.md#22-install) (`git clone` → `conda env create
--f environment.yml` → `conda activate agwise_data` → `pip install -e ".[all]"`).
+Install the package + env once, in a location every user can reach. The exact
+commands — clone into the shared mount, create the env at a shared **prefix**,
+`pip install -e`, and the one-time per-user `conda config --append envs_dirs …`
+so `conda activate agwise_data` resolves by name — are in
+[README §2.2](../README.md#22-install).
 
 ## 2. Data roots — already configured on CGLabs
 
@@ -20,12 +22,9 @@ standard CGLabs tree **you do not set anything**: the layer defaults to the
 shared folders automatically (see `CGLABS_LANDING`/`CGLABS_PROCESSED` in
 `src/agwise_data/config.py`), and NFS file locking is handled for you. A new
 user reuses the already-downloaded data and the shared cache out of the box.
-
-| Role | Default folder | Env override |
-| --- | --- | --- |
-| reusable raw inputs (read-only) | `…/Global_GeoData/Landing` | `AGWISE_LOCAL_ROOT` |
-| shared download cache (read/write) | `…/Global_GeoData/Processed` | `AGWISE_DATA_ROOT` |
-| your outputs | you choose per call | each writer's `out_dir` |
+The two override env vars (only needed off the standard tree) are
+`AGWISE_LOCAL_ROOT` (raw inputs → `Landing`) and `AGWISE_DATA_ROOT` (download
+cache → `Processed`) — see the relocate block below.
 
 One staged dataset lives outside `Landing`: the Copernicus GLO-30 DEM tiles
 (full Africa) at `/home/jovyan/common_data/cop30/raw`, used automatically for
@@ -59,16 +58,16 @@ needs GEE set up too.
 ## 4. Use from R (no reticulate needed)
 
 ```r
-source("/home/jovyan/data_sourcing/r/agwise_data.R")
+source("/home/jovyan/agwise-datasourcing/code/data_sourcing/r/agwise_data.R")
 # If agwise-data is not on the PATH R sees:
-Sys.setenv(AGWISE_DATA_BIN = "/home/jovyan/.conda-envs/agwise_data/bin/agwise-data")
+Sys.setenv(AGWISE_DATA_BIN = "/home/jovyan/agwise-datasourcing/envs/agwise_data/bin/agwise-data")
 
 r <- ad_get_climate(vars = "PRCP", years = 2005:2024,
                     country = "Kenya", freq = "monthly")
 ```
 
 (Adjust the conda env path to wherever `conda env list` says `agwise_data`
-lives — on CGLabs typically `/home/jovyan/.conda-envs/agwise_data`.)
+lives — on CGLabs the shared prefix env `/home/jovyan/agwise-datasourcing/envs/agwise_data`.)
 
 ## 5. Sanity check
 

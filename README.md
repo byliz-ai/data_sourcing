@@ -162,14 +162,9 @@ shared cache out of the box:
 - reusable raw inputs (read-only): `…/Global_GeoData/Landing`
 - shared download cache (read/write): `…/Global_GeoData/Processed`
 
-Override them only to relocate the layer (e.g. on a laptop) — details and
-R/`.Renviron` setup in **[docs/cglabs_setup.md](docs/cglabs_setup.md)**:
-
-```bash
-# Optional — only if you are NOT on the standard CGLabs tree:
-export AGWISE_DATA_ROOT=~/agwise_data/cache      # your own download cache
-export AGWISE_LOCAL_ROOT=/path/to/Global_GeoData/Landing   # or leave unset to just download
-```
+Override them only to relocate the layer (e.g. on a laptop) — the `export`
+commands and R/`.Renviron` setup are in
+**[docs/cglabs_setup.md §2](docs/cglabs_setup.md#2-data-roots--already-configured-on-cglabs)**.
 
 ### 2.3 Folder structure after installation
 

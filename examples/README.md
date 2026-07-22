@@ -1,8 +1,7 @@
 # Examples
 
 Runnable quickstarts. **Run them from the repo root**, after installing the
-package (`conda activate agwise_data` then `pip install -e ".[all]"` — see the
-[main README](../README.md)).
+package (see [README §2.2](../README.md#22-install)).
 
 | File | Run it | Needs |
 | --- | --- | --- |
@@ -18,13 +17,10 @@ Both scripts do the same thing in each language:
 3. **DSSAT input files** (commented out) — needs Copernicus CDS credentials.
 4. **NDVI** (Python, commented out) — needs Google Earth Engine credentials.
 
-Set your data roots first — the
+Set your data roots first — on CGLabs there is nothing to set (the
 [three data folders](../README.md#12-the-three-data-folders--each-with-one-job)
-on CGLabs, or just a personal cache to try the examples on a laptop:
-
-```bash
-export AGWISE_DATA_ROOT=~/agwise_data/cache   # laptop; on CGLabs see the README
-```
+are the defaults); off CGLabs point them at a personal cache, per
+[docs/cglabs_setup.md §2](../docs/cglabs_setup.md#2-data-roots--already-configured-on-cglabs).
 
 Steps 2–4 need credentials — the click-by-click setup is in
 [`docs/credentials_setup.md`](../docs/credentials_setup.md). For every function

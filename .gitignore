@@ -28,3 +28,4 @@ agwise_data_root/
 .idea/
 .vscode/
 .claude/
+.ipynb_checkpoints/

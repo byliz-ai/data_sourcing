@@ -5,6 +5,10 @@ the dev workflow and the conventions the codebase follows.
 
 ## Dev setup & tests
 
+This is a **personal dev env** (a named env in your own home, with the `[dev]`
+test extras). The **shared-server** install — a shared-prefix env every user
+activates — is different; see [README §2.2](README.md#22-install).
+
 ```bash
 conda env create -f environment.yml && conda activate agwise_data
 pip install -e ".[dev]"

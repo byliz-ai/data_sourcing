@@ -12,7 +12,7 @@
 source("r/agwise_data.R")   # adjust the path if you run from another folder
 
 # If `agwise-data` is not on the PATH R sees, point R at the console script:
-# Sys.setenv(AGWISE_DATA_BIN = "/home/jovyan/.conda-envs/agwise_data/bin/agwise-data")
+# Sys.setenv(AGWISE_DATA_BIN = "/home/jovyan/agwise-datasourcing/envs/agwise_data/bin/agwise-data")
 
 # 1. Soil at your own points — SoilGrids, NO account needed -> data.frame.
 #    (Pass source = "isda" for iSDA Africa instead; needs AGWISE_LOCAL_ROOT.)

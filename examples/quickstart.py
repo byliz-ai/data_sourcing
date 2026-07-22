@@ -1,7 +1,6 @@
 """agwise-data quickstart (Python).
 
-Run from the repo root after installing the package
-(``conda activate agwise_data`` then ``pip install -e ".[all]"``):
+Run from the repo root after installing the package (see README §2.2):
 
     python examples/quickstart.py
 
