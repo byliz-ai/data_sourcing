@@ -118,28 +118,42 @@ conda environment there; everyone else just *activates* it. Only clone your own
 copy if you are developing the code, pinning a different version, or working off
 CGLabs (a laptop).
 
-**Maintainer — once per server** (clone into a folder everyone can reach):
+**Maintainer — once per server.** Clone and create the environment at a shared
+**prefix** on a mount every user can reach — a prefix env (created with `-p`) is
+visible to all users at the same path, unlike a named env, which lands in the
+maintainer's own home and no one else can see:
 
 ```bash
-git clone https://github.com/byliz-ai/data_sourcing.git
-cd data_sourcing
-conda env create -f environment.yml     # creates the shared 'agwise_data' env
-conda activate agwise_data
-pip install -e ".[all]"                  # package + CDS + Earth Engine clients
+# On CGLabs the shared mount is /home/jovyan/agwise-datasourcing:
+SHARED=/home/jovyan/agwise-datasourcing
+git clone https://github.com/byliz-ai/data_sourcing.git "$SHARED/code/data_sourcing"
+conda env create -p "$SHARED/envs/agwise_data" -f "$SHARED/code/data_sourcing/environment.yml"
+conda activate "$SHARED/envs/agwise_data"           # activate by full path (not named yet)
+pip install -e "$SHARED/code/data_sourcing[all]"    # package + CDS + Earth Engine clients
 ```
 
 Because this is an editable install (`pip install -e`), a single `git pull` in
-that shared clone updates every user at once. Smaller installs: `.[geo]`
-(clipping + GeoTIFF), `.[cds]` (AgERA5/SEAS5), `.[gee]` (MODIS + crop mask),
-`.[dev]` (test suite).
+that shared clone updates every user's code at once (after a version bump, re-run
+`pip install -e` once to refresh `agwise_data.__version__`). Smaller installs:
+`.[geo]` (clipping + GeoTIFF), `.[cds]` (AgERA5/SEAS5), `.[gee]` (MODIS + crop
+mask), `.[dev]` (test suite).
 
-**Each user — every session** (on a server where it is already installed): no
-clone, no install — just activate the shared env, then set your **own**
-credentials (Section 3):
+**Each user — one-time setup**, then activate every session (on a server where it
+is already installed): no clone, no install. First register the shared env
+directory so `agwise_data` resolves by name, then set your **own** credentials
+(Section 3):
 
 ```bash
+# Once — so `conda activate agwise_data` can find the shared prefix env by name:
+conda config --append envs_dirs /home/jovyan/agwise-datasourcing/envs
+
+# Every session:
 conda activate agwise_data              # puts the `agwise-data` command on your PATH
 ```
+
+If you also keep a personal env named `agwise_data` (e.g. you develop the code),
+that one wins by name — activate the shared one by its full path instead:
+`conda activate /home/jovyan/agwise-datasourcing/envs/agwise_data`.
 
 **On CGLabs there is nothing to configure** — the two shared data folders are
 the built-in defaults, so a new user reuses the already-downloaded data and the
