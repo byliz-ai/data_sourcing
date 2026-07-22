@@ -31,12 +31,8 @@ item).
   the `ec1` soil template overridden by our SMW/SMFCF/SM0/K0 exactly as the
   retired `5c_prepare_list_soil.r` did): a maize simulation ran to WSO 5.2 t/ha
   (dry), LAI 5.6, no errors — confirming our vapour-pressure fix and soil
-  mapping are ingestible as-is.
-- **Known follow-up (not fixed):** the multi-source weather assembly in
-  `to_oryza`/`to_wofost` drops the season's **first day** when it coincides with
-  the fetched year's boundary (e.g. a season starting 1 Jan lost 1 Jan, though
-  the per-variable cube contains it). Edge case only; did not affect the
-  round-trips. Needs a trace through the cross-source wide merge.
+  mapping are ingestible as-is. The written CABO file spans the full requested
+  season (leap-year 2008 = 366 daily rows, 1 Jan included).
 
 ## 0.27.0 — CGLabs resource optimization, phase 2 (memory budget + streaming)
 Builds the memory-budget foundation and stops the biggest per-call accumulator.
