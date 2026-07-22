@@ -9,8 +9,9 @@ Every task is the same four decisions:
 
 > **1. an area → 2. some datasets → 3. a time period → 4. an output.**
 
-Section 4 walks each decision; [Section 5](#5-user-interface--python--r--cli)
-shows the same tasks in Python, R and the CLI. The full parameter list for any
+Section 4 walks each decision; [Section 5](#5-user-interface--python--r--cli--claude-code)
+shows the same tasks in Python, R, the CLI, or plain language via Claude Code.
+The full parameter list for any
 function is in **[Section 6 / REFERENCE.md](../REFERENCE.md)**.
 
 ---
@@ -151,16 +152,19 @@ the data is fetched once and written to DSSAT *and* APSIM.
 
 ---
 
-## 5. User interface — Python / R / CLI
+## 5. User interface — Python / R / CLI / Claude Code
 
-Every function is available three ways. Pick whichever fits your work; the
-results are equivalent.
+Every function is available four ways. Pick whichever fits your work; the results
+are equivalent — the first three call the same functions, and Claude Code just
+drives them for you.
 
 - **Python** — `from agwise_data import <function>`
 - **R** — `source("r/agwise_data.R")`, then the `ad_<function>` wrapper
   (gridded wrappers return a `terra::SpatRaster`; point/writer wrappers return a
   `data.frame`). See [cglabs_setup §4](cglabs_setup.md#4-use-from-r-no-reticulate-needed).
 - **CLI** — `agwise-data <subcommand>` (prints a JSON line describing the outputs)
+- **Claude Code** — describe the task in plain language; Claude Code picks the
+  function, runs it, and tells you where the output landed (see [§5.3](#53-claude-code--plain-language))
 
 > **Two shapes of point output.** `extract_points` returns a **long/tidy**
 > table — one row per point × date × variable, columns `point, lon, lat, time,
@@ -269,6 +273,36 @@ Inspect the catalog and cache from the CLI at any time:
 agwise-data catalog list      # sources + variables available
 agwise-data cache info        # what is cached, and where
 ```
+
+### 5.3 Claude Code — plain language
+
+If your team uses **Claude Code**, you can run the whole layer by describing what
+you want in plain language — no need to remember function names or flags. Claude
+Code reads this guide and `REFERENCE.md`, picks the right function, runs it
+through the Python API or the CLI, and reports the DataFrame or the output file
+path. It uses the same functions, so results are identical to the three
+interfaces above.
+
+**Setup:** activate the shared env ([README §2.2](../README.md#22-install)) and
+start Claude Code from a working directory you own (outputs land there); set your
+credentials for any source that needs them ([Section 3](credentials_setup.md)).
+New teammates can open the onboarding guide:
+<https://claude.ai/claude-code/onboard/5lLrC-Lqvb1Q>.
+
+**Example** — the same "monthly rainfall for a country" task as
+[§5.1.A](#51-the-same-tasks-three-ways), asked in plain language:
+
+> *"Get monthly CHIRPS rainfall for Rwanda from 2015 to 2024 and tell me where
+> the cube is cached."*
+
+Claude Code runs the equivalent of
+`agwise-data get --vars PRCP --country Rwanda --years 2015:2024 --freq monthly`
+(or the matching `get_climate(...)` call) and hands back the cached NetCDF path.
+
+It shines for **multi-step or exploratory** work — e.g. *"pull AgERA5 temperature
+and local CHIRPS v3 rainfall for these trial points, then write DSSAT files for a
+March–July season"* becomes one request instead of chaining calls by hand. Ask it
+to show the command it will run first if you want to review before it executes.
 
 Next: **[Section 6 / REFERENCE.md](../REFERENCE.md)** documents every parameter
 of every function.

@@ -655,7 +655,7 @@ forecast_to_dssat("trials.csv", init_month=2, forecast_year=2024,
 Every function above has an **R wrapper** (`ad_<name>`, same arguments —
 `source("r/agwise_data.R")`) and a **CLI subcommand** (`agwise-data <name>`).
 The full Python ↔ R ↔ CLI mapping, with side-by-side examples, is in
-**[user guide §5](docs/user_guide.md#5-user-interface--python--r--cli)**.
+**[user guide §5](docs/user_guide.md#5-user-interface--python--r--cli--claude-code)**.
 
 ```bash
 agwise-data --help            # list every subcommand

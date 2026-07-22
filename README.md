@@ -17,7 +17,7 @@ top to bottom; each is a self-contained step of the journey.
 | 2 | **Installation** | this page ↓ + [docs/cglabs_setup.md](docs/cglabs_setup.md) | install on CGLabs (or a laptop) and check it works |
 | 3 | **Credentials** | [docs/credentials_setup.md](docs/credentials_setup.md) | create / configure / verify Copernicus + Google Earth Engine |
 | 4 | **User workflow** | [docs/user_guide.md](docs/user_guide.md) | choose your area, datasets, time period and output |
-| 5 | **User interface (Python / R / CLI)** | [docs/user_guide.md](docs/user_guide.md#5-user-interface--python--r--cli) | run the same task in the language you prefer |
+| 5 | **User interface (Python / R / CLI / Claude Code)** | [docs/user_guide.md](docs/user_guide.md#5-user-interface--python--r--cli--claude-code) | run the same task in the language you prefer |
 | 6 | **Function documentation** | [REFERENCE.md](REFERENCE.md) | look up every function: parameters, types, defaults, examples |
 | 7 | **General improvements** | [CONTRIBUTING.md](CONTRIBUTING.md) | maintainer notes and suggested next steps |
 
@@ -198,8 +198,8 @@ follow the **[user workflow (Section 4)](docs/user_guide.md)**.
   verify Copernicus CDS and Google Earth Engine, click-by-click.
 - **[Section 4 — User workflow](docs/user_guide.md):** choose your study area,
   datasets, time period and output type.
-- **[Section 5 — User interface](docs/user_guide.md#5-user-interface--python--r--cli):**
-  the same tasks in Python, R and the CLI.
+- **[Section 5 — User interface](docs/user_guide.md#5-user-interface--python--r--cli--claude-code):**
+  the same tasks in Python, R, the CLI, or plain language via Claude Code.
 - **[Section 6 — Function documentation](REFERENCE.md):** every public function
   with all its parameters, types, defaults and a runnable example.
 - **[Section 7 — General improvements](CONTRIBUTING.md):** maintainer notes.
