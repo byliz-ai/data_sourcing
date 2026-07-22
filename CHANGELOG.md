@@ -5,6 +5,13 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.27.2 — `__version__` tracks the real package version
+- **`agwise_data.__version__` was hardcoded at `0.18.0`** and drifted from the
+  actual `pyproject.toml` version. It now derives from the installed
+  distribution metadata (`importlib.metadata.version("agwise-data")`), so it
+  always matches — no second place to bump. Falls back to `"0+unknown"` when run
+  from a source tree with no install. No API change.
+
 ## 0.27.1 — ORYZA weather Angstrom fix (live model round-trip verified)
 Found and fixed while running the **real crop models** on `to_oryza`/`to_wofost`
 output for the first time (the long-standing "live model round-trip" backlog

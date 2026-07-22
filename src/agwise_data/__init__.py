@@ -49,7 +49,16 @@ from .api import (
 )
 from .config import Config
 
-__version__ = "0.18.0"
+# Single source of truth: the installed distribution's version (pyproject.toml).
+# Falls back to "0+unknown" only when the package isn't installed (e.g. run
+# straight from a source tree with no metadata).
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+try:
+    __version__ = _pkg_version("agwise-data")
+except PackageNotFoundError:  # pragma: no cover - source tree without install
+    __version__ = "0+unknown"
+del _pkg_version, PackageNotFoundError
 
 __all__ = [
     "get_climate",
