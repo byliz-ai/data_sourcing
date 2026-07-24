@@ -26,8 +26,10 @@ one-country run fetches only that country's window, not a whole continent.
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import warnings
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
@@ -38,7 +40,12 @@ import xarray as xr
 
 from . import boundaries, catalog, drivers, memory, progress
 from .cache import atomic_write, write_manifest
-from .config import Config, region_domain_name, round_region_bbox
+from .config import (
+    Config,
+    _cap_dask_scheduler,
+    region_domain_name,
+    round_region_bbox,
+)
 from .drivers.base import nc_encoding
 from .harmonize import (
     canonical_name,
@@ -215,23 +222,47 @@ def _effective_domain(
     return name
 
 
+# Below this many (variable, year) tasks the thread pool is used: a process
+# pool's spawn cost (fresh interpreters, ~seconds) only pays off once there are
+# many files to read, e.g. a multi-year historical pull.
+_PROCESS_MIN_TASKS = 12
+
+
 def _prefetch(config: Config, tasks: List[tuple]) -> None:
     """Ensure many (driver, variable, year, domain) files, in parallel.
 
     Downloads and CDS queue waits are I/O bound, so threads overlap them;
     the per-file locks in the cache make duplicate tasks harmless.
 
-    When this runs several fetches at once, the inner per-fetch fan-out
-    (``cog_workers``, used by the CHIRPS COG/GEE paths) is pinned to 1 for the
-    duration so peak concurrency is ``max_workers`` — never the
-    ``max_workers x cog_workers`` product that could put 30+ window/tile reads
-    and several year-arrays in flight at once. A single-task (serial) prefetch
-    keeps the full inner fan-out.
+    For a LARGE batch (a multi-year historical, ``>= _PROCESS_MIN_TASKS``) the
+    files are read across worker PROCESSES instead. Threads cannot parallelize
+    local netCDF reads/writes: xarray guards the netCDF/HDF5 backend with a
+    single global lock (HDF5 is not thread-safe), so a many-year local read is
+    serialized to one file at a time and a thread pool buys nothing. Separate
+    processes each hold their own HDF5 lock, so the reads truly overlap. See
+    :func:`_prefetch_processes`.
+
+    When the thread pool is used, the inner per-fetch fan-out (``cog_workers``,
+    used by the CHIRPS COG/GEE paths) is pinned to 1 for the duration so peak
+    concurrency is ``max_workers`` — never the ``max_workers x cog_workers``
+    product that could put 30+ window/tile reads and several year-arrays in
+    flight at once. A single-task (serial) prefetch keeps the full inner fan-out.
     """
     if config.max_workers <= 1 or len(tasks) <= 1:
         for drv, var, year, dom in progress.track(tasks, desc="Fetching climate"):
             drv.ensure_daily_year(var, year, dom)
         return
+    if getattr(config, "read_workers", 0) >= 2 and len(tasks) >= _PROCESS_MIN_TASKS:
+        try:
+            _prefetch_processes(config, tasks)
+            return
+        except (BrokenProcessPool, OSError) as exc:
+            # A worker died / the pool could not start (restricted sandbox,
+            # no spawn) — the thread pool below still does the work correctly.
+            logger.warning(
+                "parallel-read process pool unavailable (%s) — using threads",
+                exc,
+            )
     with _pinned_cog_workers(config, 1):
         with ThreadPoolExecutor(max_workers=config.max_workers) as ex:
             futures = [
@@ -239,6 +270,72 @@ def _prefetch(config: Config, tasks: List[tuple]) -> None:
                 for drv, var, year, dom in tasks
             ]
             progress.drain_futures(futures, desc="Fetching climate")
+
+
+def _read_worker_init() -> None:
+    """Initializer for a spawned read-worker process.
+
+    A spawned worker is a fresh interpreter, so re-apply the two settings the
+    parent relies on for correct/quiet NFS netCDF access: disable HDF5 file
+    locking (NFS) and bound dask's implicit thread pool to one (each worker is
+    already one of several processes — it must not also fan out to 40 threads).
+    """
+    import os as _os
+
+    _os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
+    _cap_dask_scheduler(1)
+
+
+def _ensure_year_task(payload):
+    """Worker-process task: rebuild the driver and ensure one (variable, year).
+
+    Takes only picklable pieces — the catalog ``entry`` (dict), the ``config``,
+    and the task keys — and returns lightweight ``(variable, year, str(path))``.
+    The harmonized array is written to the shared cache as a side effect and is
+    never returned, so nothing heavy crosses the process boundary. Exceptions
+    propagate to the submitting future (surfaced by ``drain_futures``).
+    """
+    entry, config, variable, year, domain = payload
+    driver = drivers.get_driver(entry, config)
+    path = driver.ensure_daily_year(variable, year, domain)
+    return (variable, year, str(path))
+
+
+def _read_pool_context():
+    """A multiprocessing start method safe from a long-running, threaded parent.
+
+    Never ``fork``: the parent has already run threads (thread pools, dask,
+    GDAL/HDF5) and forking a multi-threaded process is a classic child-deadlock
+    source — exactly the failure this change removes. ``forkserver`` (Linux)
+    forks workers from a clean dedicated server instead of from this process, so
+    it avoids that AND the ``__main__`` re-import that ``spawn`` needs (brittle
+    under pytest / a REPL). ``spawn`` is the portable fallback.
+    """
+    methods = multiprocessing.get_all_start_methods()
+    for name in ("forkserver", "spawn"):
+        if name in methods:
+            return multiprocessing.get_context(name)
+    return multiprocessing.get_context("spawn")
+
+
+def _prefetch_processes(config: Config, tasks: List[tuple]) -> None:
+    """Ensure many files across worker PROCESSES (see :func:`_prefetch`).
+
+    Each worker gets a clean interpreter with its own HDF5 lock, so the netCDF
+    reads/writes truly overlap. Each cache write is already atomic and per-file
+    ``FileLock``-guarded, so concurrent processes writing different
+    (variable, year) files is safe.
+    """
+    ctx = _read_pool_context()
+    workers = max(1, min(config.read_workers, len(tasks)))
+    payloads = [
+        (drv.entry, drv.config, var, year, dom) for drv, var, year, dom in tasks
+    ]
+    with ProcessPoolExecutor(
+        max_workers=workers, mp_context=ctx, initializer=_read_worker_init
+    ) as ex:
+        futures = [ex.submit(_ensure_year_task, p) for p in payloads]
+        progress.drain_futures(futures, desc="Fetching climate")
 
 
 @contextmanager

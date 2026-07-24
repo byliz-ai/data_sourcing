@@ -5,6 +5,28 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.28.0 — parallel local reads across processes (fast multi-year history)
+- **A large multi-year local read now runs across worker PROCESSES**, not
+  threads. xarray guards the netCDF/HDF5 backend with a single global lock (HDF5
+  is not thread-safe), so a thread pool serializes local reads to one file at a
+  time — a 30-year historical pull crawled. `_prefetch` now sends a big batch
+  (`>= 12` (variable, year) files) to a `ProcessPoolExecutor`; each worker has
+  its own HDF5 lock, so the reads truly overlap. Measured **~2.4× faster** on a
+  6-year × 6-variable point extract over the staged AgERA5/CHIRPS files (27→11 s);
+  the win grows with the number of years. Reads are windowed (light), so this is
+  bounded by CPU, not the memory budget.
+- **New `read_workers` / `AGWISE_READ_WORKERS`.** Process count for the read
+  pool; defaults to the *effective* (cgroup) CPU count capped at 8 — new
+  `config.effective_cpu()` reads the cgroup CPU quota because `os.cpu_count()`
+  reports the host (~40 on CGLabs), not the container's 8. Set
+  `AGWISE_READ_WORKERS=1` to disable and fall back to the thread pool.
+- The pool uses the `forkserver` start method (spawn fallback), never `fork`:
+  forking a process that has already run threads (dask/GDAL/HDF5) is a classic
+  child-deadlock source. A broken/unavailable pool falls back to threads. Note:
+  a *direct Python API* caller that triggers the process pool must guard its
+  entry point with `if __name__ == "__main__":` (standard multiprocessing rule);
+  the `agwise-data` CLI already does. +4 tests.
+
 ## 0.27.4 — `forecast_to_dssat` infers the region from the points
 - **`forecast_to_dssat(points, …)` no longer requires an explicit region.** It
   passed `country`/`bbox`/`geometry` straight to `bias_correct`, which errored

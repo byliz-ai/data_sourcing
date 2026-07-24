@@ -228,3 +228,97 @@ def test_pinned_cog_workers_restores_on_error(config):
     except RuntimeError:
         pass
     assert config.cog_workers == 8
+
+
+# ---------------------------------------------------------------------------
+# Parallel local reads via a PROCESS pool (works around xarray's global HDF5
+# lock, which serializes netCDF reads/writes within one process).
+
+
+def test_prefetch_routes_between_threads_and_processes(config, monkeypatch):
+    """A big batch goes to the process pool; a small one stays on threads, and
+    read_workers < 2 disables the process path entirely."""
+    import agwise_data.api as api
+
+    proc_calls = []
+    monkeypatch.setattr(
+        api, "_prefetch_processes",
+        lambda cfg, tasks: proc_calls.append(len(tasks)),
+    )
+
+    class _Drv:
+        entry = {}
+        config = None
+
+        def __init__(self):
+            self.n = 0
+
+        def ensure_daily_year(self, variable, year, domain):
+            self.n += 1
+
+    config.max_workers = 4
+    config.read_workers = 4
+    drv = _Drv()
+
+    few = [(drv, "PRCP", y, "africa") for y in range(3)]
+    api._prefetch(config, few)
+    assert proc_calls == [] and drv.n == 3            # few -> threads
+
+    drv.n = 0
+    many = [(drv, "PRCP", y, "africa") for y in range(api._PROCESS_MIN_TASKS)]
+    api._prefetch(config, many)
+    assert proc_calls == [api._PROCESS_MIN_TASKS] and drv.n == 0   # many -> processes
+
+    proc_calls.clear()
+    config.read_workers = 1
+    drv.n = 0
+    api._prefetch(config, many)
+    assert proc_calls == [] and drv.n == api._PROCESS_MIN_TASKS     # disabled -> threads
+
+
+def _write_agera5_tmax_year(landing, year):
+    p = landing / "TemperatureMax" / "AgEra"
+    p.mkdir(parents=True, exist_ok=True)
+    times = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq="D")
+    lat = np.arange(-2.0, 2.001, 1.0)
+    lon = np.arange(29.0, 33.001, 1.0)
+    data = np.full((len(times), len(lat), len(lon)), 298.0)  # 298 K -> 24.85 C
+    ds = xr.Dataset(
+        {str(year): (("time", "latitude", "longitude"), data)},
+        coords={"time": times, "latitude": lat, "longitude": lon},
+    )
+    ds["crs"] = 0
+    ds.to_netcdf(p / f"{year}.nc")
+
+
+def test_prefetch_processes_fills_cache_from_local(tmp_path, config):
+    """The real process pool (forkserver/spawn) reads local files in parallel
+    and populates the shared cache — the multi-year historical read path."""
+    import agwise_data.api as api
+    from agwise_data import catalog, drivers
+    from agwise_data.harmonize import short_name
+
+    landing = tmp_path / "landing"
+    years = list(range(2000, 2000 + api._PROCESS_MIN_TASKS))
+    for y in years:
+        _write_agera5_tmax_year(landing, y)
+
+    config.local_root = landing
+    config.register_domain("rw", [28.0, -3.0, 34.0, 3.0])
+    config.read_workers = 3
+    drv = drivers.get_driver(catalog.get_entry("agera5"), config)
+    tasks = [(drv, "AGRO.TMAX", y, "rw") for y in years]
+
+    api._prefetch_processes(config, tasks)
+
+    for y in years:
+        dest = config.harmonized_path("agera5", "rw", short_name("AGRO.TMAX"), y)
+        assert dest.exists(), f"missing cache for {y}"
+    # harmonization ran inside the worker: 298 K -> ~24.85 C, full year kept
+    import calendar
+
+    with xr.open_dataarray(
+        config.harmonized_path("agera5", "rw", short_name("AGRO.TMAX"), years[0])
+    ) as da:
+        assert da.sizes["time"] == (366 if calendar.isleap(years[0]) else 365)
+        assert abs(float(da.max()) - 24.85) < 0.1

@@ -104,3 +104,25 @@ def test_effective_source_applies_rainfall_preference():
     assert _effective_source("PRCP", "chirps", cfg, [2023]) == "chirps"
     # non-rainfall variables are untouched by the preference
     assert _effective_source("TMAX", None, cfg, [2023]) is None
+
+
+def test_effective_cpu_is_positive():
+    from agwise_data.config import effective_cpu
+
+    n = effective_cpu()
+    assert isinstance(n, int) and n >= 1
+
+
+def test_read_workers_default_and_override(monkeypatch):
+    from agwise_data.config import Config, ENV_READ_WORKERS, effective_cpu
+
+    # default: derived from the effective (cgroup) CPU count, capped at 8
+    c = Config()
+    assert c.read_workers == min(effective_cpu(), 8)
+    assert 1 <= c.read_workers <= 8
+    # an explicit constructor value always wins
+    assert Config(read_workers=2).read_workers == 2
+    assert Config(read_workers=1).read_workers == 1
+    # env override flows through load()
+    monkeypatch.setenv(ENV_READ_WORKERS, "3")
+    assert Config.load().read_workers == 3

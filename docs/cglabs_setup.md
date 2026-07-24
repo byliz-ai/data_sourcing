@@ -103,6 +103,17 @@ The defaults are sensible; two environment variables matter at scale:
 # where wall-clock is dominated by CDS queue waits:
 export AGWISE_DATA_WORKERS=6
 
+# worker PROCESSES for reading many local files at once. A big multi-year
+# historical pull (>= 12 variable-years) is served from Landing across
+# processes, because xarray's single global HDF5 lock otherwise serializes
+# local netCDF reads to one file at a time in a thread pool (~2.4x faster on
+# a 6-year point extract; more years, more gain). Defaults to the effective
+# (cgroup) CPU count, capped at 8. Set to 1 to disable (use threads):
+export AGWISE_READ_WORKERS=8
+# NOTE: a direct-Python-API script that triggers this must guard its entry
+# point with `if __name__ == "__main__":` (standard multiprocessing rule);
+# the `agwise-data` CLI already does, so CLI runs need nothing extra.
+
 # on a shared bulk server you may prefer continental-domain fetching so
 # one cache serves every country (small requests otherwise fetch only
 # their own window, which is much faster for one-off runs):

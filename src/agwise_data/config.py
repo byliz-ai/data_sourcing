@@ -51,6 +51,38 @@ ENV_CDS_RETRIES = "AGWISE_CDS_RETRIES"
 ENV_COG_WORKERS = "AGWISE_COG_WORKERS"
 ENV_REGION_MAX_AREA = "AGWISE_REGION_MAX_AREA_DEG2"
 ENV_DOWNLOAD_PARTS = "AGWISE_DOWNLOAD_PARTS"
+ENV_READ_WORKERS = "AGWISE_READ_WORKERS"
+
+
+def effective_cpu() -> int:
+    """CPUs this container may actually use, read from the cgroup CPU quota.
+
+    ``os.cpu_count()`` reports the HOST (~40 on CGLabs) but a CFS quota caps the
+    container far lower (8 here); sizing a pool off ``cpu_count`` oversubscribes.
+    Reads cgroup v2 ``cpu.max`` then v1 ``cpu.cfs_quota_us``/``cfs_period_us``;
+    falls back to the CPU affinity set, then ``cpu_count``.
+    """
+    # cgroup v2: "cpu.max" is "<quota> <period>" or "max <period>".
+    try:
+        parts = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if parts and parts[0] != "max":
+            quota, period = int(parts[0]), int(parts[1])
+            if quota > 0 and period > 0:
+                return max(1, quota // period)
+    except (OSError, ValueError, IndexError):
+        pass
+    # cgroup v1.
+    try:
+        quota = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text().strip())
+        period = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text().strip())
+        if quota > 0 and period > 0:
+            return max(1, quota // period)
+    except (OSError, ValueError):
+        pass
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
 
 
 def _cap_dask_scheduler(num_workers: int) -> None:
@@ -154,6 +186,7 @@ class Config:
         gee_project: Optional[str] = None,
         local_root: Optional[os.PathLike] = None,
         rainfall_source: Optional[str] = None,
+        read_workers: Optional[int] = None,
     ):
         self.root = Path(root).expanduser() if root else Path.home() / "agwise_data"
         self.domain = domain
@@ -179,6 +212,16 @@ class Config:
         # and the chirps/modis drivers). Providers rate-limit aggressive clients
         # (UCSB HTTP 403 / EE quotas), so keep it modest.
         self.cog_workers = int(cog_workers)
+        # Worker PROCESSES for the parallel local-read prefetch. Threads cannot
+        # parallelize netCDF reads/writes — xarray holds one global HDF5 lock
+        # (HDF5 is not thread-safe), so a multi-year local read is serialized to
+        # one file at a time. Separate processes each get their own lock. Reads
+        # are windowed (light), so this is bounded by CPU, not the memory budget;
+        # <= 1 disables it (falls back to the thread pool). See api._prefetch.
+        self.read_workers = (
+            int(read_workers) if read_workers is not None
+            else min(effective_cpu(), 8)
+        )
         self.cds_retries = int(cds_retries)
         # Region-scoped fetching kicks in below this bbox area (deg^2);
         # 400 = a 20x20 degree box, comfortably any single country.
@@ -250,6 +293,10 @@ class Config:
             workers = _mem.derive_max_workers(
                 _mem.usable_budget_bytes(), os.cpu_count() or 1, baseline=4
             )
+        # read_workers: explicit env/YAML wins; None lets the Config constructor
+        # derive it from the effective (cgroup) CPU count.
+        _read_workers = os.environ.get(ENV_READ_WORKERS) or file_cfg.get("read_workers")
+        read_workers = int(_read_workers) if _read_workers is not None else None
         scope = os.environ.get(ENV_SCOPE) or file_cfg.get("fetch_scope", "auto")
         # Bound dask's implicit threaded scheduler — a bare .load() otherwise
         # spins up one thread per core (~40 here), an invisible pool that
@@ -269,6 +316,7 @@ class Config:
             cog_workers=int(
                 os.environ.get(ENV_COG_WORKERS) or file_cfg.get("cog_workers", 8)
             ),
+            read_workers=read_workers,
             cds_retries=int(
                 os.environ.get(ENV_CDS_RETRIES) or file_cfg.get("cds_retries", 3)
             ),
