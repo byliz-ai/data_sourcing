@@ -6,6 +6,30 @@ reading the source code**. One call fetches, harmonizes and caches the data; the
 same data is downloaded **once** into a shared cache with agreed names and units
 (`PRCP` in mm/day, `CLAY` in %, …) and reused by everyone afterwards.
 
+## New here? Let Claude Code set you up — and drive the module for you
+
+The fastest way through **everything below** is to not do it by hand: open
+**Claude Code** on CGLabs (new teammates: start from the
+[onboarding guide](https://claude.ai/claude-code/onboard/5lLrC-Lqvb1Q)) in a
+folder you own, and ask in plain language. It reads these docs, runs the same
+public functions documented here, and reports back — you review, it executes.
+
+| Ask it to… | Example prompt | Covers |
+| --- | --- | --- |
+| **Install & verify** | *"Set me up to use agwise-data: register the shared env and run a first no-credential fetch to confirm it works."* | Sections 1–2 |
+| **Configure credentials** | *"Help me create and configure my Copernicus CDS and Earth Engine credentials, then verify both."* | Section 3 |
+| **Fetch data & build model inputs** | *"Get monthly CHIRPS rainfall for Rwanda 2015–2024 and tell me where the cube is cached"* · *"Pull weather for these trial points and write DSSAT files for a March–July season."* | Sections 4–6 |
+
+Multi-step work is where it shines — one request instead of chaining calls by
+hand. Ask it to *show each command before running* if you want to review first,
+and remember the golden rule: it will place **your** credentials in **your**
+home, never in shared folders. Details and more examples:
+[user guide §5.3](docs/user_guide.md#53-claude-code--plain-language).
+
+Prefer to drive yourself — or want to understand what it's doing? Follow the
+documentation map below; Claude Code and the manual path are interchangeable at
+any point.
+
 ## Documentation map — read in this order
 
 You do **not** need to understand the code to use this tool. Follow these pages
