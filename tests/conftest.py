@@ -353,4 +353,9 @@ def config(tmp_path):
     fake_seasonal_calls().clear()
     fake_modis_calls().clear()
     fake_worldcover_calls().clear()
-    return Config(root=tmp_path / "root", domain="africa")
+    # The fake drivers serve tiny synthetic grids but tests fetch them under
+    # the real "africa" domain (6000 deg^2), which the daily-weather fetch-area
+    # guard would reject — disable it here; the guard has its own tests.
+    return Config(
+        root=tmp_path / "root", domain="africa", max_fetch_area_deg2=0
+    )

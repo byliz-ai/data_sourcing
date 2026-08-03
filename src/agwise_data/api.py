@@ -214,12 +214,30 @@ def _effective_domain(
     if config.fetch_scope == "domain":
         return base
     rbox = round_region_bbox(region_bbox)
-    if _bbox_area(rbox) > config.region_max_area_deg2:
+    if _escalates_to_base(config, rbox):
         return base
     name = region_domain_name(rbox)
     if name not in config.domains:
         config.register_domain(name, rbox)
     return name
+
+
+def _escalates_to_base(config: Config, rbox) -> bool:
+    """Whether a request too big for region scoping falls back to the
+    containing domain.
+
+    Escalating multiplies the fetch window (the ``africa`` domain is 6000
+    deg^2 — a 30x30 deg request grew 6.7x and pinned the 32 GiB container),
+    so a mid-size request between ``region_max_area_deg2`` and the hard
+    ``max_fetch_area_deg2`` cap keeps its own region domain and fetches only
+    what was asked. Beyond the cap (or with the cap disabled) it escalates,
+    and the daily drivers reject an over-cap fetch window with a clear error.
+    """
+    area = _bbox_area(rbox)
+    if area <= config.region_max_area_deg2:
+        return False
+    cap = config.max_fetch_area_deg2
+    return cap <= 0 or area > cap
 
 
 # Below this many (variable, year) tasks the thread pool is used: a process
@@ -775,7 +793,7 @@ def _static_domain(
     if config.fetch_scope == "domain":
         return base
     rbox = round_region_bbox(region_bbox)
-    if _bbox_area(rbox) > config.region_max_area_deg2:
+    if _escalates_to_base(config, rbox):
         return base
     name = region_domain_name(rbox)
     if name not in config.domains:

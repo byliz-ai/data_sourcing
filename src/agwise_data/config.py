@@ -50,6 +50,7 @@ ENV_RAINFALL_SOURCE = "AGWISE_RAINFALL_SOURCE"
 ENV_CDS_RETRIES = "AGWISE_CDS_RETRIES"
 ENV_COG_WORKERS = "AGWISE_COG_WORKERS"
 ENV_REGION_MAX_AREA = "AGWISE_REGION_MAX_AREA_DEG2"
+ENV_MAX_FETCH_AREA = "AGWISE_MAX_FETCH_AREA_DEG2"
 ENV_DOWNLOAD_PARTS = "AGWISE_DOWNLOAD_PARTS"
 ENV_READ_WORKERS = "AGWISE_READ_WORKERS"
 
@@ -183,6 +184,7 @@ class Config:
         cog_workers: int = 8,
         cds_retries: int = 3,
         region_max_area_deg2: float = 400.0,
+        max_fetch_area_deg2: float = 1000.0,
         gee_project: Optional[str] = None,
         local_root: Optional[os.PathLike] = None,
         rainfall_source: Optional[str] = None,
@@ -226,6 +228,14 @@ class Config:
         # Region-scoped fetching kicks in below this bbox area (deg^2);
         # 400 = a 20x20 degree box, comfortably any single country.
         self.region_max_area_deg2 = float(region_max_area_deg2)
+        # Hard cap on a daily-weather FETCH window (deg^2); <= 0 disables.
+        # Weather memory/IO scales with the window area, not the year span:
+        # a 30x30 deg AgERA5 pull peaked at ~11 GB RSS and pinned the 32 GiB
+        # CGLabs container, while country x 10 yr stayed at ~3 GB. 1000 deg^2
+        # clears every African country (largest ~360) plus custom mid-size
+        # domains, and blocks the africa/global domains (6000/36000). The
+        # daily drivers raise before fetching over this; cache hits are exempt.
+        self.max_fetch_area_deg2 = float(max_fetch_area_deg2)
         # Real per-process memory ceiling from the cgroup (NOT the host RAM),
         # and the usable budget after headroom. None off a limited container.
         from . import memory as _mem
@@ -323,6 +333,10 @@ class Config:
             region_max_area_deg2=float(
                 os.environ.get(ENV_REGION_MAX_AREA)
                 or file_cfg.get("region_max_area_deg2", 400.0)
+            ),
+            max_fetch_area_deg2=float(
+                os.environ.get(ENV_MAX_FETCH_AREA)
+                or file_cfg.get("max_fetch_area_deg2", 1000.0)
             ),
             gee_project=os.environ.get(ENV_GEE_PROJECT) or file_cfg.get("gee_project"),
             local_root=(

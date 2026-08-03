@@ -126,3 +126,12 @@ def test_read_workers_default_and_override(monkeypatch):
     # env override flows through load()
     monkeypatch.setenv(ENV_READ_WORKERS, "3")
     assert Config.load().read_workers == 3
+
+
+def test_max_fetch_area_default_and_override(monkeypatch):
+    from agwise_data.config import Config, ENV_MAX_FETCH_AREA
+
+    assert Config().max_fetch_area_deg2 == 1000.0
+    assert Config(max_fetch_area_deg2=0).max_fetch_area_deg2 == 0.0
+    monkeypatch.setenv(ENV_MAX_FETCH_AREA, "2500")
+    assert Config.load().max_fetch_area_deg2 == 2500.0

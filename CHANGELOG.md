@@ -5,6 +5,29 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.29.0 — hard memory guard for daily weather (fetch-area cap)
+- **A daily-weather fetch window over `max_fetch_area_deg2` (default 1000
+  deg²) is now rejected with a clear error** instead of grinding the shared
+  container. Weather memory/IO scales with the window AREA, not the year
+  span: in the CGLabs benchmark a 30×30° AgERA5 pull peaked at ~11 GB RSS and
+  pinned the 32 GiB cgroup, while country × 10 yr stayed at ~3 GB. The guard
+  sits in the daily drivers' fetch path (AgERA5, CHIRPS, CHIRPS v3 — every
+  interface), mirrors the DEM driver's 450 Mpx cap, and exempts cache hits:
+  an already harmonized file is opened windowed and stays cheap at any area.
+  Override with `AGWISE_MAX_FETCH_AREA_DEG2` / `max_fetch_area_deg2` (0
+  disables). 1000 deg² clears every African country (largest ≈ 360).
+- **Mid-size requests no longer escalate to a continental fetch.** A request
+  over `region_max_area_deg2` (400 deg²) used to fall back silently to the
+  containing domain — usually `africa`, 6000 deg², a 6.7× bigger window than
+  the 900 deg² actually asked for (the very case that pinned the container).
+  Requests between 400 and the fetch cap now keep their own region-scoped
+  cache and fetch only what was asked (daily, seasonal, MODIS and static
+  domain selection alike); a complete containing-domain cache is still
+  reused first, and `fetch_scope="domain"` still forces the domain (its
+  continental daily fetch now needs the cap raised deliberately).
+- +3 tests (region routing, guard + cache-hit exemption, config/env wiring);
+  documented in `docs/cglabs_setup.md` §performance.
+
 ## 0.28.0 — parallel local reads across processes (fast multi-year history)
 - **A large multi-year local read now runs across worker PROCESSES**, not
   threads. xarray guards the netCDF/HDF5 backend with a single global lock (HDF5

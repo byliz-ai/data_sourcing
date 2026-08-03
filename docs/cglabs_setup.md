@@ -118,6 +118,9 @@ export AGWISE_READ_WORKERS=8
 # one cache serves every country (small requests otherwise fetch only
 # their own window, which is much faster for one-off runs):
 export AGWISE_DATA_SCOPE=domain     # default: auto
+# NOTE: with the default "africa" domain this makes every daily-weather
+# fetch continental, which the fetch-area guard below rejects — a
+# deliberate bulk fill must also raise AGWISE_MAX_FETCH_AREA_DEG2.
 
 # memory budget (advisory). The layer reads the container's real cgroup
 # limit (~32 GB on CGLabs) — not the host RAM `free` shows — sizes the
@@ -125,6 +128,13 @@ export AGWISE_DATA_SCOPE=domain     # default: auto
 # only if the container is actually larger/smaller, or to change the reserve:
 export AGWISE_MEM_LIMIT_GB=32       # force the assumed limit
 export AGWISE_MEM_HEADROOM_GB=8     # bytes kept free (NFS write-back + a co-user)
+
+# hard cap on a daily-weather FETCH window, in bbox deg^2 (default 1000;
+# 0 disables). Weather memory/IO scales with the window AREA, not the year
+# span — a 30x30 deg AgERA5 pull peaked at ~11 GB RSS and pinned the 32 GB
+# container. Already-cached files are exempt (only new fetches are guarded);
+# raise it deliberately for a planned continental fill:
+export AGWISE_MAX_FETCH_AREA_DEG2=1000
 
 # how many times a CDS download (AgERA5/SEAS5) retries on a transient
 # network/queue failure before giving up (default 3). A cold seasonal

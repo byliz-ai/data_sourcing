@@ -58,6 +58,8 @@ class Driver:
         ):
             return dest
 
+        self._check_fetch_area(variable, year, domain)
+
         with cache.locked(dest):
             if dest.exists() and not cache.is_stale_partial(
                 dest, self.config.refresh_partial_days
@@ -120,6 +122,31 @@ class Driver:
                 },
             )
         return dest
+
+    def _check_fetch_area(self, variable: str, year: int, domain: str) -> None:
+        """Reject a daily fetch whose window exceeds ``max_fetch_area_deg2``.
+
+        Daily-weather memory and IO scale with the window AREA, not the year
+        span: a 30x30 deg AgERA5 pull peaked at ~11 GB RSS and pinned the
+        32 GiB CGLabs container, while country x 10 yr stayed at ~3 GB. Only
+        the fetch/harmonize fill is guarded — an already harmonized file is a
+        cache hit above (opened windowed, cheap at any area).
+        """
+        cap = self.config.max_fetch_area_deg2
+        if cap <= 0:
+            return
+        w, s, e, n = self.config.bbox_for(domain)
+        area = max(0.0, e - w) * max(0.0, n - s)
+        if area <= cap:
+            return
+        raise ValueError(
+            f"{self.source_id} {variable} {year}: the fetch window for domain "
+            f"'{domain}' is ~{area:.0f} deg^2 ({e - w:.0f} x {n - s:.0f} deg), over "
+            f"the {cap:.0f} deg^2 daily-weather limit — request a smaller "
+            "region (per-country requests are the intended pattern), or set "
+            "AGWISE_MAX_FETCH_AREA_DEG2 to raise the cap (0 disables) if this "
+            "fetch is deliberate."
+        )
 
     def open_years(
         self, variable: str, years: List[int], domain: str

@@ -65,6 +65,40 @@ def test_effective_domain_routing(config):
     assert _effective_domain(config, "fake", "PRCP", years, BBOX, None) == "africa"
 
 
+def test_midsize_request_stays_region_scoped(config):
+    """A request between region_max_area and the fetch cap keeps its own
+    region domain instead of silently escalating to "africa" (6000 deg^2) —
+    the escalation is what pinned the 32 GiB container in the benchmark."""
+    mid = (0.0, -14.0, 28.0, 13.0)  # rounds to 30 x 29 = 870 deg^2
+    # with the cap disabled the legacy behaviour holds: mid-size escalates
+    config.max_fetch_area_deg2 = 0
+    assert _effective_domain(config, "fake", "PRCP", [2020], mid, None) == "africa"
+    config.max_fetch_area_deg2 = 1000.0
+    dom = _effective_domain(config, "fake", "PRCP", [2020], mid, None)
+    assert dom.startswith("rg_")
+    # beyond the hard cap it still escalates (the driver then rejects the fetch)
+    huge = (-19.0, -39.0, 54.0, 39.0)
+    assert _effective_domain(config, "fake", "PRCP", [2020], huge, None) == "africa"
+
+
+def test_daily_fetch_window_hard_guard(config):
+    """An over-cap fetch window is rejected before any download/read; a file
+    already in the cache stays readable no matter its area."""
+    from agwise_data import catalog
+    from agwise_data.drivers import get_driver
+
+    driver = get_driver(catalog.get_entry("fake"), config)
+    # fill the "africa" cache with the guard disabled (the conftest default)
+    dest = driver.ensure_daily_year("AGRO.PRCP", 2020, "africa")
+    config.max_fetch_area_deg2 = 1000.0
+    # cache hit: exempt from the guard
+    assert driver.ensure_daily_year("AGRO.PRCP", 2020, "africa") == dest
+    # a fresh fill over the cap is refused, and nothing lands in the cache
+    with pytest.raises(ValueError, match="daily-weather limit"):
+        driver.ensure_daily_year("AGRO.PRCP", 2021, "africa")
+    assert not config.harmonized_path("fake", "africa", "PRCP", 2021).exists()
+
+
 def test_region_domains_rediscovered_across_sessions(config):
     get_climate(
         variables="PRCP", years=[2020], bbox=BBOX, freq="daily",
