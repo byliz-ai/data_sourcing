@@ -59,6 +59,31 @@ def test_grid_points_bad_res():
         _grid_points((0, 0, 1, 1), res_km=0)
 
 
+def test_grid_points_deg_legacy_spacing_and_snapping():
+    """res_deg reproduces the legacy fixed-degree grids: the same step on
+    BOTH axes (no cos-latitude correction, unlike res_km) and cell centres
+    on the global raster's half-cell offsets (.025/.075 for 0.05 deg)."""
+    from agwise_data.api import _grid_points_deg
+
+    lons, lats = _grid_points_deg((30.0, -15.0, 30.2, -14.8), res_deg=0.05)
+    assert len(lons) == 16  # 4 x 4
+    assert np.allclose(np.diff(np.unique(lons)), 0.05)
+    assert np.allclose(np.diff(np.unique(lats)), 0.05)  # no cos-lat scaling
+    # centres snapped to k*0.05 + 0.025, inside the bbox
+    assert np.allclose(np.mod(np.round(lons, 6), 0.05), 0.025)
+    assert np.allclose(np.mod(np.round(np.abs(lats), 6), 0.05), 0.025)
+    assert lons.min() >= 30.0 and lons.max() <= 30.2
+    assert lats.min() >= -15.0 and lats.max() <= -14.8
+    with pytest.raises(ValueError, match="res_deg"):
+        _grid_points_deg((0, 0, 1, 1), res_deg=0)
+
+
+def test_make_grid_res_deg_overrides_res_km():
+    df = make_grid(bbox=[0.0, 0.0, 1.0, 1.0], res_deg=0.25)
+    assert len(df) == 16  # 4 x 4 fixed-degree grid
+    assert np.allclose(np.mod(df["lon"], 0.25), 0.125)
+
+
 # --------------------------------------------------------------------------
 # make_grid
 # --------------------------------------------------------------------------

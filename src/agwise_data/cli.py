@@ -593,6 +593,7 @@ def cmd_make_grid(args) -> dict:
         admin_name=args.admin_name,
         geometry=args.aoi,
         res_km=args.res_km,
+        res_deg=args.res_deg,
         tag_admin_level=args.tag_admin_level,
     )
     out_path = Path(args.out)
@@ -976,6 +977,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_grid.add_argument("--out", required=True, help="Output CSV path")
     p_grid.add_argument("--res-km", dest="res_km", type=float, default=5.0,
                         help="Grid spacing in km (default 5; 1 or 0.25 for AOIs)")
+    p_grid.add_argument("--res-deg", dest="res_deg", type=float, default=None,
+                        help="Legacy fixed-degree spacing (e.g. 0.05): no "
+                             "cos-latitude correction, centres snapped to the "
+                             "global raster offsets; overrides --res-km")
     p_grid.add_argument("--tag-admin-level", dest="tag_admin_level", type=int,
                         default=2, help="Tag NAME_1..NAME_<n> (0 = none)")
     p_grid.set_defaults(func=cmd_make_grid)

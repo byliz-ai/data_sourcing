@@ -2621,6 +2621,32 @@ def _grid_points(bbox, res_km: float):
     return glon.ravel(), glat.ravel()
 
 
+def _grid_points_deg(bbox, res_deg: float):
+    """Regular lon/lat grid at a FIXED degree step, legacy-style.
+
+    Reproduces the original modules' hardcoded-degree grids (e.g.
+    ``resltn <- 0.05`` in ``check_n_points_in_region.R``): the same step on
+    both axes with no cos-latitude correction, and cell centres snapped to
+    the global raster origin (multiples of ``res_deg`` offset by half a cell
+    — the ``.025/.075`` offsets of a 0.05° raster), so the points line up
+    with previously generated fixed-degree outputs. Note the physical
+    longitude spacing then varies with latitude — ``res_km`` is the
+    corrected (preferred) mode for new work.
+    """
+    w, s, e, n = bbox
+    if res_deg <= 0:
+        raise ValueError("res_deg must be > 0")
+
+    def centres(lo, hi):
+        first = (np.floor(lo / res_deg) + 0.5) * res_deg
+        if first < lo - 1e-9:
+            first += res_deg
+        return np.arange(first, hi + 1e-9, res_deg)
+
+    glon, glat = np.meshgrid(centres(w, e), centres(s, n))
+    return glon.ravel(), glat.ravel()
+
+
 def _admin_names_for_points(config, country, lons, lats, max_level: int):
     """point-in-polygon admin names per point: {'NAME_1': [...], 'NAME_2': [...]}.
 
@@ -2660,6 +2686,7 @@ def make_grid(
     admin_name: Optional[str] = None,
     geometry=None,
     res_km: float = 5.0,
+    res_deg: Optional[float] = None,
     tag_admin_level: int = 2,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
@@ -2671,6 +2698,14 @@ def make_grid(
     names. Returns a DataFrame with ``lon``, ``lat``, ``country`` and (when a
     country is given) ``NAME_1``/``NAME_2`` up to ``tag_admin_level``. With
     ``bbox`` only, returns the full rectangular grid (no clip, no admin tags).
+
+    ``res_km`` spacing is cos-latitude corrected (equal physical distance on
+    both axes), so counts and locations deliberately differ from the legacy
+    modules' fixed-degree grids. Pass ``res_deg`` instead (e.g. ``0.05``) to
+    reproduce the legacy behaviour exactly: a fixed degree step on both axes,
+    centres snapped to the global ``res_deg`` raster (the ``.025/.075``
+    offsets), no latitude correction — for lining up with outputs generated
+    by the original R pipeline. ``res_deg`` overrides ``res_km``.
     """
     config = config or Config.load()
     geom = None
@@ -2691,7 +2726,10 @@ def make_grid(
     else:
         raise ValueError("Provide geometry=..., country=... or bbox=(w, s, e, n)")
 
-    lons, lats = _grid_points(region_bbox, res_km)
+    lons, lats = (
+        _grid_points_deg(region_bbox, res_deg) if res_deg is not None
+        else _grid_points(region_bbox, res_km)
+    )
     if geom is not None:
         import geopandas as gpd
 

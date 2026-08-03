@@ -438,11 +438,15 @@ ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
 #' data.frame (lon, lat, country, NAME_1, NAME_2). With bbox only, returns the
 #' full rectangular grid (no clip, no admin tags).
 ad_make_grid <- function(country = NULL, bbox = NULL, admin_level = 0,
-                         admin_name = NULL, aoi = NULL, res_km = 5, tag_admin_level = 2) {
+                         admin_name = NULL, aoi = NULL, res_km = 5, res_deg = NULL,
+                         tag_admin_level = 2) {
   out_csv <- tempfile(fileext = ".csv")
   args <- c("make-grid", "--out", out_csv,
             "--res-km", as.character(res_km),
             "--tag-admin-level", as.character(tag_admin_level))
+  # res_deg reproduces the legacy fixed-degree grids (resltn <- 0.05):
+  # no cos-latitude correction, centres on the .025/.075 raster offsets.
+  if (!is.null(res_deg))    args <- c(args, "--res-deg", as.character(res_deg))
   if (!is.null(country))    args <- c(args, "--country", country)
   if (!is.null(bbox))       args <- c(args, "--bbox", paste(bbox, collapse = ","))
   if (admin_level > 0)      args <- c(args, "--admin-level", admin_level)

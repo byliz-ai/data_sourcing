@@ -546,7 +546,8 @@ Build a **regular point grid** clipped to a country/admin boundary (or a bbox).
 | `admin_level` | int | No | `0` | How deep to clip when `country` is set: country / first / second admin level. Values: `0`, `1`, `2`. |
 | `admin_name` | str | No | `None` | Name of the admin unit to clip to (needs `admin_level` ≥ 1). Values: e.g. `"Nakuru"`. |
 | `geometry` | str \| GeoDataFrame \| geometry | No | `None` | **Your own uploaded area** to clip to — a file path (shapefile/GeoJSON/…), a `GeoDataFrame`, a shapely geometry, or a GeoJSON mapping. Takes priority over `country`/`bbox`; reprojected to EPSG:4326 automatically. |
-| `res_km` | float | No | `5.0` | Grid spacing in kilometres. Values: e.g. `5.0`, `1.0`, `0.25`. |
+| `res_km` | float | No | `5.0` | Grid spacing in kilometres, **cos-latitude corrected** (equal physical distance on both axes). Values: e.g. `5.0`, `1.0`, `0.25`. |
+| `res_deg` | float | No | `None` | **Legacy fixed-degree spacing** (e.g. `0.05`): the same degree step on both axes, no latitude correction, centres snapped to the global raster's half-cell offsets (`.025/.075` for 0.05°). Overrides `res_km`. |
 | `tag_admin_level` | int | No | `2` | Tag each grid point with admin names up to this level. Values: `0`, `1`, `2`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -554,6 +555,13 @@ Build a **regular point grid** clipped to a country/admin boundary (or a bbox).
 from agwise_data import make_grid
 grid = make_grid(country="Rwanda", res_km=5.0)
 ```
+
+> **Comparing against the original R pipeline?** The old scripts hardcoded a
+> flat degree step (`resltn <- 0.05`) with no latitude correction, so a
+> `res_km` grid gives a *different* point count and different locations by
+> design (~23% more points at 5 km vs 0.05° at latitude −13°, for example).
+> Use `res_deg=0.05` to reproduce the legacy grid: same spacing, same
+> cell-centre snapping. CLI: `--res-deg`; R: `ad_make_grid(res_deg = 0.05)`.
 
 ### `tag_admin`
 
