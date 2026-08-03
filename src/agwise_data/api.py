@@ -2076,7 +2076,15 @@ def _point_weather_wide(weather_long: pd.DataFrame, point_id) -> pd.DataFrame:
     grp = weather_long[weather_long["point"] == point_id]
     if grp.empty:
         return grp
-    wide = grp.pivot_table(index="time", columns="variable", values="value")
+    # dropna=False: pivot_table silently DROPS a column whose values are all
+    # NaN. That happens per variable when the point's nearest cell is masked
+    # on one source's coarse grid but not another's (e.g. AgERA5/SEAS5 TMAX
+    # NaN, CHIRPS PRCP fine at a polygon edge) — the variable must survive as
+    # a NaN column so the writer can reject the point instead of crashing on
+    # a "missing" column.
+    wide = grp.pivot_table(
+        index="time", columns="variable", values="value", dropna=False
+    )
     wide = wide.reset_index().rename(columns={"time": "DATE"})
     wide.columns.name = None
     return wide
@@ -2142,11 +2150,15 @@ def to_dssat(
         )
         insi = station_code(name)
         d = out_dir / f"EXTE{n:04d}"
-        wth = dssat_w.write_wth(
-            wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
-            path=d / f"WHTE{n:04d}.WTH", station=name,
-            elev=_point_elev(elev, idx),
-        )
+        try:
+            wth = dssat_w.write_wth(
+                wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+                path=d / f"WHTE{n:04d}.WTH", station=name,
+                elev=_point_elev(elev, idx),
+            )
+        except ValueError as exc:
+            logger.warning("Point %s: %s; skipped", idx, exc)
+            continue
         sol = soil_w.write_sol(
             soil.loc[idx], lat=float(prow[lat_col]), lon=float(prow[lon_col]),
             path=d / "SOIL.SOL", pedon=f"{insi}{n:05d}", site=name, country=country,
@@ -2205,10 +2217,14 @@ def to_apsim(
             str(prow[id_col]) if id_col else f"P{n:04d}"
         )
         d = out_dir / f"EXTE{n:04d}"
-        met = apsim_w.write_met(
-            wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
-            path=d / f"wth_loc_{n}.met", site=name,
-        )
+        try:
+            met = apsim_w.write_met(
+                wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+                path=d / f"wth_loc_{n}.met", site=name,
+            )
+        except ValueError as exc:
+            logger.warning("Point %s: %s; skipped", idx, exc)
+            continue
         table = soil_w.apsim_soil_table(soil.loc[idx])
         soil_csv = d / f"soil_{n}.csv"
         soil_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -2272,7 +2288,11 @@ def to_wofost(
             logger.warning("Point %s has no weather in season; skipped", idx)
             continue
         d = out_dir / f"EXTE{n:04d}"
-        wth = wofost_w.write_weather(wide, path=d / f"weather_{n}.csv")
+        try:
+            wth = wofost_w.write_weather(wide, path=d / f"weather_{n}.csv")
+        except ValueError as exc:
+            logger.warning("Point %s: %s; skipped", idx, exc)
+            continue
         sol = wofost_w.write_soil(soil.loc[idx], path=d / f"soil_{n}.csv")
         written.append({"point": idx, "dir": d, "weather": wth, "soil": sol})
     return written
@@ -2330,10 +2350,15 @@ def to_oryza(
             str(prow[id_col]) if id_col else f"P{n:04d}"
         )
         d = out_dir / f"EXTE{n:04d}"
-        wth = oryza_w.write_weather(
-            wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
-            out_dir=d, id_name=name, stn=n, elev=_point_elev(elev, idx) or 0.0,
-        )
+        try:
+            wth = oryza_w.write_weather(
+                wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+                out_dir=d, id_name=name, stn=n,
+                elev=_point_elev(elev, idx) or 0.0,
+            )
+        except ValueError as exc:
+            logger.warning("Point %s: %s; skipped", idx, exc)
+            continue
         sol = oryza_w.write_soil(
             soil.loc[idx], path=d / f"soil_{n}.sol", id_name=station_code(name),
         )

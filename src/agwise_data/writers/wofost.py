@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 
 from . import soil as soil_w
+from ._common import require_data
 
 # WOFOST daily weather columns, in order, with their units.
 WOFOST_WEATHER_COLS = ["date", "srad", "tmin", "tmax", "vapr", "wind", "prec"]
@@ -101,6 +102,7 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     for c in _WEATHER_INPUTS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    require_data(df, _WEATHER_INPUTS)
     df = df.sort_values("date").reset_index(drop=True)
 
     # Guarantee TMIN <= TMAX (some pixels/days have them crossed).
@@ -122,6 +124,11 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     })
     # WOFOST assumes consecutive days with no gaps; keep only complete rows.
     out = out.dropna(subset=[c for c in WOFOST_WEATHER_COLS if c != "date"])
+    if out.empty:
+        raise ValueError(
+            "no complete weather rows for this point (every day is missing "
+            "at least one required value) — cannot write a WOFOST series"
+        )
     return out.reset_index(drop=True)
 
 

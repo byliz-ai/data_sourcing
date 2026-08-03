@@ -5,6 +5,23 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.29.1 — one masked point no longer aborts a crop-model batch
+User-reported (Malawi/Central Region forecast run, 1428 points): 4 points
+whose nearest **coarse-grid** cell (AgERA5/SEAS5 TMAX/TMIN/SRAD) is masked
+outside the admin polygon — while the finer CHIRPS PRCP grid still covers
+them — crashed the whole `forecast_to_dssat` batch with
+`ValueError: Weather frame is missing ['TMAX', 'TMIN', 'SRAD']`.
+- `_point_weather_wide` now pivots with `dropna=False`: an all-NaN variable
+  survives as a NaN column instead of being silently dropped by
+  `pivot_table`'s default.
+- The writers' `prepare_weather` (DSSAT/APSIM shared, WOFOST, ORYZA) rejects
+  a required column that is present but has **no data at all** — previously
+  DSSAT/APSIM would have written all `-99` series, WOFOST an **empty** CSV
+  (its complete-cases filter), ORYZA all `-99` CABO files.
+- `to_dssat`/`to_apsim`/`to_wofost`/`to_oryza` skip such a point with a
+  warning (like the existing no-weather-in-season case) and keep writing the
+  rest of the batch. +4 tests.
+
 ## 0.29.0 — hard memory guard for daily weather (fetch-area cap)
 - **A daily-weather fetch window over `max_fetch_area_deg2` (default 1000
   deg²) is now rejected with a clear error** instead of grinding the shared

@@ -20,6 +20,25 @@ import pandas as pd
 WEATHER_COLS = ["TMAX", "TMIN", "SRAD", "RAIN"]
 
 
+def require_data(df: pd.DataFrame, cols) -> None:
+    """Raise if a required weather column is present but carries no data.
+
+    An all-NaN column typically means the point's nearest cell on a *coarse*
+    source grid is masked (e.g. it falls outside the requested admin polygon
+    while the finer grids still cover the point). Such a point has no usable
+    weather — it must be skipped by the caller, not written out as a file
+    full of missing-value sentinels.
+    """
+    if not len(df):
+        return  # a zero-row frame gets the writers' own "no rows" error
+    empty = [c for c in cols if df[c].isna().all()]
+    if empty:
+        raise ValueError(
+            f"weather columns {empty} have no data at this point (all NaN — "
+            "its nearest coarse-grid cell is likely masked outside the region)"
+        )
+
+
 def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     """Clean a per-point daily weather frame for a crop-model writer.
 
@@ -51,6 +70,7 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     df["DATE"] = pd.to_datetime(df["DATE"])
     for c in WEATHER_COLS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    require_data(df, WEATHER_COLS)
     df = df[["DATE", *WEATHER_COLS]].sort_values("DATE").reset_index(drop=True)
     df = df.dropna(subset=WEATHER_COLS, how="all")
 

@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from . import soil as soil_w
-from ._common import station_code
+from ._common import require_data, station_code
 from .wofost import esat_kpa
 
 # ORYZA's fixed 8-layer scheme (top metre) and how SoilGrids' six depths map
@@ -82,6 +82,7 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     for c in _WEATHER_INPUTS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    require_data(df, _WEATHER_INPUTS)
     df = df.sort_values("date").reset_index(drop=True)
 
     crossed = df["TMIN"] > df["TMAX"]

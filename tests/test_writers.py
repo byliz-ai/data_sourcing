@@ -372,6 +372,62 @@ def test_to_dssat_skips_point_without_weather(tmp_path):
     assert len(res) == 1 and res[0]["point"] == 0
 
 
+def test_point_weather_wide_keeps_all_nan_variable():
+    """pivot_table's default dropna=True silently dropped a variable whose
+    values are all NaN at a point (its nearest cell on a coarse source grid is
+    masked at a polygon edge while the finer grids still have data) — the
+    column must survive as NaN so the writer can skip the point instead of
+    crashing on a "missing" column."""
+    from agwise_data.api import _point_weather_wide
+
+    pts = pd.DataFrame({"lon": [30.06], "lat": [-1.95]})
+    weather = _season_weather_long(pts)
+    weather.loc[weather["variable"].isin(["TMAX", "TMIN", "SRAD"]), "value"] = np.nan
+    wide = _point_weather_wide(weather, 0)
+    assert {"TMAX", "TMIN", "SRAD", "PRCP"} <= set(wide.columns)
+    assert wide["TMAX"].isna().all() and wide["PRCP"].notna().all()
+
+
+def test_to_dssat_skips_point_with_all_nan_variable(tmp_path):
+    """A point whose TMAX/TMIN/SRAD are all NaN is skipped with a warning and
+    the rest of the batch still writes — one bad point used to abort the whole
+    run (ValueError: Weather frame is missing ['TMAX', 'TMIN', 'SRAD'])."""
+    from agwise_data.api import to_dssat
+
+    pts = pd.DataFrame({"lon": [30.06, 30.10], "lat": [-1.95, -1.90]})
+    weather = _season_weather_long(pts)
+    bad = (weather["point"] == 0) & weather["variable"].isin(
+        ["TMAX", "TMIN", "SRAD"]
+    )
+    weather.loc[bad, "value"] = np.nan
+    res = to_dssat(pts, out_dir=tmp_path / "D", weather=weather, soil=_soil_frame(pts))
+    assert len(res) == 1 and res[0]["point"] == 1
+    assert res[0]["wth"].exists()
+
+
+def test_to_wofost_skips_point_with_all_nan_variable(tmp_path):
+    """Same guard for the WOFOST path, which otherwise silently wrote an
+    EMPTY weather CSV (its complete-cases filter drops every row when one
+    input column is all NaN)."""
+    from agwise_data.api import to_wofost
+
+    pts = pd.DataFrame({"lon": [30.06, 30.10], "lat": [-1.95, -1.90]})
+    weather = _wofost_weather_long(pts)
+    bad = (weather["point"] == 0) & (weather["variable"] == "RHUM")
+    weather.loc[bad, "value"] = np.nan
+    res = to_wofost(pts, out_dir=tmp_path / "W", weather=weather, soil=_soil_frame(pts))
+    assert len(res) == 1 and res[0]["point"] == 1
+
+
+def test_require_data_names_the_empty_columns():
+    from agwise_data.writers._common import require_data
+
+    df = _two_month_series().rename(columns={"PRCP": "RAIN"})
+    df["TMAX"] = np.nan
+    with pytest.raises(ValueError, match=r"\['TMAX'\] have no data"):
+        require_data(df, ["TMAX", "TMIN", "SRAD", "RAIN"])
+
+
 def test_point_elev_helper():
     """_point_elev pulls a per-point elevation, tolerating None/NaN/missing."""
     from agwise_data.api import _point_elev
