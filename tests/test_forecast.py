@@ -122,6 +122,64 @@ def test_bias_correct_api_injection(config):
     assert abs(float(info["data"].mean()) - 21.0) < 0.6
 
 
+def test_bias_correct_cube_tiled_matches_untiled(monkeypatch):
+    """Country-scale runs OOM'd because the whole fine grid was regridded in
+    one float64 shot; the fix processes latitude tiles. Interp + QDM are
+    pointwise in the target cells, so 1-row tiles must reproduce the
+    whole-grid result exactly."""
+    import agwise_data.forecast as fc
+
+    obs, hind, fcst = _cubes()
+    whole = bias_correct_cube(obs, hind, fcst, "additive")
+    monkeypatch.setattr(fc, "_TILE_TARGET_BYTES", 1)  # force 1-row tiles
+    tiled = bias_correct_cube(obs, hind, fcst, "additive")
+    assert dict(tiled.sizes) == dict(whole.sizes)
+    xr.testing.assert_allclose(tiled, whole)
+
+
+def test_bias_correct_reuses_matching_product(config, monkeypatch, tmp_path):
+    """A second bias_correct with the same parameters reuses the written BC
+    product (no fetch, no QDM); different calib_years must recompute and
+    refresh the product instead of returning the stale file."""
+    import agwise_data.api as api
+
+    obs, hind, fcst = _cubes()
+    kw = dict(init_month=2, forecast_year=2021, bbox=[30.0, -2.0, 30.1, -1.9],
+              out_dir=tmp_path / "BC", config=config)
+    res1 = bias_correct(["TMAX"], calib_years=[2001],
+                        obs={"AGRO.TMAX": obs}, hind={"AGRO.TMAX": hind},
+                        fcst={"AGRO.TMAX": fcst}, **kw)
+
+    def boom(*a, **k):
+        raise AssertionError("must not fetch on a product cache hit")
+
+    monkeypatch.setattr(api, "get_climate", boom)
+    monkeypatch.setattr(api, "get_seasonal", boom)
+    res2 = bias_correct(["TMAX"], calib_years=[2001], **kw)
+    assert np.allclose(res2["AGRO.TMAX"]["data"].values,
+                       res1["AGRO.TMAX"]["data"].values, equal_nan=True)
+
+    # different calibration -> manifest mismatch -> refetch + rewrite
+    fetched = {"climate": 0, "seasonal": 0}
+
+    def fake_climate(var, years, **k):
+        fetched["climate"] += 1
+        return {var: {"data": obs}}
+
+    def fake_seasonal(var, init_month, years, **k):
+        fetched["seasonal"] += 1
+        # the hindcast call passes the calib list; the forecast call an int
+        return {var: {"data": hind if isinstance(years, (list, tuple)) else fcst}}
+
+    monkeypatch.setattr(api, "get_climate", fake_climate)
+    monkeypatch.setattr(api, "get_seasonal", fake_seasonal)
+    res3 = bias_correct(["TMAX"], calib_years=[2001, 2002], **kw)
+    assert fetched["climate"] == 1 and fetched["seasonal"] == 2
+    assert api._bc_product_reusable(
+        res3["AGRO.TMAX"]["nc"], "additive", [2001, 2002], None
+    )
+
+
 def test_bias_correct_unknown_variable_raises(config):
     # RHUM is a valid climate variable but has no defined BC transform
     with pytest.raises(ValueError, match="No bias-correction transform"):

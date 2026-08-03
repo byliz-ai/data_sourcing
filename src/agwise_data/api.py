@@ -2433,6 +2433,22 @@ def bias_correct(
                 f"(known: {sorted(_fc.DEFAULT_KIND)})"
             )
         kind = _fc.DEFAULT_KIND[short]
+        stem = f"Seasonal_{short}_i{init_month:02d}_{forecast_year}_BC"
+        nc_path = out_root / f"{stem}.nc"
+
+        # Reuse an existing BC product instead of re-fetching + re-running QDM
+        # — but only when the caller didn't supply this variable's inputs (a
+        # supplied cube may differ from what the product was built from) and
+        # the manifest records the same correction parameters (the file stem
+        # doesn't encode calib_years/window_days).
+        supplied = any((d or {}).get(var) is not None for d in (obs, hind, fcst))
+        if (not overwrite and not supplied and nc_path.exists()
+                and _bc_product_reusable(nc_path, kind, calib_years, window_days)):
+            logger.info("Product cache hit: %s", nc_path)
+            results[var] = {"short": short, "kind": kind, "nc": nc_path,
+                            "data": _open_product_da(nc_path)}
+            continue
+
         obs_da = (obs or {}).get(var)
         if obs_da is None:
             obs_da = get_climate(var, calib_years, freq="daily", source=source,
@@ -2451,9 +2467,10 @@ def bias_correct(
         corrected = _fc.bias_correct_cube(obs_da, hind_da, fcst_da, kind,
                                           window_days).load()
         corrected.name = corrected.name or short
-        stem = f"Seasonal_{short}_i{init_month:02d}_{forecast_year}_BC"
-        nc_path = out_root / f"{stem}.nc"
-        if overwrite or not nc_path.exists():
+        # A fetched-inputs recompute also refreshes a stale product (one whose
+        # manifest no longer matches); supplied-inputs runs keep the old
+        # behaviour of never clobbering an existing file without overwrite=.
+        if overwrite or not nc_path.exists() or not supplied:
             from .drivers.seasonal import seasonal_nc_encoding
 
             _write_nc_product(
@@ -2466,11 +2483,37 @@ def bias_correct(
                 "calib_years": [calib_years[0], calib_years[-1]],
                 "window_days": window_days,
             })
+            # Hand back the product reopened lazily and drop the dense cube:
+            # holding all requested variables' corrected country-scale cubes
+            # in this dict at once is what used to OOM the container.
+            corrected = _open_product_da(nc_path)
         results[var] = {
             "short": short, "kind": kind,
             "nc": nc_path if nc_path.exists() else None, "data": corrected,
         }
     return results
+
+
+def _bc_product_reusable(nc_path, kind, calib_years, window_days) -> bool:
+    """Whether an existing ``*_BC`` product was built with these parameters.
+
+    Reads the provenance sidecar (``<file>.meta.json``); a missing/unreadable
+    manifest or one recording a different method, calibration span or QDM
+    window means the product must be recomputed, not reused.
+    """
+    import json
+
+    from .cache import manifest_path
+
+    try:
+        meta = json.loads(manifest_path(Path(nc_path)).read_text())
+    except (OSError, ValueError):
+        return False
+    return (
+        meta.get("method") == f"qdm-{kind}"
+        and meta.get("calib_years") == [calib_years[0], calib_years[-1]]
+        and meta.get("window_days") == window_days
+    )
 
 
 _FORECAST_WEATHER_VARS = ["PRCP", "TMAX", "TMIN", "SRAD"]

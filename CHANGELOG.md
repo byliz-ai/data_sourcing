@@ -5,6 +5,27 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.29.2 — `bias_correct` no longer OOMs at country scale
+User-reported (whole-Kenya `forecast_to_dssat`, 4 identical memcg OOM-kills
+with no traceback, `anon-rss` ~30–32 GB): a single variable's downscaling
+pipeline exceeded the 32 GiB container — `.interp()` regridded the full
+hindcast (members × ~1500 days) onto the country-scale 0.05° CHIRPS grid as
+one ~10 GB float64 intermediate, plus copies. Three changes:
+- **`bias_correct_cube` processes the fine grid in latitude-row tiles**
+  (~256 MB largest transient each): regrid + QDM per tile, concatenated.
+  Interp and QDM are pointwise in the target cells, so results are identical
+  (test: 1-row tiles == whole-grid) — only peak memory changes. A lazy
+  (product-backed) obs cube is also read one tile at a time.
+- **`bias_correct` releases each variable's corrected cube**: the product is
+  written, then handed back reopened lazily (like `get_climate`), so the
+  results dict no longer accumulates all 4 country-scale dense cubes.
+- **`bias_correct` now reuses an existing BC product** (skip fetch + QDM)
+  when the caller didn't supply inputs and the product's manifest records the
+  same method/calib_years/window_days — previously a warm re-run recomputed
+  everything; a manifest mismatch recomputes AND refreshes the stale file.
++2 tests. Note: whole-country runs remain slow on the QDM pixel loop
+(~30k px), but they now complete within budget instead of being OOM-killed.
+
 ## 0.29.1 — one masked point no longer aborts a crop-model batch
 User-reported (Malawi/Central Region forecast run, 1428 points): 4 points
 whose nearest **coarse-grid** cell (AgERA5/SEAS5 TMAX/TMIN/SRAD) is masked

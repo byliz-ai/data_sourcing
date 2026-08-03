@@ -115,6 +115,25 @@ def _regrid_to(src, obs):
     return lin
 
 
+# Target size of the largest per-tile transient (the hindcast regrid's
+# float64 intermediate inside .interp). Bounds peak memory at country scale:
+# regridding a whole Kenya-sized fine grid in one shot materializes a
+# member x time x lat x lon float64 cube of ~10 GB and OOM-killed the 32 GiB
+# CGLabs container; tiling keeps the same maths at a bounded peak.
+_TILE_TARGET_BYTES = 256 * 1024 ** 2
+
+
+def _tile_rows(obs, hind, fcst) -> int:
+    """Fine-grid rows per tile so the largest regrid transient stays around
+    :data:`_TILE_TARGET_BYTES` (member x time x rows x lon in float64)."""
+    W = int(obs.sizes["lon"])
+    per_row = max(
+        int(hind.sizes.get("member", 1)) * int(hind.sizes["time"]),
+        int(fcst.sizes.get("member", 1)) * int(fcst.sizes["time"]),
+    ) * W * 8
+    return max(1, _TILE_TARGET_BYTES // max(per_row, 1))
+
+
 def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):
     """QDM-correct a forecast cube against hindcast+observation cubes.
 
@@ -125,19 +144,16 @@ def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):
     (half-width) restricts calibration to samples within +/- that many
     days-of-year of each forecast step; ``None`` pools the whole season.
     Returns a corrected cube shaped like the regridded ``fcst``.
-    """
-    hind = _regrid_to(hind, obs)
-    fcst = _regrid_to(fcst, obs)
 
+    The fine grid is processed in latitude-row tiles (:func:`_tile_rows`):
+    regrid + QDM per tile, results concatenated. Interpolation and QDM are
+    pointwise in the target cells, so tiling changes peak memory, not values;
+    a lazy (product-backed) ``obs`` is also only read one tile at a time.
+    """
     obs_doy = _doy(obs["time"].values)
     hind_doy = _doy(hind["time"].values)
     fcst_doy = _doy(fcst["time"].values)
-
-    obs_v = obs.transpose("time", "lat", "lon").values
-    hind_v = hind.transpose("member", "time", "lat", "lon").values
-    fcst_v = fcst.transpose("member", "time", "lat", "lon").values
-    M, T, H, W = fcst_v.shape
-    out = np.full_like(fcst_v, np.nan)
+    T = int(fcst.sizes["time"])
 
     # forecast steps grouped by day-of-year window (whole season if None)
     if window_days is None:
@@ -152,17 +168,34 @@ def bias_correct_cube(obs, hind, fcst, kind="additive", window_days=None):
             hsel = np.abs(((hind_doy - d + 182) % 365) - 182) <= window_days
             groups.append((fsel, osel, hsel))
 
-    for y in progress.track(range(H), desc=f"Bias-correcting ({H}x{W} px)"):
-        for x in range(W):
-            o_px = obs_v[:, y, x]
-            h_px = hind_v[:, :, y, x]
-            f_px = fcst_v[:, :, y, x]
-            if not np.isfinite(o_px).any() or not np.isfinite(f_px).any():
-                continue
-            for fsel, osel, hsel in groups:
-                obs_s = o_px[osel]
-                hind_s = h_px[:, hsel].ravel()
-                out[:, fsel, y, x] = quantile_delta_map(
-                    f_px[:, fsel], obs_s, hind_s, kind
-                ).reshape(M, int(fsel.sum()))
-    return fcst.copy(data=out)
+    H, W = int(obs.sizes["lat"]), int(obs.sizes["lon"])
+    rows = _tile_rows(obs, hind, fcst)
+    tiles = []
+    for y0 in progress.track(
+        range(0, H, rows), desc=f"Bias-correcting ({H}x{W} px)"
+    ):
+        obs_t = obs.isel(lat=slice(y0, y0 + rows))
+        hind_t = _regrid_to(hind, obs_t)
+        fcst_t = _regrid_to(fcst, obs_t)
+
+        obs_v = obs_t.transpose("time", "lat", "lon").values
+        hind_v = hind_t.transpose("member", "time", "lat", "lon").values
+        fcst_v = fcst_t.transpose("member", "time", "lat", "lon").values
+        M = fcst_v.shape[0]
+        out = np.full_like(fcst_v, np.nan)
+
+        for y in range(fcst_v.shape[2]):
+            for x in range(W):
+                o_px = obs_v[:, y, x]
+                h_px = hind_v[:, :, y, x]
+                f_px = fcst_v[:, :, y, x]
+                if not np.isfinite(o_px).any() or not np.isfinite(f_px).any():
+                    continue
+                for fsel, osel, hsel in groups:
+                    obs_s = o_px[osel]
+                    hind_s = h_px[:, hsel].ravel()
+                    out[:, fsel, y, x] = quantile_delta_map(
+                        f_px[:, fsel], obs_s, hind_s, kind
+                    ).reshape(M, int(fsel.sum()))
+        tiles.append(fcst_t.copy(data=out))
+    return tiles[0] if len(tiles) == 1 else xr.concat(tiles, dim="lat")
