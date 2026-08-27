@@ -101,14 +101,23 @@ def _parse_depth(label: str):
 
 
 def _extp_columns(soil: Mapping) -> Dict[tuple, float]:
-    """{(top,bottom): Mehlich-3 P} from ``EXTP_<depth>`` columns in a row."""
+    """{(top,bottom): Mehlich-3 P} from ``EXTP_<depth>`` columns in a row.
+
+    Only depth-labeled columns (``EXTP_0_20cm``) are values; other
+    ``EXTP_*`` companions (the ``EXTP_fill_m`` fill-distance column from
+    ``extract_static_points``) are skipped, not parsed as depths.
+    """
     keys = soil.keys() if hasattr(soil, "keys") else list(soil.index)
     out: Dict[tuple, float] = {}
     for k in keys:
         if isinstance(k, str) and k.startswith("EXTP_"):
+            try:
+                depth = _parse_depth(k[len("EXTP_"):])
+            except ValueError:
+                continue
             v = soil[k]
             if v is not None and not pd.isna(v):
-                out[_parse_depth(k[len("EXTP_"):])] = float(v)
+                out[depth] = float(v)
     return out
 
 

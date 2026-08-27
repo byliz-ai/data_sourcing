@@ -270,6 +270,20 @@ def test_write_sol_p_block_from_mehlich3_columns(tmp_path):
     assert slpx[2:] == pytest.approx([bottom] * 4, abs=0.05)
 
 
+def test_write_sol_p_block_ignores_fill_column(tmp_path):
+    # extract_static_points adds an EXTP_fill_m companion column (fill
+    # distance, not a depth); it must be skipped, not parsed as "fill_m".
+    row = _soil_row()
+    row["EXTP_0_20cm"] = 8.0
+    row["EXTP_20_50cm"] = 4.0
+    row["EXTP_fill_m"] = 250.0
+    p = soil.write_sol(row, lat=0.0, lon=0.0, path=tmp_path / "S.SOL")
+    lines = p.read_text().splitlines()
+    h = next(i for i, ln in enumerate(lines) if ln.startswith("@  SLB  SLPX"))
+    slpx = [float(ln.split()[1]) for ln in lines[h + 1 : h + 7]]
+    assert slpx[0] == pytest.approx(soil.mehlich3_to_olsen(8.0), abs=0.05)
+
+
 def test_mehlich3_to_olsen_equations():
     # Steinfurth et al. (2023) regressions
     assert soil.mehlich3_to_olsen(20.0) == pytest.approx(0.47 * 20 + 2.4)
@@ -450,6 +464,92 @@ def test_to_dssat_with_injected_soil_writes_elev_sentinel(tmp_path):
     )
     general = res[0]["wth"].read_text().splitlines()[4]
     assert "   -99" in general  # no elevation fetched when soil is supplied
+
+
+def _patched_static_extract(monkeypatch, pts):
+    """Replace api.extract_static_points with a canned-frame fake and return
+    its call log — the network-free way to exercise the sourcing path."""
+    import agwise_data.api as api
+
+    base = _soil_frame(pts)
+    calls = []
+
+    def fake_extract(points, variables, **kw):
+        variables = [variables] if isinstance(variables, str) else list(variables)
+        calls.append((variables, kw.get("source")))
+        if variables == ["EXTP"]:
+            return pd.DataFrame(
+                {"EXTP_0_20cm": 8.0, "EXTP_20_50cm": 4.0, "EXTP_fill_m": 0.0},
+                index=pts.index,
+            )
+        if variables == ["ELEV"]:
+            return pd.DataFrame({"ELEV": 1500.0}, index=pts.index)
+        return base
+
+    monkeypatch.setattr(api, "extract_static_points", fake_extract)
+    return calls
+
+
+def test_to_dssat_phosphorus_extracts_extp_and_writes_p_block(tmp_path, monkeypatch):
+    """phosphorus=True is the integration the user feedback asked for: the
+    sourcing path itself extracts iSDA EXTP and the .SOL gets the SLPX block
+    (no pre-extracted soil frame needed)."""
+    from agwise_data.api import to_dssat
+    from agwise_data.writers import soil as soil_w
+
+    pts = pd.DataFrame({"lon": [30.06], "lat": [-1.95]})
+    calls = _patched_static_extract(monkeypatch, pts)
+    res = to_dssat(
+        pts, out_dir=tmp_path / "D",
+        weather=_season_weather_long(pts), phosphorus=True,
+    )
+    extp_calls = [c for c in calls if c[0] == ["EXTP"]]
+    assert extp_calls and extp_calls[0][1] == "isda"  # default P source
+    text = res[0]["sol"].read_text()
+    assert "SLPX" in text
+    lines = text.splitlines()
+    h = next(i for i, ln in enumerate(lines) if ln.startswith("@  SLB  SLPX"))
+    slpx = [float(ln.split()[1]) for ln in lines[h + 1 : h + 7]]
+    assert slpx[0] == pytest.approx(soil_w.mehlich3_to_olsen(8.0), abs=0.05)
+    assert slpx[-1] == pytest.approx(soil_w.mehlich3_to_olsen(4.0), abs=0.05)
+
+
+def test_to_dssat_phosphorus_falls_back_when_soil_source_lacks_extp(
+    tmp_path, monkeypatch
+):
+    """A bare soil_source that doesn't provide EXTP (e.g. 'soilgrids') must
+    not silently drop the P block — the EXTP extraction falls back to the
+    default provider (iSDA)."""
+    from agwise_data.api import to_dssat
+
+    pts = pd.DataFrame({"lon": [30.06], "lat": [-1.95]})
+    calls = _patched_static_extract(monkeypatch, pts)
+    res = to_dssat(
+        pts, out_dir=tmp_path / "D", soil_source="soilgrids",
+        weather=_season_weather_long(pts), phosphorus=True,
+    )
+    extp_calls = [c for c in calls if c[0] == ["EXTP"]]
+    assert extp_calls and extp_calls[0][1] == "isda"
+    assert "SLPX" in res[0]["sol"].read_text()
+
+
+def test_to_dssat_phosphorus_warns_on_supplied_soil_without_extp(
+    tmp_path, caplog
+):
+    """Supplied soil = offline mode: no surprise fetch — but asking for
+    phosphorus without EXTP columns warns instead of silently omitting it."""
+    import logging
+
+    from agwise_data.api import to_dssat
+
+    pts = pd.DataFrame({"lon": [30.06], "lat": [-1.95]})
+    with caplog.at_level(logging.WARNING, logger="agwise_data"):
+        res = to_dssat(
+            pts, out_dir=tmp_path / "D", phosphorus=True,
+            weather=_season_weather_long(pts), soil=_soil_frame(pts),
+        )
+    assert any("EXTP" in r.getMessage() for r in caplog.records)
+    assert "SLPX" not in res[0]["sol"].read_text()
 
 
 # --------------------------------------------------------------------------

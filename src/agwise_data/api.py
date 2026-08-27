@@ -419,6 +419,24 @@ def _open_product_da(nc_path) -> xr.DataArray:
     return ds[names[0]]
 
 
+def _seasonal_product_stale(nc_path) -> bool:
+    """Whether a seasonal product predates the v0.31 daily-label convention.
+
+    Products stamped ``time_label='window_start'`` label each daily step
+    with the calendar day it describes; older ones (no stamp) are one day
+    late and must be rebuilt locally. An unreadable file also counts as
+    stale so it gets rewritten instead of crashing the cache hit.
+    """
+    try:
+        with xr.open_dataset(nc_path) as ds:
+            for v in ds.data_vars:
+                if v not in ("spatial_ref", "crs"):
+                    return ds[v].attrs.get("time_label") != "window_start"
+    except Exception:  # noqa: BLE001
+        return True
+    return True
+
+
 # ---------------------------------------------------------------------------
 def get_climate(
     variables: Union[str, Sequence[str]],
@@ -1053,9 +1071,12 @@ def get_seasonal(
     against the :func:`get_climate` observations. Returns
     ``{canonical_variable: {"nc": Path, "tif": Path|None, "data":
     xr.DataArray}}`` where the data has dims ``(member, time, lat, lon)``
-    and ``time`` is the valid date (init + lead, daily steps, ~7 months
-    per year). ``ensemble="mean"``/``"median"`` reduces the member axis
-    (required for GeoTIFF export); the default keeps all members.
+    and ``time`` labels each daily step with the calendar day it describes
+    (the 24-hour window start: the first forecast day IS the init date;
+    ~7 months per year). ``ensemble="mean"``/``"median"`` reduces the
+    member axis (required for GeoTIFF export); the default keeps all
+    members. Cached files/products from versions before 0.31 (labeled one
+    day late, init + lead) are migrated/rebuilt automatically on first use.
     """
     config = config or Config.load()
     variables = _as_variables(variables)
@@ -1101,6 +1122,14 @@ def get_seasonal(
         tif_path = out_root / f"{stem}.tif" if write_tif else None
         need_nc = overwrite or not nc_path.exists()
         need_tif = write_tif and (overwrite or not tif_path.exists())
+        # A product written before v0.31 carries window-END daily labels
+        # (one day late); rebuild it locally from the (migrated) year cache.
+        if not need_nc and _seasonal_product_stale(nc_path):
+            logger.info(
+                "Rebuilding %s: pre-0.31 time labels (one day late)", nc_path.name
+            )
+            need_nc = True
+            need_tif = write_tif
         plans.append(
             (var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif)
         )
@@ -1120,6 +1149,9 @@ def get_seasonal(
                 da = clip_geometry(da, gdf).load()  # clip materializes anyway
             if ensemble != "members":
                 da = getattr(da, ensemble)(dim="member", keep_attrs=True)
+            # Stamp the daily-label convention so a cache hit can tell this
+            # product from a stale pre-0.31 one (labels one day late).
+            da.attrs["time_label"] = "window_start"
             memory.warn_if_over_budget(
                 config.mem_budget_bytes, da.sizes, 4, logger,
                 f"get_seasonal {short_name(var)}",
@@ -2015,7 +2047,7 @@ _CM_SOIL_VARS = ["CLAY", "SAND", "SILT", "SOC", "NITROGEN", "PH", "CEC", "BDOD"]
 def _cm_inputs(
     points, planting_date, harvest_date, planting_col, harvest_col,
     lon_col, lat_col, weather, soil, weather_source, soil_source, config,
-    weather_vars=None, need_elev=False,
+    weather_vars=None, need_elev=False, phosphorus=False,
 ):
     """Resolve the per-point weather (long) and soil (wide) inputs for a writer.
 
@@ -2026,7 +2058,12 @@ def _cm_inputs(
     ``need_elev`` is set, elevation at each point is also returned (indexed
     like ``df``) for the writers whose weather header carries it (DSSAT,
     ORYZA); it is best-effort — a fetch failure logs a warning and yields no
-    elevation rather than blocking the file generation.
+    elevation rather than blocking the file generation. ``phosphorus`` also
+    extracts Mehlich-3 extractable P (``EXTP``, iSDA) at each point and
+    merges the ``EXTP_<depth>`` columns into the soil frame, which is what
+    makes the DSSAT writer emit the ``.SOL`` P block (``SLPX`` = Olsen P);
+    like elevation, it is only fetched when the soil is being sourced from
+    the layer, and a failure warns instead of blocking.
     """
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
     sourcing_statics = soil is None  # user is letting us pull from the layer
@@ -2041,6 +2078,36 @@ def _cm_inputs(
         soil = extract_static_points(
             df, _CM_SOIL_VARS, lon_col=lon_col, lat_col=lat_col,
             source=soil_source, config=config,
+        )
+        if phosphorus:
+            try:
+                # EXTP only exists in iSDA; honour a per-variable override in
+                # soil_source but fall back to the default provider when the
+                # main soil source (e.g. a bare "soilgrids") lacks it.
+                try:
+                    p_source = catalog.static_source_for("SOIL.EXTP", soil_source)
+                except ValueError:
+                    p_source = catalog.static_source_for("SOIL.EXTP", None)
+                pcols = extract_static_points(
+                    df, ["EXTP"], lon_col=lon_col, lat_col=lat_col,
+                    source=p_source, config=config,
+                )
+                for c in pcols.columns:
+                    # only the depth-value columns, not the _fill_m companion
+                    if c.startswith("EXTP_") and c != "EXTP_fill_m":
+                        soil[c] = pcols[c]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Could not extract phosphorus (EXTP) for the .SOL P "
+                    "block (%s) — writing soil files without it", exc,
+                )
+    elif phosphorus and not any(
+        str(c).startswith("EXTP_") for c in soil.columns
+    ):
+        logger.warning(
+            "phosphorus=True but the supplied soil frame has no EXTP_<depth> "
+            "columns; the .SOL P block will be omitted. Extract them with "
+            "extract_static_points(points, ['EXTP'], source='isda')."
         )
     # Elevation enriches the DSSAT/ORYZA weather header. Only fetch it when we
     # are already sourcing point statics from the layer (soil not supplied) —
@@ -2106,6 +2173,7 @@ def to_dssat(
     soil: Optional[pd.DataFrame] = None,
     weather_source: Optional[str] = None,
     soil_source: Optional[str] = None,
+    phosphorus: bool = False,
     calcareous: bool = False,
     config: Optional[Config] = None,
 ) -> list:
@@ -2119,10 +2187,13 @@ def to_dssat(
     already extracted instead of re-fetching. Returns a list of
     ``{"point", "dir", "wth", "sol"}`` for the files written.
 
-    If the ``soil`` frame carries Mehlich-3 ``EXTP_<depth>`` columns (e.g. from
-    ``extract_static_points(..., ["EXTP"], source="isda")``), the DSSAT P block
-    (``SLPX`` = Olsen P) is written too; ``calcareous`` picks the calcareous
-    Mehlich-3->Olsen regression. Otherwise the P block is omitted.
+    ``phosphorus=True`` also extracts Mehlich-3 extractable P (iSDA ``EXTP``)
+    at each point and writes the DSSAT P block (``SLPX`` = Olsen P) into the
+    ``.SOL`` — needed to simulate P-fertilizer response in DSSAT;
+    ``calcareous`` picks the calcareous Mehlich-3->Olsen regression. The
+    block is also written whenever a supplied ``soil`` frame already carries
+    ``EXTP_<depth>`` columns (e.g. from ``extract_static_points(...,
+    ["EXTP"], source="isda")``). Otherwise the P block is omitted.
     """
     from .writers import dssat as dssat_w
     from .writers import soil as soil_w
@@ -2133,7 +2204,7 @@ def to_dssat(
     df, lon_col, lat_col, weather, soil, elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
-        need_elev=True,
+        need_elev=True, phosphorus=phosphorus,
     )
 
     written = []
@@ -2159,8 +2230,17 @@ def to_dssat(
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
             continue
+        srow = soil.loc[idx]
+        if phosphorus and not any(
+            str(k).startswith("EXTP_") and k != "EXTP_fill_m" and pd.notna(srow[k])
+            for k in srow.index
+        ):
+            logger.warning(
+                "Point %s: no extractable-P (EXTP) value at this location — "
+                "its SOIL.SOL is written without the P (SLPX) block", idx,
+            )
         sol = soil_w.write_sol(
-            soil.loc[idx], lat=float(prow[lat_col]), lon=float(prow[lon_col]),
+            srow, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
             path=d / "SOIL.SOL", pedon=f"{insi}{n:05d}", site=name, country=country,
             calcareous=calcareous,
         )
@@ -2482,6 +2562,7 @@ def bias_correct(
                 "init_month": init_month, "forecast_year": forecast_year,
                 "calib_years": [calib_years[0], calib_years[-1]],
                 "window_days": window_days,
+                "time_label": "window_start",
             })
             # Hand back the product reopened lazily and drop the dense cube:
             # holding all requested variables' corrected country-scale cubes
@@ -2499,7 +2580,10 @@ def _bc_product_reusable(nc_path, kind, calib_years, window_days) -> bool:
 
     Reads the provenance sidecar (``<file>.meta.json``); a missing/unreadable
     manifest or one recording a different method, calibration span or QDM
-    window means the product must be recomputed, not reused.
+    window means the product must be recomputed, not reused. A manifest
+    without ``time_label`` predates v0.31 — built from forecasts whose daily
+    labels ran one day late — so it is recomputed too (locally, from the
+    migrated seasonal cache).
     """
     import json
 
@@ -2513,6 +2597,7 @@ def _bc_product_reusable(nc_path, kind, calib_years, window_days) -> bool:
         meta.get("method") == f"qdm-{kind}"
         and meta.get("calib_years") == [calib_years[0], calib_years[-1]]
         and meta.get("window_days") == window_days
+        and meta.get("time_label") == "window_start"
     )
 
 
@@ -2541,6 +2626,8 @@ def forecast_to_dssat(
     soil: Optional[pd.DataFrame] = None,
     soil_source: Optional[str] = None,
     weather_source: Optional[str] = None,
+    phosphorus: bool = False,
+    calcareous: bool = False,
     config: Optional[Config] = None,
 ) -> list:
     """Bias-corrected seasonal forecast -> DSSAT weather+soil files (#3b).
@@ -2554,7 +2641,9 @@ def forecast_to_dssat(
     :func:`bias_correct` result) to skip the QDM step — the offline-test path.
     The forecast region can be given explicitly (``country``/``bbox``/
     ``admin_*``/``geometry``); if none is given it is inferred from the points
-    (like :func:`to_dssat`). Returns the :func:`to_dssat` manifest.
+    (like :func:`to_dssat`). ``phosphorus``/``calcareous`` behave exactly as
+    in :func:`to_dssat` (iSDA extractable P -> the ``.SOL`` ``SLPX`` block).
+    Returns the :func:`to_dssat` manifest.
     """
     config = config or Config.load()
     if ensemble not in ("mean", "median"):
@@ -2595,7 +2684,8 @@ def forecast_to_dssat(
     return to_dssat(
         df, out_dir=out_dir, weather=weather, soil=soil, soil_source=soil_source,
         lon_col=lon_col, lat_col=lat_col, id_col=id_col, station_col=station_col,
-        country=country_name, config=config,
+        country=country_name, phosphorus=phosphorus, calcareous=calcareous,
+        config=config,
     )
 
 

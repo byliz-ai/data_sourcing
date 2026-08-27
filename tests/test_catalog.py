@@ -68,6 +68,14 @@ def test_source_for_accepts_per_variable_mapping():
     assert static_source_for("SOC", {"CLAY": "isda"}) == "soilgrids"
 
 
+def test_extp_defaults_to_isda():
+    # extractable P exists only in iSDA; without an override it must resolve
+    # there (SoilGrids, the general soil default, doesn't provide it)
+    from agwise_data.catalog import static_source_for
+
+    assert static_source_for("EXTP") == "isda"
+
+
 def test_source_for_mapping_still_validates_unsupported():
     import pytest
 

@@ -5,6 +5,38 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.31.0 — SEAS5 daily dates fixed (one day early) + phosphorus in `.SOL`
+
+Two user-feedback items:
+
+- **SEAS5 daily series no longer labeled one day late.** Each daily step is
+  now labeled with the calendar day it *describes* — the start of its
+  24-hour window — so `leadtime_hour=24` ([init, init+24h), the first
+  forecast day) carries the **initialization date**, not init+1 as before
+  (a bug inherited from the previous forecast code). Applies uniformly to
+  all SEAS5 variables (PRCP/SRAD accumulate and TMAX/TMIN aggregate over
+  that window; the instantaneous TEMP is assigned to the same day to stay
+  on one axis), and now matches how AgERA5/CHIRPS observations label a day
+  — so QDM calibration pairs obs/hindcast on the correct day-of-year and
+  `forecast_to_dssat` weather starts on the init date. **Existing caches
+  migrate themselves**: per-year seasonal files are shifted in place on
+  first use (no re-download), pre-0.31 `Seasonal_*` region products are
+  rebuilt locally, and pre-0.31 `*_BC` products are recomputed (their
+  manifests lack the new `time_label` stamp). +4 tests.
+- **`to_dssat(phosphorus=True)` / `forecast_to_dssat(phosphorus=True)`**
+  (CLI `--phosphorus`, R `ad_to_dssat(phosphorus=TRUE)`): the integration
+  now sends the flag the soil layer already supported — extracts iSDA
+  Mehlich-3 extractable P (`EXTP`) at each point and writes the DSSAT P
+  block (`SLPX` = Olsen P, mg/kg) into every `SOIL.SOL`, which DSSAT needs
+  to simulate P fertilizer. `calcareous` picks the calcareous
+  Mehlich-3→Olsen regression (also new on `forecast_to_dssat` and both CLI
+  commands). Points with no iSDA P data warn and omit the block; a
+  supplied `soil=` frame stays offline (warns instead of fetching). Also
+  fixed along the way: `EXTP` now resolves to iSDA by default in
+  `extract_static_points` (it errored asking SoilGrids before), and the
+  `EXTP_fill_m` fill-distance column no longer crashes the `.SOL` P-block
+  depth parsing. +6 tests.
+
 ## 0.30.0 — `make_grid` legacy fixed-degree mode (`res_deg`)
 User feedback: `res_km` spacing is cos-latitude corrected, so its grids
 deliberately differ from the legacy modules' hardcoded-degree grids

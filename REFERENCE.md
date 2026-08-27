@@ -182,6 +182,13 @@ Fetch a **SEAS5 seasonal forecast / hindcast** cube (one init month across years
 
 **Returns:** `{canonical_var: {"nc", "tif", "data"}}`, `data` dims `(member, time, lat, lon)`
 
+`time` labels each daily step with the calendar day it **describes** (its
+24-hour window start): the first forecast day is the initialization date
+itself — e.g. init 2026-07-01 gives a series starting 2026-07-01, where the
+PRCP value on that date is the accumulation over `[init, init+24h)`. Cached
+files from versions before 0.31 (labeled one day late) are migrated
+automatically on first use — no re-download.
+
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `variables` | str \| list[str] | Yes | — | Forecast variable(s). Values: `PRCP, TMAX, TMIN, TEMP, SRAD`. |
@@ -377,7 +384,7 @@ df = extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 | `points` | str \| DataFrame | Yes | — | Point locations: a CSV path or a `DataFrame` with longitude/latitude columns. |
 | `variables` | str \| list[str] | Yes | — | Soil/terrain variable name(s) to extract. Values: soil `CLAY,…,EXTP`; terrain `ELEV,SLOPE,ASPECT,TPI,TRI`. |
 | `depths` | list[str] | No | `None` | Soil depth layers to return (default: all). Values: SoilGrids `0-5cm,5-15cm,15-30cm,30-60cm,60-100cm,100-200cm`; iSDA `0-20cm,20-50cm`. |
-| `source` | str | No | `None` | Soil source. Values: `"soilgrids"` (default), `"isda"`. |
+| `source` | str | No | `None` | Soil source. Values: `"soilgrids"` (default; `EXTP` defaults to `"isda"`, its only provider), `"isda"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
 | `fill_nearest_m` | float | No | `1000.0` | Fill points on NoData pixels from the nearest valid pixel within this many metres; `None` or `0` disables. |
@@ -432,14 +439,19 @@ Write **DSSAT** weather (`.WTH`) + soil (`.SOL`) files for every point.
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
 | `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
+| `phosphorus` | bool | No | `False` | Also extract **Mehlich-3 extractable P** (iSDA `EXTP`) at each point and write the DSSAT **P block** (`SLPX` = Olsen P, mg/kg) into the `.SOL` — required to simulate P fertilizer in DSSAT. Values: `True`, `False`. |
 | `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
 from agwise_data import to_dssat
 to_dssat("trials.csv", planting_date="2021-01-01",
-         harvest_date="2021-04-30", out_dir="DSSAT", station_col="site")
+         harvest_date="2021-04-30", out_dir="DSSAT", station_col="site",
+         phosphorus=True)   # adds the .SOL P block (SLPX = Olsen P, from iSDA)
 ```
+
+The P block is also written whenever a supplied `soil` frame already carries
+`EXTP_<depth>` columns (e.g. from `extract_static_points(pts, ["EXTP"])`).
 
 ### `to_apsim`
 
@@ -647,7 +659,12 @@ bias_correct(["PRCP", "TMAX"], init_month=2, forecast_year=2024,
 | `soil` | DataFrame | No | `None` | Reuse a soil `DataFrame` you already extracted instead of re-fetching. |
 | `soil_source` | str | No | `None` | Override the soil source. Values: `"soilgrids"`, `"isda"`. |
 | `weather_source` | str | No | `None` | Override the climate source used for the weather (advanced). Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
+| `phosphorus` | bool | No | `False` | Also extract **Mehlich-3 extractable P** (iSDA `EXTP`) and write the DSSAT **P block** (`SLPX` = Olsen P) into each `.SOL` — same behaviour as in `to_dssat`. Values: `True`, `False`. |
+| `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
+
+The corrected daily weather starts **on the initialization date** (each value
+labeled with the calendar day it describes — see [`get_seasonal`](#get_seasonal)).
 
 ```python
 from agwise_data import forecast_to_dssat

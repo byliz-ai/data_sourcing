@@ -251,6 +251,8 @@ def _default_static_source(name: str) -> str:
         return "cop_dem30"
     if name.startswith("LC."):
         return "esa_worldcover"
+    if name == "SOIL.EXTP":
+        return "isda"  # extractable P: iSDA is the only provider
     return "soilgrids"
 
 

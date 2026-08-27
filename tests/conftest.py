@@ -197,8 +197,10 @@ def synthetic_seasonal(init_month: int, year: int, bbox) -> xr.DataArray:
     w, s, e, n = bbox
     lats = np.arange(s, n + 0.001, 0.5)
     lons = np.arange(w, e + 0.001, 0.5)
+    # window-start daily labels (v0.31 convention): the first lead day IS
+    # the initialization date, like the SEAS5 driver's _to_valid_time.
     valid = pd.date_range(
-        f"{year}-{init_month:02d}-02", periods=FAKE_LEAD_DAYS, freq="D"
+        f"{year}-{init_month:02d}-01", periods=FAKE_LEAD_DAYS, freq="D"
     )
     members = np.arange(FAKE_MEMBERS)
     lead_day = np.arange(1, FAKE_LEAD_DAYS + 1)

@@ -401,7 +401,8 @@ ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
                                  admin_level = 0, admin_name = NULL, aoi = NULL,
                                  lon_col = NULL, lat_col = NULL, id_col = NULL,
                                  station_col = NULL, country_name = NULL,
-                                 soil_source = NULL, weather_source = NULL) {
+                                 soil_source = NULL, weather_source = NULL,
+                                 phosphorus = FALSE, calcareous = FALSE) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -426,6 +427,8 @@ ad_forecast_to_dssat <- function(points, init_month, forecast_year, calib_years,
   if (!is.null(country_name))   args <- c(args, "--country-name", country_name)
   if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
   if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
+  if (isTRUE(phosphorus))       args <- c(args, "--phosphorus")
+  if (isTRUE(calcareous))       args <- c(args, "--calcareous")
 
   res <- ad_run(args)
   do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))
@@ -490,7 +493,8 @@ ad_to_dssat <- function(points, planting_date = NULL, harvest_date = NULL,
                         out_dir = NULL, planting_col = NULL, harvest_col = NULL,
                         lon_col = NULL, lat_col = NULL, id_col = NULL,
                         station_col = NULL, country = NULL,
-                        weather_source = NULL, soil_source = NULL) {
+                        weather_source = NULL, soil_source = NULL,
+                        phosphorus = FALSE, calcareous = FALSE) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -509,6 +513,10 @@ ad_to_dssat <- function(points, planting_date = NULL, harvest_date = NULL,
   if (!is.null(country))        args <- c(args, "--country", country)
   if (!is.null(weather_source)) args <- c(args, "--weather-source", weather_source)
   if (!is.null(soil_source))    args <- c(args, "--soil-source", soil_source)
+  # phosphorus: extract iSDA Mehlich-3 P and write the .SOL P block
+  # (SLPX = Olsen P) — needed for DSSAT P-fertilizer simulations.
+  if (isTRUE(phosphorus))       args <- c(args, "--phosphorus")
+  if (isTRUE(calcareous))       args <- c(args, "--calcareous")
 
   res <- ad_run(args)
   do.call(rbind, lapply(res$outputs, function(o) as.data.frame(o, stringsAsFactors = FALSE)))

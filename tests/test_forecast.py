@@ -180,6 +180,22 @@ def test_bias_correct_reuses_matching_product(config, monkeypatch, tmp_path):
     )
 
 
+def test_bc_product_from_pre_v031_forecasts_not_reused(tmp_path):
+    """A BC product whose manifest lacks ``time_label`` was computed from
+    forecasts labeled one day late (pre-v0.31); it must be recomputed."""
+    import agwise_data.api as api
+    from agwise_data.cache import write_manifest
+
+    nc = tmp_path / "Seasonal_TMAX_i02_2021_BC.nc"
+    nc.write_bytes(b"")
+    meta = {"method": "qdm-additive", "calib_years": [2001, 2001],
+            "window_days": None}
+    write_manifest(nc, meta)
+    assert not api._bc_product_reusable(nc, "additive", [2001], None)
+    write_manifest(nc, {**meta, "time_label": "window_start"})
+    assert api._bc_product_reusable(nc, "additive", [2001], None)
+
+
 def test_bias_correct_unknown_variable_raises(config):
     # RHUM is a valid climate variable but has no defined BC transform
     with pytest.raises(ValueError, match="No bias-correction transform"):

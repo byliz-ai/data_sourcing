@@ -421,6 +421,8 @@ def cmd_to_dssat(args) -> dict:
         country=args.country or "-99",
         weather_source=args.weather_source,
         soil_source=args.soil_source,
+        phosphorus=args.phosphorus,
+        calcareous=args.calcareous,
     )
     return {
         "ok": True,
@@ -570,6 +572,8 @@ def cmd_forecast_to_dssat(args) -> dict:
         country_name=args.country_name or "-99",
         soil_source=args.soil_source,
         weather_source=args.weather_source,
+        phosphorus=args.phosphorus,
+        calcareous=args.calcareous,
     )
     return {
         "ok": True,
@@ -897,12 +901,26 @@ def build_parser() -> argparse.ArgumentParser:
                             "'PRCP=chirps_v3' (rest keep their defaults)")
         p.add_argument("--soil-source", dest="soil_source", type=_parse_source)
 
+    def _add_phosphorus_args(p):
+        p.add_argument(
+            "--phosphorus",
+            action="store_true",
+            help="Also extract Mehlich-3 P (iSDA EXTP) at each point and "
+                 "write the DSSAT P block (SLPX = Olsen P) into the .SOL",
+        )
+        p.add_argument(
+            "--calcareous",
+            action="store_true",
+            help="Use the calcareous Mehlich-3->Olsen P regression",
+        )
+
     p_dssat = sub.add_parser(
         "to-dssat",
         help="Write DSSAT weather (.WTH) + soil (.SOL) files for trial/AOI points",
     )
     _add_cropmodel_args(p_dssat, "DSSAT")
     p_dssat.add_argument("--country", help="Country name for the soil profile header")
+    _add_phosphorus_args(p_dssat)
     p_dssat.set_defaults(func=cmd_to_dssat)
 
     p_apsim = sub.add_parser(
@@ -967,6 +985,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Country label for the soil profile header")
     p_f2d.add_argument("--soil-source", dest="soil_source", type=_parse_source)
     p_f2d.add_argument("--weather-source", dest="weather_source", type=_parse_source)
+    _add_phosphorus_args(p_f2d)
     p_f2d.set_defaults(func=cmd_forecast_to_dssat)
 
     p_grid = sub.add_parser(

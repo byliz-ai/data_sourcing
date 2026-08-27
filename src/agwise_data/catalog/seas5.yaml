@@ -13,7 +13,10 @@ description: >
   the planting-date and cultivar module (Jemal's standardization
   proposal). Accumulated fields (precipitation, solar radiation) are
   de-accumulated to daily values; units match the AGRO conventions so
-  observation and hindcast line up by variable name.
+  observation and hindcast line up by variable name. Each daily step is
+  labeled with the calendar day it describes (its 24-hour window start:
+  leadtime_hour=24 covers [init, init+24h) and is labeled with the init
+  date), matching how the observations label a day.
 license: Copernicus License (free use with attribution)
 citation: >
   Johnson, S. J. et al. (2019): SEAS5: the new ECMWF seasonal forecast
@@ -66,7 +69,10 @@ variables:
     nc_var: t2m
     source_units: K
     conversion: k_to_degc
-    note: instantaneous 2m temperature at each 24-hour step, not a daily mean.
+    note: >
+      instantaneous 2m temperature at the END of each 24-hour step (not a
+      daily mean), assigned to that step's calendar day so it stays on the
+      same axis as the window-aggregated variables.
   AGRO.SRAD:
     source_name: surface_solar_radiation_downwards
     nc_var: ssrd

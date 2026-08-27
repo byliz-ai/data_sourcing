@@ -3,12 +3,19 @@
 Implements Jemal's standardization proposal for the planting-date module:
 one cached file per (variable, initialization month, year, domain) —
 ``Seasonal_<VAR>_i<MM>_<year>.nc`` with dims ``(member, time, lat, lon)``
-where ``time`` is the *valid* date (initialization + lead, 24-hour steps)
 — so the hindcast archive is append-only like the climate layer: adding a
 year never refetches the others. Accumulated fields (precipitation, solar
 radiation) are de-accumulated to daily values before unit conversion, and
 units match the ``AGRO.*`` observation conventions so hindcast and
 reference data pair up by variable name for bias correction and DSSAT.
+
+``time`` labels each daily step with the calendar day the value
+describes — the START of its 24-hour window, so ``leadtime_hour=24``
+([init, init+24h)) is the initialization date itself, exactly how the
+observations label a day. Files cached before v0.31 carried the window
+END (init + lead, one day late); they are detected by the missing
+``time_label`` attribute and migrated in place — a local rewrite, never
+a re-download.
 
 The full SEAS5 lead range (24..5160 h, 215 days) is always fetched, so
 any later lead subset is a cache hit.
@@ -19,6 +26,7 @@ REFERENCE.md. Never hardcode the token in scripts.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -35,8 +43,16 @@ from ..harmonize import (
 )
 from . import register
 
+logger = logging.getLogger(__name__)
+
 # SEAS5 daily steps: 24 h .. 5160 h (215 days, the full lead range).
 MAX_LEAD_DAYS = 215
+
+# Daily-series time convention stamped on every cached file: each step is
+# labeled with the calendar day it describes (its 24-hour window START).
+# A cached file without this attribute predates v0.31 and still carries
+# window-END labels — one day late.
+TIME_LABEL = "window_start"
 
 SEASONAL_CHUNKS = {"member": 13, "time": 92, "lat": 128, "lon": 128}
 
@@ -96,16 +112,19 @@ class SeasonalDriver:
             self.source_id, domain, short, init_month, year
         )
         if dest.exists():
+            self._ensure_window_start(dest)
             return dest
 
         with cache.locked(dest):
             if dest.exists():
+                self._ensure_window_start(dest)
                 return dest
 
             da, fetch_meta = self._fetch_seasonal(variable, init_month, year, domain)
             da = standardize_seasonal(da, variable, self.source_id)
             da.attrs["init_month"] = int(init_month)
             da.attrs["init_year"] = int(year)
+            da.attrs["time_label"] = TIME_LABEL
 
             with cache.atomic_write(dest) as tmp:
                 with cache.NC_LOCK:
@@ -121,10 +140,53 @@ class SeasonalDriver:
                     "domain": domain,
                     "domain_bbox": self.config.bbox_for(domain),
                     "catalog_version": self.entry.get("version"),
+                    "time_label": TIME_LABEL,
                     **fetch_meta,
                 },
             )
         return dest
+
+    @staticmethod
+    def _time_label(dest: Path):
+        """The ``time_label`` attribute of a cached file (None = pre-v0.31)."""
+        with cache.NC_LOCK:
+            with xr.open_dataset(dest) as ds:
+                for v in ds.data_vars:
+                    if v not in ("spatial_ref", "crs"):
+                        return ds[v].attrs.get("time_label")
+        return None
+
+    def _ensure_window_start(self, dest: Path) -> None:
+        """One-time in-place migration of a pre-v0.31 cached year file.
+
+        Older files labeled each daily step with its window END (init +
+        lead), so the first forecast day carried the init+1 date. Shift the
+        axis back one day and stamp ``time_label`` — a cheap local rewrite
+        under the cache lock, shared by every process; no re-download.
+        """
+        if self._time_label(dest) == TIME_LABEL:
+            return
+        with cache.locked(dest):
+            if self._time_label(dest) == TIME_LABEL:  # a peer migrated it
+                return
+            with cache.NC_LOCK:
+                with xr.open_dataset(dest) as ds:
+                    name = next(
+                        v for v in ds.data_vars if v not in ("spatial_ref", "crs")
+                    )
+                    da = ds[name].load()
+            da = da.assign_coords(time=da["time"].values - np.timedelta64(1, "D"))
+            da.attrs["time_label"] = TIME_LABEL
+            with cache.atomic_write(dest) as tmp:
+                with cache.NC_LOCK:
+                    da.to_netcdf(tmp, encoding={da.name: seasonal_nc_encoding(da)})
+            meta = cache.read_manifest(dest)
+            meta["time_label"] = TIME_LABEL
+            cache.write_manifest(dest, meta)
+            logger.info(
+                "Migrated %s to window-start daily labels (one day earlier)",
+                dest.name,
+            )
 
     def open_inits(
         self, variable: str, init_month: int, years, domain: str
@@ -220,11 +282,16 @@ class Seas5Driver(SeasonalDriver):
 
     @staticmethod
     def _to_valid_time(da: xr.DataArray, spec: dict) -> xr.DataArray:
-        """Lead-time axis → valid-date axis (one initialization).
+        """Lead-time axis → daily calendar axis (one initialization).
 
-        De-accumulates accumulated fields first, then converts
-        ``forecast_reference_time + forecast_period`` into a daily
-        ``time`` coordinate.
+        De-accumulates accumulated fields first, then labels each 24-hour
+        step with the calendar day it DESCRIBES — the window start,
+        ``init + lead - 24h`` — so ``leadtime_hour=24`` ([init, init+24h))
+        is the initialization date, matching how the observations label a
+        day. This holds for every SEAS5 daily variable: tp/ssrd accumulate
+        and mx2t24/mn2t24 aggregate over that same window; the instantaneous
+        t2m (valid at the window's end) is assigned to the same day so the
+        variables stay paired on one axis.
         """
         lead_dim = "forecast_period"
         ref_dim = "forecast_reference_time"
@@ -236,7 +303,11 @@ class Seas5Driver(SeasonalDriver):
                     f"Expected one initialization, found {da.sizes[ref_dim]}"
                 )
             da = da.squeeze(ref_dim, drop=False)
-        valid = np.asarray(da[ref_dim].values) + np.asarray(da[lead_dim].values)
+        valid = (
+            np.asarray(da[ref_dim].values)
+            + np.asarray(da[lead_dim].values)
+            - np.timedelta64(24, "h")
+        )
         da = da.drop_vars([ref_dim, lead_dim, "valid_time"], errors="ignore")
         da = da.assign_coords({lead_dim: valid}).rename({lead_dim: "time"})
         return da
