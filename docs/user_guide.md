@@ -85,7 +85,7 @@ Full variable list and units are in
 | **Cropland mask** | `CROPLAND` | `get_cropmask` | ESA WorldCover | Google Earth Engine |
 
 ¹ **On CGLabs, `PRCP` comes from the local CHIRPS v3.0 series by default** (the
-complete 1981–2023 set is staged in `Landing`), so rainfall needs no account and
+complete 1981–2025 set is staged in `Landing`), so rainfall needs no account and
 no network. For years it does not cover — or off CGLabs — `PRCP` falls back to
 CHIRPS v2.0, which currently uses Earth Engine while the UCSB host is
 403-blocked (so needs GEE there). Force a version any time with

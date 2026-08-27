@@ -94,10 +94,11 @@ def test_effective_source_applies_rainfall_preference():
 
     cfg = Config(root="/tmp/x")
     cfg.rainfall_source = "chirps_v3"
-    # PRCP, no explicit source, years covered by v3 (1981-2023) -> chirps_v3
+    # PRCP, no explicit source, years covered by v3 (1981-2025) -> chirps_v3
     assert _effective_source("PRCP", None, cfg, [2023]) == "chirps_v3"
+    assert _effective_source("PRCP", None, cfg, [2024, 2025]) == "chirps_v3"
     # a year outside v3's coverage -> fall back to the catalog default (None)
-    assert _effective_source("PRCP", None, cfg, [2024]) is None
+    assert _effective_source("PRCP", None, cfg, [2026]) is None
     # unknown years -> can't promise coverage -> default
     assert _effective_source("PRCP", None, cfg, None) is None
     # an explicit source always wins

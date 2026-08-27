@@ -208,7 +208,7 @@ Got a NetCDF path back? You're ready. Add credentials
 follow the **[user workflow (Section 4)](docs/user_guide.md)**.
 
 > **Rainfall (CHIRPS) note:** On CGLabs `PRCP` is served from the **local
-> CHIRPS v3.0** series staged in `Landing` (1981–2023) — no account, no network.
+> CHIRPS v3.0** series staged in `Landing` (1981–2025) — no account, no network.
 > Elsewhere, or for years outside that range, it falls back to CHIRPS v2.0;
 > because the UCSB host (`data.chc.ucsb.edu`) is **currently returning HTTP
 > 403**, v2.0 is pulled from **Earth Engine** (so needs GEE set up, like MODIS).

@@ -5,6 +5,21 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.31.1 — local CHIRPS v3 extended through 2025
+
+Data + catalog update: the staged `Landing/Rainfall/chirps_v3` series now
+covers **1981–2025** (was 1981–2023). 2024 and 2025 were downloaded from
+the Climate Hazards Center (v3.0 daily **final**, `rnl` ERA5-disaggregated
+branch — the one the whole staged archive uses) and 2023 was refreshed to
+CHC's 2026-08-17 rebuild (verified value-identical to the previous staged
+build over a test window; the old file is kept as
+`2023.nc.pre-aug2026-build.bak`). New files were verified (full calendar
+year, 0.05° 2400×7200 grid, ascending latitude, plausible values) and
+rewritten to the same uncompressed contiguous NETCDF4 layout as the rest
+of the archive, so windowed reads stay fast. The catalog temporal extent
+is bumped to 2025-12-31, which means **the CGLabs `PRCP` default now
+serves 2024–2025 from local CHIRPS v3** instead of falling back to v2.
+
 ## 0.31.0 — SEAS5 daily dates fixed (one day early) + phosphorus in `.SOL`
 
 Two user-feedback items:

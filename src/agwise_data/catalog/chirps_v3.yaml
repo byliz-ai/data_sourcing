@@ -6,12 +6,13 @@ id: chirps_v3
 title: CHIRPS v3.0 daily precipitation
 description: >
   Climate Hazards Center InfraRed Precipitation with Stations (CHIRPS)
-  v3.0: quasi-global daily rainfall at 0.05 degree resolution. Served
-  exclusively from the yearly files staged on CGLabs (1981-2023, ~24 GB
-  per year) — there is no network fetch wired, so it also sidesteps the
-  data.chc.ucsb.edu 403 blocking that affects the v2.0 global NetCDF.
-  Select it per call with source="chirps_v3" (CHIRPS v2.0 stays the
-  default rainfall source).
+  v3.0: quasi-global daily rainfall at 0.05 degree resolution, the "rnl"
+  daily disaggregation (pentad totals partitioned by ERA5 — the only
+  branch covering 1981+). Served exclusively from the yearly files staged
+  on CGLabs (1981-2025, ~24 GB per year) — there is no network fetch
+  wired, so it also sidesteps the data.chc.ucsb.edu 403 blocking that
+  affects the v2.0 global NetCDF. Select it per call with
+  source="chirps_v3" (CHIRPS v2.0 stays the default rainfall source).
 license: Public domain (freely available; cite the Climate Hazards Center)
 citation: >
   Climate Hazards Center, UC Santa Barbara. CHIRPS v3.0 quasi-global
@@ -28,7 +29,12 @@ extent:
     bbox: [-180.0, -60.0, 180.0, 60.0]
   temporal:
     start: "1981-01-01"
-    end: "2023-12-31"   # staged years; 2024+ are partial .part downloads
+    # Staged years — bump this after staging a new year in
+    # Landing/Rainfall/chirps_v3 (source: data.chc.ucsb.edu
+    # products/CHIRPS/v3.0/daily/final/rnl/netcdf/byYear, rewritten
+    # uncompressed/contiguous like the existing files). This bound is what
+    # the CGLabs PRCP default uses to decide chirps_v3 vs the v2 fallback.
+    end: "2025-12-31"
 spatial_resolution_deg: 0.05
 temporal_resolution: daily
 
