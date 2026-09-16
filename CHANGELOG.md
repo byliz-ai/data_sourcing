@@ -5,6 +5,27 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.32.0 — vectorized forecast bias correction (~50–100x faster)
+
+`bias_correct_cube`'s whole-season path (`window_days=None`, the only mode
+used by the DSSAT export) now runs through a vectorized, row-chunked QDM
+(`_bias_correct_cube_vectorized`) instead of the per-pixel Python loop:
+same math, batched across all pixels of a latitude row-chunk at once
+(`scipy.stats.rankdata` for tau + a batched linear-interpolated quantile
+lookup in float64). Validated **bit-for-bit identical** to the loop output
+(max abs diff 0.0 across ~64M points combined, Rwanda and Mozambique vs.
+real production output from cold-cache CDS downloads) and roughly
+**50–100x faster end-to-end** — Mozambique PRCP went from 12+ hours to
+minutes. Regridding happens per member and per row-chunk
+(`_regrid_chunk_per_member`), which avoids both `.interp()`'s pathological
+super-linear scaling with member count and the ~28 GB full-grid peak that
+OOM-killed country-scale runs (peak is now one chunk × all members, ~9 GB
+at Mozambique's scale); this replaces the previous `_tile_rows` tiling.
+The windowed-calibration path (`window_days` set) keeps the original
+per-pixel loop — it isn't exercised in production and hasn't been
+validated against the fast path. +2 tests (1-row chunks == whole grid;
+vectorized == per-pixel `quantile_delta_map`, exact equality, both kinds).
+
 ## 0.31.1 — local CHIRPS v3 extended through 2025
 
 Data + catalog update: the staged `Landing/Rainfall/chirps_v3` series now

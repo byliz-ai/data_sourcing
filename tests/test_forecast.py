@@ -122,19 +122,41 @@ def test_bias_correct_api_injection(config):
     assert abs(float(info["data"].mean()) - 21.0) < 0.6
 
 
-def test_bias_correct_cube_tiled_matches_untiled(monkeypatch):
-    """Country-scale runs OOM'd because the whole fine grid was regridded in
-    one float64 shot; the fix processes latitude tiles. Interp + QDM are
-    pointwise in the target cells, so 1-row tiles must reproduce the
+def test_bias_correct_cube_chunked_matches_unchunked():
+    """Row-chunking bounds peak memory at country scale; regrid + QDM are
+    pointwise in the target cells, so 1-row chunks must reproduce the
     whole-grid result exactly."""
     import agwise_data.forecast as fc
 
     obs, hind, fcst = _cubes()
-    whole = bias_correct_cube(obs, hind, fcst, "additive")
-    monkeypatch.setattr(fc, "_TILE_TARGET_BYTES", 1)  # force 1-row tiles
-    tiled = bias_correct_cube(obs, hind, fcst, "additive")
-    assert dict(tiled.sizes) == dict(whole.sizes)
-    xr.testing.assert_allclose(tiled, whole)
+    whole = fc._bias_correct_cube_vectorized(obs, hind, fcst, "additive",
+                                             chunk_rows=64)
+    rowed = fc._bias_correct_cube_vectorized(obs, hind, fcst, "additive",
+                                             chunk_rows=1)
+    assert dict(rowed.sizes) == dict(whole.sizes)
+    xr.testing.assert_allclose(rowed, whole)
+
+
+def test_bias_correct_cube_vectorized_matches_per_pixel_qdm():
+    """The vectorized whole-season path must reproduce quantile_delta_map
+    applied independently at every pixel (the pre-vectorization semantics)."""
+    import agwise_data.forecast as fc
+
+    for kind in ("additive", "multiplicative"):
+        obs, hind, fcst = _cubes()
+        out = bias_correct_cube(obs, hind, fcst, kind)
+        hind_r = fc._regrid_to(hind, obs)
+        fcst_r = fc._regrid_to(fcst, obs)
+        M, T = fcst_r.sizes["member"], fcst_r.sizes["time"]
+        for y in range(obs.sizes["lat"]):
+            for x in range(obs.sizes["lon"]):
+                ref = quantile_delta_map(
+                    fcst_r.values[:, :, y, x].ravel(),
+                    obs.values[:, y, x],
+                    hind_r.values[:, :, y, x].ravel(),
+                    kind,
+                ).reshape(M, T).astype("float32")
+                np.testing.assert_array_equal(out.values[:, :, y, x], ref)
 
 
 def test_bias_correct_reuses_matching_product(config, monkeypatch, tmp_path):
