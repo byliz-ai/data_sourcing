@@ -125,6 +125,11 @@ true as the module grows:
    new topic appears, extend an existing section rather than adding a new
    top-level file, so the 1→7 path stays the whole map.
 
+**Data-quality / provenance roadmap:** a comparison with
+[prismpy](https://github.com/izuku-franck1555/prismpy) — known defects plus a
+phased plan (QC ranges, provenance manifests, SPAM, IDW, NASA POWER, HWSD,
+ISIMIP3b) — is in [docs/prismpy_comparison.md](docs/prismpy_comparison.md).
+
 ## Commits & CI
 
 Trunk-based: commit and push to `origin/main`; CI (`.github/workflows/tests.yml`)
