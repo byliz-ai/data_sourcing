@@ -5,6 +5,20 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.32.1 — R wrapper: quote CLI arguments
+
+`ad_run()` now passes the argument vector through `shQuote()` before handing it
+to `system2()`. R builds a shell command string, so any unquoted argument
+containing a space was split into two: `ad_get_climate(country = "Burkina
+Faso")` reached the CLI as `--country Burkina Faso`, and the same went for
+`"South Africa"`, `admin_name = "Addis Ababa"` and any `out_dir` with a space.
+Values carrying an apostrophe (`"Côte d'Ivoire"`) broke the shell syntax
+outright. The fix applies to all 19 `ad_*` wrappers, which share `ad_run()`.
+
+Python package unchanged — this release only touches `r/agwise_data.R`.
+
+---
+
 ## 0.32.0 — vectorized forecast bias correction (~50–100x faster)
 
 `bias_correct_cube`'s whole-season path (`window_days=None`, the only mode

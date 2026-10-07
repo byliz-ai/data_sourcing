@@ -20,7 +20,7 @@ ad_bin <- function() {
 }
 
 ad_run <- function(args) {
-  out <- suppressWarnings(system2(ad_bin(), args, stdout = TRUE, stderr = ""))
+  out <- suppressWarnings(system2(ad_bin(), shQuote(args), stdout = TRUE, stderr = ""))
   status <- attr(out, "status")
   json_lines <- grep("^\\{", out, value = TRUE)
   if (length(json_lines) == 0) {
