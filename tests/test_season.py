@@ -75,7 +75,8 @@ def test_region_climate_crossyear_slice(config):
     sample = da.isel(lat=0, lon=0).to_series()
     assert np.allclose(sample.values, sample.index.dayofyear.values)
     # A Season_* product is written (this is the season cache).
-    assert res["AGRO.PRCP"]["nc"].name == "Season_PRCP_20001215_20010115.nc"
+    # Explicit non-default source -> its own suffixed product.
+    assert res["AGRO.PRCP"]["nc"].name == "Season_PRCP_20001215_20010115_fake.nc"
     assert res["AGRO.PRCP"]["nc"].exists()
 
 

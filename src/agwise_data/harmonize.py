@@ -551,6 +551,11 @@ def to_monthly(da: xr.DataArray, variable: str) -> xr.DataArray:
         out = resampler.sum(skipna=True, min_count=1)
     else:
         out = resampler.mean(skipna=True)
+    # Resampling spans first..last month, so a non-contiguous year list
+    # ([2020, 2022]) would gain all-NaN filler months for the skipped year.
+    present = pd.DatetimeIndex(da["time"].values).to_period("M").unique()
+    if len(present) != out.sizes["time"]:
+        out = out.sel(time=present.to_timestamp())
     out.attrs.update(da.attrs)
     out.attrs["temporal_aggregation"] = f"monthly {how} of daily values"
     if how == "sum" and "day-1" in out.attrs.get("units", ""):

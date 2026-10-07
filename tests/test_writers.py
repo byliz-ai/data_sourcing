@@ -115,6 +115,17 @@ def test_write_wth_missing_elev_uses_sentinel(tmp_path):
     assert "   -99" in general  # ELEV sentinel when not supplied
 
 
+def test_write_wth_partial_missing_day_uses_sentinel(tmp_path):
+    df = _two_month_series()
+    df.loc[2, "SRAD"] = np.nan  # one value missing, the rest of the day valid
+    p = dssat.write_wth(df, lat=0.0, lon=0.0, path=tmp_path / "m.WTH")
+    text = p.read_text()
+    assert "nan" not in text.lower()
+    row = [ln for ln in text.splitlines() if ln.startswith("2021003")][0]
+    assert row[19:25] == " -99.0"  # SRAD field (cols 20-25)
+    assert len(row) == 31  # fixed width preserved
+
+
 def test_write_wth_empty_raises(tmp_path):
     empty = pd.DataFrame(
         {"DATE": pd.to_datetime([]), "TMAX": [], "TMIN": [], "SRAD": [], "RAIN": []}
@@ -232,6 +243,23 @@ def test_write_sol_nan_becomes_sentinel(tmp_path):
     last = p.read_text().splitlines()[13]
     # SCEC column is the 3rd-from-last field; NaN -> -99
     assert last.split()[-2] == "-99"
+
+
+def test_write_sol_slcf_from_cfvo(tmp_path):
+    row = _soil_row()
+    for i, d in enumerate(soil.DEPTH_LABELS):
+        row[f"CFVO_{d}"] = 5.0 + i
+    lines = soil.write_sol(row, lat=0.0, lon=0.0, path=tmp_path / "S.SOL"
+                           ).read_text().splitlines()
+    # SLCF is the 11th layer column: fixed width, 6 chars, after SLB (6)
+    slcf = [ln[66:72] for ln in lines[8:14]]
+    assert slcf == ["   5.0", "   6.0", "   7.0", "   8.0", "   9.0", "  10.0"]
+
+
+def test_write_sol_slcf_sentinel_without_cfvo(tmp_path):
+    lines = soil.write_sol(_soil_row(), lat=0.0, lon=0.0, path=tmp_path / "S.SOL"
+                           ).read_text().splitlines()
+    assert all(ln[66:72] == "   -99" for ln in lines[8:14])
 
 
 def test_write_sol_no_p_block_by_default(tmp_path):
@@ -588,6 +616,22 @@ def test_wofost_prepare_weather_units_and_cleaning():
     assert round(float(df["vapr"].iloc[0]), 3) == 1.526
     # day 3 (10/20 -> swapped to 10/20) tmean=15 -> lower vapr.
     assert df["vapr"].iloc[2] < df["vapr"].iloc[0]
+
+
+def test_wind_to_2m_fao56():
+    from agwise_data.writers._common import wind_to_2m
+
+    # FAO-56 eq. 47: 10 m -> 2 m factor 4.87 / ln(672.58) = 0.7480
+    assert round(float(wind_to_2m(1.0, 10.0)), 4) == 0.7480
+    assert wind_to_2m(3.0, 2.0) == 3.0
+
+
+@pytest.mark.parametrize("module", [wofost, oryza])
+def test_writers_convert_10m_wind_to_2m(module):
+    df = module.prepare_weather(_wofost_series())
+    assert np.allclose(df["wind"].dropna(), 1.5 * 0.7480, atol=1e-3)
+    same = module.prepare_weather(_wofost_series(), wind_height=2.0)
+    assert np.allclose(same["wind"].dropna(), 1.5)
 
 
 def test_wofost_prepare_weather_missing_cols_raises():

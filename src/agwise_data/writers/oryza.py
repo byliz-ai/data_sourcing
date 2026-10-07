@@ -30,7 +30,9 @@ import numpy as np
 import pandas as pd
 
 from . import soil as soil_w
-from ._common import require_data, station_code
+from ._common import (
+    WIND_SOURCE_HEIGHT_M, require_data, station_code, wind_to_2m,
+)
 from .wofost import esat_kpa
 
 # ORYZA's fixed 8-layer scheme (top metre) and how SoilGrids' six depths map
@@ -49,7 +51,9 @@ _MISSING = -99.0
 # --------------------------------------------------------------------------
 # Weather (CABO format)
 # --------------------------------------------------------------------------
-def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
+def prepare_weather(
+    daily: pd.DataFrame, wind_height: float = WIND_SOURCE_HEIGHT_M
+) -> pd.DataFrame:
     """Build the ORYZA weather frame from a per-point daily frame.
 
     ``daily`` needs a date column and the six short-name columns ``TMAX, TMIN,
@@ -101,7 +105,7 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
         "tmin": df["TMIN"],
         "tmax": df["TMAX"],
         "vapr": vapr,
-        "wind": df["WIND"],
+        "wind": wind_to_2m(df["WIND"], wind_height),   # -> 2 m (FAO-56)
         "rain": df["PRCP"],
     })
 
@@ -134,7 +138,7 @@ def _weather_header(id_name, lon, lat, elev, first, last) -> List[str]:
         "*     5      min temperature           oC",
         "*     6      max temperature           oC",
         "*     7      vapour pressure          kPa",
-        "*     8      mean wind speed        m s-1",
+        "*     8      mean wind speed (2 m)  m s-1",
         "*     9      precipitation         mm d-1",
         "*-----------------------------------------------------------",
     ]
@@ -149,6 +153,7 @@ def write_weather(
     stn: int = 1,
     elev: float = 0.0,
     angstrom=(0.0, 0.0),
+    wind_height: float = WIND_SOURCE_HEIGHT_M,
 ) -> List[Path]:
     """Write ORYZA CABO weather files (one per calendar year). Returns the paths.
 
@@ -161,8 +166,11 @@ def write_weather(
     matures (verified against the real ORYZA3 binary on the IRRI standard
     experiment). The IRRI reference weather files likewise carry 0.0 here and
     provide the real ANGA/ANGB in the experiment (.exp) file.
+
+    ``wind_height`` is the measurement height (m) of ``WIND`` in ``daily``;
+    it is converted to 2 m.
     """
-    df = prepare_weather(daily)
+    df = prepare_weather(daily, wind_height=wind_height)
     if df.empty:
         raise ValueError("No weather rows to write")
     code = station_code(id_name)

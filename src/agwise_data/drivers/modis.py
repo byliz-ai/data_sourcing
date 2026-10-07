@@ -35,6 +35,7 @@ import xarray as xr
 from .. import cache, progress
 from ..catalog import primary_access
 from ..config import Config
+from ..retry import retry_call
 from ..harmonize import (
     apply_conversion,
     rs_canonical_name,
@@ -238,9 +239,12 @@ class ModisGeeDriver(ModisDriver):
             .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
             .sort("system:time_start")
         )
-        listing = col.reduceColumns(
-            ee.Reducer.toList(2), ["system:index", "system:time_start"]
-        ).get("list").getInfo()
+        listing = retry_call(
+            col.reduceColumns(
+                ee.Reducer.toList(2), ["system:index", "system:time_start"]
+            ).get("list").getInfo,
+            what=f"Earth Engine listing {collection} {year}",
+        )
         if not listing:
             raise RuntimeError(
                 f"{self.source_id}: no {collection} composites for {year}"

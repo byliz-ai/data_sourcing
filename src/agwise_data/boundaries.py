@@ -13,6 +13,8 @@ from typing import Optional, Tuple
 
 import requests
 
+from .retry import retry_call
+
 from .cache import atomic_write, locked
 from .config import Config
 
@@ -42,6 +44,12 @@ def iso3(country: str) -> str:
     )
 
 
+def _get(url: str, timeout: float) -> "requests.Response":
+    resp = requests.get(url, timeout=timeout)
+    resp.raise_for_status()
+    return resp
+
+
 def boundary_file(config: Config, country: str, level: int = 0) -> Path:
     """Download (once) and return the cached GeoJSON for a country/admin level."""
     code = iso3(country)
@@ -52,16 +60,19 @@ def boundary_file(config: Config, country: str, level: int = 0) -> Path:
         if dest.exists():
             return dest
         api = _GB_API.format(iso3=code, level=level)
-        resp = requests.get(api, timeout=60)
-        resp.raise_for_status()
-        info = resp.json()
+        info = retry_call(
+            lambda: _get(api, timeout=60).json(),
+            what=f"geoBoundaries lookup {code} ADM{level}",
+        )
         if isinstance(info, list):  # API returns a list for some queries
             info = info[0]
         url = info.get("simplifiedGeometryGeoJSON") or info.get("gjDownloadURL")
         if not url:
             raise RuntimeError(f"geoBoundaries returned no geometry URL for {code} ADM{level}")
-        data = requests.get(url, timeout=300)
-        data.raise_for_status()
+        data = retry_call(
+            lambda: _get(url, timeout=300),
+            what=f"geoBoundaries download {code} ADM{level}",
+        )
         with atomic_write(dest) as tmp:
             tmp.write_bytes(data.content)
     return dest

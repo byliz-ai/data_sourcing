@@ -181,3 +181,64 @@ def test_get_climate_product_cache_hit_reopens(config):
     assert first["nc"].exists()
     second = get_climate(**kw)["AGRO.PRCP"]  # need_nc=False -> _open_product_da
     assert second["data"].sizes["time"] == first["data"].sizes["time"]
+
+
+# ---------------------------------------------------------------------------
+# Product cache keys: source and exact year selection (v0.32.3)
+
+def _register_fake2():
+    """A second climate source on the same driver, to tell products apart."""
+    from agwise_data import catalog
+    from tests.conftest import FAKE_ENTRY
+
+    catalog.register_entry({**FAKE_ENTRY, "id": "fake2", "title": "Second fake"})
+
+
+def test_product_stem_carries_non_default_source(config):
+    _register_fake2()
+    kw = dict(variables="PRCP", years=[2020], bbox=BBOX, freq="monthly",
+              config=config)
+    a = get_climate(source="fake", **kw)["AGRO.PRCP"]
+    b = get_climate(source="fake2", **kw)["AGRO.PRCP"]
+    # Two sources, same region and years: two products, never a shared hit.
+    assert a["nc"].name == "Monthly_PRCP_2020_2020_fake.nc"
+    assert b["nc"].name == "Monthly_PRCP_2020_2020_fake2.nc"
+    assert read_manifest(a["nc"])["source_id"] == "fake"
+    assert read_manifest(b["nc"])["source_id"] == "fake2"
+    assert b["source"] == "fake2"
+
+
+def test_product_rebuilt_when_manifest_source_differs(config):
+    import json
+
+    from agwise_data.cache import manifest_path
+
+    kw = dict(variables="PRCP", years=[2020], bbox=BBOX, freq="monthly",
+              source="fake", config=config)
+    nc = get_climate(**kw)["AGRO.PRCP"]["nc"]
+    mpath = manifest_path(nc)
+    meta = json.loads(mpath.read_text())
+    meta["source_id"] = "some_other_source"  # e.g. the default changed
+    mpath.write_text(json.dumps(meta))
+    get_climate(**kw)
+    assert read_manifest(nc)["source_id"] == "fake"
+
+
+def test_non_contiguous_years_do_not_collide_with_range(config):
+    kw = dict(variables="PRCP", bbox=BBOX, freq="monthly", source="fake",
+              config=config)
+    full = get_climate(years=[2020, 2021, 2022], **kw)["AGRO.PRCP"]
+    gap = get_climate(years=[2020, 2022], **kw)["AGRO.PRCP"]
+    assert full["nc"] != gap["nc"]
+    assert gap["nc"].name.startswith("Monthly_PRCP_2020_2022_y")
+    assert full["data"].sizes["time"] == 36
+    assert gap["data"].sizes["time"] == 24
+
+
+def test_years_tag():
+    from agwise_data.api import _years_tag
+
+    assert _years_tag([2015, 2016, 2017]) == "2015_2017"
+    assert _years_tag([2017, 2015, 2016, 2016]) == "2015_2017"
+    assert _years_tag([2015, 2017]).startswith("2015_2017_y")
+    assert _years_tag([2015, 2017]) != _years_tag([2015, 2016, 2017])

@@ -38,7 +38,9 @@ guidance: [user guide §4.1](docs/user_guide.md#41-decision-1--select-the-study-
 
 - *Gridded cube* → `{canonical_var: {"nc": Path, "tif": Path|None, "data": xarray.DataArray}}`.
   The NetCDF is always written (it **is** the cache); `out_format=["nc","tif"]`
-  adds a GeoTIFF.
+  adds a GeoTIFF. Product files are named `<Kind>_<VAR>_<first>_<last>`; a
+  non-contiguous year list adds a `_y<digest>` tag and an explicitly requested
+  non-default `source` adds `_<source>` (e.g. `Daily_PRCP_2015_2024_chirps.nc`).
 - *Point extraction* → a `pandas.DataFrame`.
 - *Crop-model writers* → a `list` of the files written.
 
@@ -452,6 +454,9 @@ to_dssat("trials.csv", planting_date="2021-01-01",
 
 The P block is also written whenever a supplied `soil` frame already carries
 `EXTP_<depth>` columns (e.g. from `extract_static_points(pts, ["EXTP"])`).
+The `.SOL` coarse-fragment column `SLCF` (vol %) comes from SoilGrids `CFVO`
+(fetched best-effort; `-99` when unavailable or absent from a supplied `soil`
+frame). Missing daily weather values are written as `-99` in the `.WTH`.
 
 ### `to_apsim`
 
@@ -513,6 +518,9 @@ to_wofost("trials.csv", planting_date="2021-01-01",
           harvest_date="2021-04-30", out_dir="WOFOST")
 ```
 
+`wind` is converted from AgERA5's 10 m wind speed to the 2 m wind WOFOST
+expects (FAO-56 eq. 47, factor ≈ 0.748).
+
 ### `to_oryza`
 
 Write **ORYZA** CABO weather + PADDY soil files for every point.
@@ -542,6 +550,9 @@ from agwise_data import to_oryza
 to_oryza("trials.csv", planting_date="2021-01-01",
          harvest_date="2021-04-30", out_dir="ORYZA")
 ```
+
+`wind` is converted from AgERA5's 10 m wind speed to 2 m (FAO-56 eq. 47,
+factor ≈ 0.748).
 
 ## 6.4 Spatial scaffolding (return DataFrames)
 

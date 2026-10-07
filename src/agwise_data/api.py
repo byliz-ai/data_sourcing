@@ -136,6 +136,52 @@ def _driver_for(variable: str, source, config: Config, years=None):
     return drivers.get_driver(entry, config), source_id
 
 
+def _years_tag(years: Sequence[int]) -> str:
+    """``<first>_<last>`` for a contiguous span, plus a digest otherwise.
+
+    A product stem that only encodes the first and last year would make
+    ``[2015, 2020]`` collide with ``2015..2020``; a non-contiguous list gets
+    a short digest of the exact years so each selection has its own file.
+    """
+    ys = sorted({int(y) for y in years})
+    tag = f"{ys[0]}_{ys[-1]}"
+    if ys != list(range(ys[0], ys[-1] + 1)):
+        import hashlib
+
+        digest = hashlib.sha1(",".join(map(str, ys)).encode()).hexdigest()[:8]
+        tag += f"_y{digest}"
+    return tag
+
+
+def _source_tag(source_id: str, default_id: str) -> str:
+    """Stem suffix naming a non-default source (empty for the default).
+
+    Default products keep their historical names; a product built from an
+    explicitly requested alternative (``source="chirps"`` where the default
+    is ``chirps_v3``) gets its own file instead of colliding with it.
+    """
+    return "" if source_id == default_id else f"_{source_id}"
+
+
+def _product_reusable(nc_path: Path, **expect) -> bool:
+    """Whether a cached product's sidecar matches what this request expects.
+
+    A product whose manifest records a different value for any ``expect``
+    key (e.g. another ``source_id``, because the default source changed) is
+    stale and must be rebuilt. A product without a readable manifest is
+    reused, as before (sidecars have been written alongside every product).
+    """
+    import json
+
+    from .cache import manifest_path
+
+    try:
+        meta = json.loads(manifest_path(Path(nc_path)).read_text())
+    except (OSError, ValueError):
+        return True
+    return all(meta.get(k, v) == v for k, v in expect.items())
+
+
 def _resolve_region(
     config: Config,
     country: Optional[str],
@@ -486,11 +532,15 @@ def get_climate(
             config, source_id, var, years, region_bbox, domain
         )
         short = short_name(var)
-        stem = f"{freq.capitalize()}_{short}_{years[0]}_{years[-1]}"
+        default_id = catalog.source_for(
+            var, _effective_source(var, None, config, years))
+        stem = (f"{freq.capitalize()}_{short}_{_years_tag(years)}"
+                f"{_source_tag(source_id, default_id)}")
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        need_nc = overwrite or not nc_path.exists()
-        need_tif = write_tif and (overwrite or not tif_path.exists())
+        stale = not _product_reusable(nc_path, source_id=source_id)
+        need_nc = overwrite or stale or not nc_path.exists()
+        need_tif = write_tif and (overwrite or stale or not tif_path.exists())
         plans.append(
             (var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif)
         )
@@ -909,13 +959,16 @@ def get_static(
         driver, source_id = _static_driver_for(var, source, config)
         var_domain = _static_domain(config, source_id, var, region_bbox, domain)
         short = static_short_name(var)
+        default_id = catalog.static_source_for(var, None)
         stem = f"Static_{short}"
         if static_has_depth(var):
             stem += _depth_tag(depths)
+        stem += _source_tag(source_id, default_id)
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        need_nc = overwrite or not nc_path.exists()
-        need_tif = write_tif and (overwrite or not tif_path.exists())
+        stale = not _product_reusable(nc_path, source_id=source_id)
+        need_nc = overwrite or stale or not nc_path.exists()
+        need_tif = write_tif and (overwrite or stale or not tif_path.exists())
         plans.append(
             (var, driver, source_id, var_domain, nc_path, tif_path, need_nc, need_tif)
         )
@@ -1115,13 +1168,15 @@ def get_seasonal(
             ),
         )
         short = short_name(var)
-        stem = f"Seasonal_{short}_i{init_month:02d}_{years[0]}_{years[-1]}"
+        stem = f"Seasonal_{short}_i{init_month:02d}_{_years_tag(years)}"
         if ensemble != "members":
             stem += f"_{ensemble}"
+        stem += _source_tag(source_id, _DEFAULT_SEASONAL_SOURCE)
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        need_nc = overwrite or not nc_path.exists()
-        need_tif = write_tif and (overwrite or not tif_path.exists())
+        stale = not _product_reusable(nc_path, source_id=source_id)
+        need_nc = overwrite or stale or not nc_path.exists()
+        need_tif = write_tif and (overwrite or stale or not tif_path.exists())
         # A product written before v0.31 carries window-END daily labels
         # (one day late); rebuild it locally from the (migrated) year cache.
         if not need_nc and _seasonal_product_stale(nc_path):
@@ -1302,7 +1357,7 @@ def get_modis(
             )
             parts.append((sid, driver, var_domain))
         short = rs_short_name(var)
-        stem = f"Composite_{short}_{years[0]}_{years[-1]}{suffix}"
+        stem = f"Composite_{short}_{_years_tag(years)}{suffix}"
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
         need_nc = overwrite or not nc_path.exists()
@@ -1444,7 +1499,7 @@ def smooth_ndvi(
         config, country, bbox, admin_level, admin_name, geometry
     )
     out_root = Path(out_dir) if out_dir else config.products_dir(tag)
-    stem = f"Smoothed_{short}_{years[0]}_{years[-1]}{suffix}_SG"
+    stem = f"Smoothed_{short}_{_years_tag(years)}{suffix}_SG"
     nc_path = out_root / f"{stem}.nc"
     tif_path = out_root / f"{stem}.tif" if write_tif else None
     need_nc = overwrite or not nc_path.exists()
@@ -1749,11 +1804,24 @@ def get_season(
     for var in variables:
         kind, canon = _classify_season_var(var)
         short = rs_short_name(canon) if kind == "rs" else short_name(canon)
-        stem = f"Season_{short}_{pl:%Y%m%d}_{hv:%Y%m%d}"
+        if kind == "rs":
+            # Same naming rule as get_modis's Composite_* products.
+            if source:
+                src = "-".join([source] if isinstance(source, str) else source)
+            else:
+                src = satellite
+            src_tag = "" if src == "both" else f"_{src}"
+        else:
+            src = catalog.source_for(
+                canon, _effective_source(canon, source, config, years))
+            src_tag = _source_tag(src, catalog.source_for(
+                canon, _effective_source(canon, None, config, years)))
+        stem = f"Season_{short}_{pl:%Y%m%d}_{hv:%Y%m%d}{src_tag}"
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        need_nc = overwrite or not nc_path.exists()
-        need_tif = write_tif and (overwrite or not tif_path.exists())
+        stale = not _product_reusable(nc_path, source=src)
+        need_nc = overwrite or stale or not nc_path.exists()
+        need_tif = write_tif and (overwrite or stale or not tif_path.exists())
 
         if not need_nc and not need_tif:
             logger.info("Product cache hit: %s", nc_path)
@@ -1782,6 +1850,7 @@ def get_season(
             )
             meta = {
                 "variable": canon,
+                "source": src,
                 "region": tag,
                 "planting_date": str(pl.date()),
                 "harvest_date": str(hv.date()),
@@ -2047,7 +2116,7 @@ _CM_SOIL_VARS = ["CLAY", "SAND", "SILT", "SOC", "NITROGEN", "PH", "CEC", "BDOD"]
 def _cm_inputs(
     points, planting_date, harvest_date, planting_col, harvest_col,
     lon_col, lat_col, weather, soil, weather_source, soil_source, config,
-    weather_vars=None, need_elev=False, phosphorus=False,
+    weather_vars=None, need_elev=False, phosphorus=False, coarse=False,
 ):
     """Resolve the per-point weather (long) and soil (wide) inputs for a writer.
 
@@ -2063,7 +2132,9 @@ def _cm_inputs(
     merges the ``EXTP_<depth>`` columns into the soil frame, which is what
     makes the DSSAT writer emit the ``.SOL`` P block (``SLPX`` = Olsen P);
     like elevation, it is only fetched when the soil is being sourced from
-    the layer, and a failure warns instead of blocking.
+    the layer, and a failure warns instead of blocking. ``coarse`` likewise
+    adds the coarse-fragment ``CFVO_<depth>`` columns (DSSAT ``SLCF``),
+    best-effort, when the soil is sourced from the layer.
     """
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
     sourcing_statics = soil is None  # user is letting us pull from the layer
@@ -2100,6 +2171,20 @@ def _cm_inputs(
                 logger.warning(
                     "Could not extract phosphorus (EXTP) for the .SOL P "
                     "block (%s) — writing soil files without it", exc,
+                )
+        if coarse:
+            try:
+                ccols = extract_static_points(
+                    df, ["CFVO"], lon_col=lon_col, lat_col=lat_col,
+                    source=soil_source, config=config,
+                )
+                for c in ccols.columns:
+                    if c.startswith("CFVO_") and c != "CFVO_fill_m":
+                        soil[c] = ccols[c]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Could not extract coarse fragments (CFVO) for .SOL SLCF "
+                    "(%s) — writing SLCF as -99", exc,
                 )
     elif phosphorus and not any(
         str(c).startswith("EXTP_") for c in soil.columns
@@ -2204,7 +2289,7 @@ def to_dssat(
     df, lon_col, lat_col, weather, soil, elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
-        need_elev=True, phosphorus=phosphorus,
+        need_elev=True, phosphorus=phosphorus, coarse=True,
     )
 
     written = []

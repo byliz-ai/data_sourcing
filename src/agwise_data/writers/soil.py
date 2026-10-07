@@ -227,6 +227,12 @@ def _prop(soil: Mapping, short: str, label: str):
     return float(v) if v is not None and not pd.isna(v) else np.nan
 
 
+def _prop_optional(soil: Mapping, short: str, label: str):
+    """Like :func:`_prop`, but NaN (written as -99) when the column is absent."""
+    v = soil.get(f"{short}_{label}") if hasattr(soil, "get") else None
+    return float(v) if v is not None and not pd.isna(v) else np.nan
+
+
 def build_profile(
     soil: Mapping, depths: Sequence[str] = DEPTH_LABELS
 ) -> Dict[str, object]:
@@ -246,6 +252,8 @@ def build_profile(
     ph = np.array([_prop(soil, "PH", d) for d in depths])
     cec = np.array([_prop(soil, "CEC", d) for d in depths])
     bdod = np.array([_prop(soil, "BDOD", d) for d in depths])
+    # Coarse fragments (vol %) are optional: older soil frames lack them.
+    cfvo = np.array([_prop_optional(soil, "CFVO", d) for d in depths])
 
     sloc = soc / 10.0            # organic carbon %
     som = sloc * 2.0             # organic matter %
@@ -261,6 +269,7 @@ def build_profile(
         "thickness_mm": THICKNESS_MM[: len(depths)],
         "clay": clay, "sand": sand, "silt": silt,
         "sloc": sloc, "slni": slni, "ph": ph, "cec": cec, "bdod": bdod,
+        "cfvo": cfvo,
         "pwp": pwp, "fc": fc, "sat": sat, "ks": ks,
         "srgf": np.array(root_growth_factor()[: len(depths)]),
         "texture_name": tname, "texture_code": tcode,
@@ -347,7 +356,7 @@ def write_sol(
             f"{_f(p['srgf'][i])}{_f(round(p['ks'][i] / 10.0, 1))}"
             f"{_f(p['bdod'][i], '{:>6.2f}')}{_f(p['sloc'][i])}"
             f"{_f(p['clay'][i], '{:>6.1f}')}{_f(p['silt'][i], '{:>6.1f}')}"
-            f"   -99"                                    # SLCF coarse fragments
+            f"{_f(p['cfvo'][i], '{:>6.1f}')}"            # SLCF coarse fragments, vol %
             f"{_f(p['slni'][i], '{:>6.2f}')}{_f(p['ph'][i], '{:>6.2f}')}"
             f"   -99"                                    # SLHB pH in buffer
             f"{_f(p['cec'][i], '{:>6.2f}')}"

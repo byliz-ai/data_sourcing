@@ -32,6 +32,7 @@ import xarray as xr
 from .. import cache, progress
 from ..catalog import primary_access, variable_spec
 from ..harmonize import apply_conversion
+from ..retry import retry_call
 from ..spatial import subset_bbox
 from . import register
 from .base import Driver
@@ -147,12 +148,13 @@ class ChirpsDriver(Driver):
             .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
             .sort("system:time_start")
         )
-        listing = (
+        listing = retry_call(
             col.reduceColumns(
                 ee.Reducer.toList(2), ["system:index", "system:time_start"]
             )
             .get("list")
-            .getInfo()
+            .getInfo,
+            what=f"Earth Engine listing {collection} {year}",
         )
         if not listing:
             raise CogUnavailable(

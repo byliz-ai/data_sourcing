@@ -37,7 +37,7 @@ import numpy as np
 import pandas as pd
 
 from . import soil as soil_w
-from ._common import require_data
+from ._common import WIND_SOURCE_HEIGHT_M, require_data, wind_to_2m
 
 # WOFOST daily weather columns, in order, with their units.
 WOFOST_WEATHER_COLS = ["date", "srad", "tmin", "tmax", "vapr", "wind", "prec"]
@@ -69,7 +69,9 @@ def esat_kpa(tdegc, pa: float = 101.0):
     return f * a * np.exp(b * np.asarray(tdegc, dtype="float64") / (c + np.asarray(tdegc, dtype="float64")))
 
 
-def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
+def prepare_weather(
+    daily: pd.DataFrame, wind_height: float = WIND_SOURCE_HEIGHT_M
+) -> pd.DataFrame:
     """Build the WOFOST weather table from a per-point daily frame.
 
     ``daily`` needs a date column (``DATE``/``date``/``time``) and the six
@@ -119,7 +121,7 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
         "tmin": df["TMIN"],
         "tmax": df["TMAX"],
         "vapr": (df["RHUM"] / 100.0) * esat_kpa(tmean),   # actual VP, kPa
-        "wind": df["WIND"],
+        "wind": wind_to_2m(df["WIND"], wind_height),   # -> 2 m (FAO-56)
         "prec": df["PRCP"],
     })
     # WOFOST assumes consecutive days with no gaps; keep only complete rows.
@@ -132,9 +134,15 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def write_weather(daily: pd.DataFrame, path) -> Path:
-    """Write one WOFOST weather CSV (:data:`WOFOST_WEATHER_COLS`). Returns path."""
-    df = prepare_weather(daily)
+def write_weather(
+    daily: pd.DataFrame, path, wind_height: float = WIND_SOURCE_HEIGHT_M
+) -> Path:
+    """Write one WOFOST weather CSV (:data:`WOFOST_WEATHER_COLS`). Returns path.
+
+    ``wind_height`` is the measurement height (m) of ``WIND`` in ``daily``;
+    it is converted to the 2 m wind WOFOST expects.
+    """
+    df = prepare_weather(daily, wind_height=wind_height)
     if df.empty:
         raise ValueError("No complete weather rows to write")
     df = df.copy()

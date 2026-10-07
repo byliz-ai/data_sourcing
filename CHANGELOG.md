@@ -5,6 +5,50 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.33.0 — Phase 0 fixes: product cache keys, `-99` sentinels, SLCF, 2 m wind, retries
+
+First batch of the plan in `docs/prismpy_comparison.md`. Output values change
+for WOFOST/ORYZA wind and DSSAT `SLCF`; some product file names change.
+
+- **Product cache keys now distinguish the source and the exact years.**
+  Product stems were `<Kind>_<VAR>_<first>_<last>`, so
+  `get_climate(PRCP, source="chirps")` after a default (`chirps_v3`) request
+  for the same region and years returned the cached `chirps_v3` product, and
+  `years=[2015, 2020]` hit the `2015..2020` product.
+  - An explicitly requested **non-default** source adds `_<source_id>` to the
+    stem (`get_climate`, `get_static`, `get_seasonal`, `get_season`).
+    Default-source products keep their names, so the shared cache stays valid.
+  - A non-contiguous year list adds `_y<sha1-8>` (`get_climate`,
+    `get_seasonal`, `get_modis`, `smooth_ndvi`).
+  - A cache hit is now checked against the product's `.meta.json`: a recorded
+    `source_id`/`source` different from the one this request resolves to (e.g.
+    the default changed) rebuilds the product from the harmonized cache.
+  - Monthly aggregation of a non-contiguous year list no longer inserts 12
+    all-NaN filler months for each skipped year (`to_monthly`).
+  - `get_season` products of an explicit non-default source are now
+    `Season_<VAR>_<pl>_<hv>_<source>.nc`, and their manifest records `source`.
+- **DSSAT `.WTH`:** a day with *some* missing values wrote `nan` into the
+  fixed-width row; missing values are now `-99.0`.
+- **DSSAT `.SOL`:** `SLCF` (coarse fragments, vol %) is filled from SoilGrids
+  `CFVO` instead of always `-99`. `to_dssat` fetches `CFVO` best-effort when
+  sourcing soil from the layer; a supplied `soil` frame without `CFVO_<depth>`
+  columns still writes `-99`.
+- **WOFOST / ORYZA wind:** AgERA5 `WIND` is 10 m wind speed and was written
+  unchanged; both writers now convert it to 2 m (FAO-56 eq. 47, ×0.748).
+  `prepare_weather`/`write_weather` take `wind_height=` (default 10) for
+  frames measured at another height; `wind_height=2` leaves values unchanged.
+- **Retries for every non-CDS fetch.** New `agwise_data.retry.retry_call`
+  retries *transient* failures only (connection drops, timeouts, HTTP
+  408/425/429/5xx, Earth Engine rate-limit/internal errors) with exponential
+  backoff + jitter (4 attempts, 2 s doubling, 60 s cap). Applied to
+  `cache.download_file` (incl. a truncated segmented download), the SoilGrids
+  WCS, geoBoundaries, Earth Engine `computePixels` and the CHIRPS/MODIS image
+  listings. HTTP 404/403 and other permanent errors still fail immediately.
+  CDS keeps its existing wrapper.
+- +25 tests (cache keys, `-99` sentinel, SLCF, wind height, retry policy).
+
+---
+
 ## 0.32.2 — onboarding page in the repo + shared-space prerequisite
 
 Docs only; no code change.

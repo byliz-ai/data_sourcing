@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+from .retry import TransientError, retry_call
 from filelock import FileLock
 
 DOWNLOAD_TIMEOUT = (30, 600)  # (connect, read) seconds
@@ -136,7 +138,7 @@ def _download_segmented(url: str, dest: Path, size: int, parts: int) -> None:
 
         got = tmp.stat().st_size
         if got != size:
-            raise RuntimeError(
+            raise TransientError(
                 f"Segmented download size mismatch for {url}: {got} != {size}"
             )
 
@@ -155,11 +157,15 @@ def download_file(
     with locked(dest):
         if skip_if_exists and dest.exists():  # someone else finished it
             return dest
-        size, ranges_ok = _probe(url)
-        if parts > 1 and ranges_ok and size >= PART_MIN_BYTES:
-            _download_segmented(url, dest, size, parts)
-        else:
-            _download_stream(url, dest)
+
+        def fetch():
+            size, ranges_ok = _probe(url)
+            if parts > 1 and ranges_ok and size >= PART_MIN_BYTES:
+                _download_segmented(url, dest, size, parts)
+            else:
+                _download_stream(url, dest)
+
+        retry_call(fetch, what=f"Download {url}")
     return dest
 
 

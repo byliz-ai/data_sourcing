@@ -21,6 +21,8 @@ from typing import List, Optional, Sequence
 
 import numpy as np
 
+from ..retry import retry_call
+
 # Keep each computePixels request well under the API's ~48 MB ceiling:
 # 2048 px squared at 2 int16 bands is ~17 MB.
 GEE_TILE_PX = 2048
@@ -122,12 +124,14 @@ def fetch_image_grid(
     out = {b: np.empty((height, width), dtype=dtype) for b in bands}
     img = image.select(list(bands))
     for x0, y0, bw, bh in tiles:
-        block = ee.data.computePixels(
-            {
-                "expression": img,
-                "fileFormat": "NUMPY_NDARRAY",
-                "grid": _tile_grid(x0, y0, bw, bh, bbox, res),
-            }
+        request = {
+            "expression": img,
+            "fileFormat": "NUMPY_NDARRAY",
+            "grid": _tile_grid(x0, y0, bw, bh, bbox, res),
+        }
+        block = retry_call(
+            lambda r=request: ee.data.computePixels(r),
+            what=f"Earth Engine computePixels tile ({x0},{y0})",
         )
         for b in bands:
             out[b][y0 : y0 + bh, x0 : x0 + bw] = block[b]

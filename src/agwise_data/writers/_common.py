@@ -83,6 +83,21 @@ def prepare_weather(daily: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Height (m) of the layer's WIND variable: AgERA5 reports 10 m wind speed.
+WIND_SOURCE_HEIGHT_M = 10.0
+
+
+def wind_to_2m(u, z: float = WIND_SOURCE_HEIGHT_M):
+    """Convert wind speed measured at ``z`` metres to 2 m (FAO-56 eq. 47).
+
+    ``u2 = uz * 4.87 / ln(67.8 z - 5.42)``; at 10 m the factor is ~0.748.
+    WOFOST and ORYZA expect 2 m wind; a ``z`` of 2 returns ``u`` unchanged.
+    """
+    if z == 2.0:
+        return u
+    return u * (4.87 / np.log(67.8 * z - 5.42))
+
+
 def tav_amp(daily: pd.DataFrame) -> Tuple[float, float]:
     """Long-term mean temperature (TAV) and amplitude (AMP), DSSAT/APSIM style.
 

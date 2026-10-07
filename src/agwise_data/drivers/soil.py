@@ -20,6 +20,7 @@ import xarray as xr
 
 from ..catalog import primary_access
 from ..harmonize import apply_conversion
+from ..retry import retry_call
 from . import register
 from .static import StaticDriver
 
@@ -110,8 +111,12 @@ class SoilGridsDriver(StaticDriver):
             "SUBSETTINGCRS": "http://www.opengis.net/def/crs/EPSG/0/4326",
             "OUTPUTCRS": "http://www.opengis.net/def/crs/EPSG/0/4326",
         }
-        resp = requests.get(url, params=params, timeout=_TIMEOUT)
-        resp.raise_for_status()
+        def get():
+            r = requests.get(url, params=params, timeout=_TIMEOUT)
+            r.raise_for_status()
+            return r
+
+        resp = retry_call(get, what=f"SoilGrids WCS {coverage}")
         ctype = resp.headers.get("Content-Type", "")
         if "tiff" not in ctype.lower():
             raise RuntimeError(

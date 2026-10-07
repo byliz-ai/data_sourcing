@@ -36,6 +36,11 @@ def _fmt_general(insi, lat, lon, elev, tav, amp, refht, wndht) -> str:
     )
 
 
+def _fmt_val(v) -> str:
+    """A 6-wide one-decimal data field; a missing value is DSSAT's -99."""
+    return f"{-99.0 if pd.isna(v) else v:>6.1f}"
+
+
 def _dssat_date(ts: pd.Timestamp) -> str:
     """YYYYDDD (4-digit year + zero-padded day-of-year), DSSAT's date field."""
     return f"{ts.year:04d}{ts.dayofyear:03d}"
@@ -71,10 +76,10 @@ def write_wth(
     for row in df.itertuples(index=False):
         lines.append(
             f"{_dssat_date(row.DATE):>7}"
-            f"{row.TMAX:>6.1f}"
-            f"{row.TMIN:>6.1f}"
-            f"{row.SRAD:>6.1f}"
-            f"{row.RAIN:>6.1f}"
+            f"{_fmt_val(row.TMAX)}"
+            f"{_fmt_val(row.TMIN)}"
+            f"{_fmt_val(row.SRAD)}"
+            f"{_fmt_val(row.RAIN)}"
         )
 
     path = Path(path)
