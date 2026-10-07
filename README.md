@@ -10,7 +10,7 @@ same data is downloaded **once** into a shared cache with agreed names and units
 
 The fastest way through **everything below** is to not do it by hand: open
 **Claude Code** on CGLabs (new teammates: start from the
-[onboarding guide](https://claude.ai/claude-code/onboard/5lLrC-Lqvb1Q)) in a
+[onboarding guide](docs/onboarding.md)) in a
 folder you own, and ask in plain language. It reads these docs, runs the same
 public functions documented here, and reports back — you review, it executes.
 
@@ -37,6 +37,7 @@ top to bottom; each is a self-contained step of the journey.
 
 | # | Section | Where | Read it to… |
 | --- | --- | --- | --- |
+| 0 | **Onboarding (new teammates)** | [docs/onboarding.md](docs/onboarding.md) | get access to the shared space, activate the env, know where everything lives |
 | 1 | **How the project works** | this page ↓ | understand the workflow, the folders, the cache, and where files land |
 | 2 | **Installation** | this page ↓ + [docs/cglabs_setup.md](docs/cglabs_setup.md) | install on CGLabs (or a laptop) and check it works |
 | 3 | **Credentials** | [docs/credentials_setup.md](docs/credentials_setup.md) | create / configure / verify Copernicus + Google Earth Engine |
@@ -124,7 +125,8 @@ hit. Nothing global is re-downloaded once it is in `Landing`.
 ### 2.1 Required software
 
 **On CGLabs you already have all of this** — the env is installed and the cache
-is preconfigured, so skip to [§2.2](#22-install) and activate. The table below is
+is preconfigured, so skip to [§2.2](#22-install) and activate (it opens with the
+one prerequisite: access to the shared space). The table below is
 what a *from-scratch* install (a laptop, or a new server) needs.
 
 | Requirement | Needed for |
@@ -139,6 +141,25 @@ Soil (SoilGrids/iSDA), terrain (Copernicus DEM) and admin boundaries
 credentials at all.
 
 ### 2.2 Install
+
+> **Prerequisite on CGLabs — access to the shared space.** Everything below
+> lives under `/home/jovyan/agwise-datasourcing`, which is **not a folder**: it
+> is the CGLabs shared space `AgWise_dataSourcing`, mounted over NFS only for
+> accounts that are members of it. Check before you start:
+>
+> ```bash
+> mountpoint -q /home/jovyan/agwise-datasourcing \
+>   && echo "OK — shared space mounted" \
+>   || echo "MISSING — request access"
+> ```
+>
+> If it is MISSING, ask the CGLabs admins to **add your account to the shared
+> space `AgWise_dataSourcing`**, then **stop and start your server** from the Hub
+> control panel (mounts are applied when the container starts — reloading the
+> page is not enough). Don't work around it by cloning the repo or building a
+> personal env into that path: the mount will hide the clone, and a personal env
+> named `agwise_data` then wins by name over the shared one (see the note below).
+> Full explanation: [docs/onboarding.md §0](docs/onboarding.md).
 
 **On CGLabs the module is already installed — you don't clone or install
 anything.** Register the shared environment once, then activate it each session:
@@ -183,6 +204,7 @@ data_sourcing/
 ├── REFERENCE.md           ← Section 6: every function, every parameter
 ├── CHANGELOG.md  CONTRIBUTING.md
 ├── docs/
+│   ├── onboarding.md          ← new teammates start here
 │   ├── credentials_setup.md   ← Section 3
 │   ├── cglabs_setup.md        ← Section 2 (shared-server deep dive)
 │   └── user_guide.md          ← Sections 4–5

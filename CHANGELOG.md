@@ -5,6 +5,28 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.32.2 — onboarding page in the repo + shared-space prerequisite
+
+Docs only; no code change.
+
+- **New `docs/onboarding.md`** — the team onboarding page now lives in the repo
+  and is versioned with it. It replaces the `claude.ai/claude-code/onboard/…`
+  link that README and `docs/user_guide.md` §5.3 pointed at, which is no longer
+  open; both now link to the file.
+- **README §2.2 opens with the CGLabs prerequisite**: `/home/jovyan/
+  agwise-datasourcing` is the shared space `AgWise_dataSourcing` mounted over
+  NFS, not a folder, and it is mounted only for accounts that are members of it.
+  The section now gives the one-line `mountpoint` check, what to ask the CGLabs
+  admins, the server stop/start that applies the mount, and why cloning the repo
+  or building a personal `agwise_data` env into that path is a trap (the mount
+  hides the clone; a personal env of that name wins by name over the shared one).
+  Reported by a teammate whose install stalled on exactly this.
+- Onboarding's rainfall note corrected: on CGLabs `PRCP` is served from the
+  staged CHIRPS v3 (1981–2025, no account); Earth Engine is needed for MODIS /
+  crop mask and for CHIRPS v2 outside that range.
+
+---
+
 ## 0.32.1 — R wrapper: quote CLI arguments
 
 `ad_run()` now passes the argument vector through `shQuote()` before handing it

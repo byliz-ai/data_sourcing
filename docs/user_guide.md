@@ -286,8 +286,7 @@ interfaces above.
 **Setup:** activate the shared env ([README §2.2](../README.md#22-install)) and
 start Claude Code from a working directory you own (outputs land there); set your
 credentials for any source that needs them ([Section 3](credentials_setup.md)).
-New teammates can open the onboarding guide:
-<https://claude.ai/claude-code/onboard/5lLrC-Lqvb1Q>.
+New teammates: start from the onboarding page, [docs/onboarding.md](onboarding.md).
 
 **Example** — the same "monthly rainfall for a country" task as
 [§5.1.A](#51-the-same-tasks-three-ways), asked in plain language:
