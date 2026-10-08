@@ -149,9 +149,9 @@ def _outside(da, lo, hi):
 def apply(da, variable: str, mode: str, overrides: Optional[Mapping] = None):
     """Mask ``da`` per its ranges; return ``(masked_da, lazy_stats)``.
 
-    ``lazy_stats`` holds (possibly dask) scalar counts; pass it through
-    ``dask.compute`` — ideally together with the product write so the data
-    is read once — and then to :func:`build_report`.
+    ``lazy_stats`` holds (possibly dask) scalar counts; evaluate them with
+    :func:`compute` (not inside a NetCDF write's graph — that deadlocks on
+    the HDF5 locks) and pass the result to :func:`build_report`.
     """
     ranges = None if mode == "off" else ranges_for(variable, overrides)
     if ranges is None:
@@ -172,6 +172,35 @@ def apply(da, variable: str, mode: str, overrides: Optional[Mapping] = None):
     stats["min"] = out.min()
     stats["max"] = out.max()
     return out, stats
+
+
+def merge_stats(parts) -> dict:
+    """Combine computed stats of several pieces (e.g. point cells) into one."""
+    parts = [p for p in parts if p]
+    if not parts:
+        return {}
+    out = {}
+    for key in parts[0]:
+        vals = [p[key] for p in parts]
+        if key in ("min", "max"):
+            vals = [float(v) for v in vals if not math.isnan(float(v))]
+            pick = min if key == "min" else max
+            out[key] = pick(vals) if vals else float("nan")
+        else:
+            out[key] = sum(int(v) for v in vals)
+    return out
+
+
+def compute(stats: dict) -> dict:
+    """Evaluate lazy stats (dask) quietly; all-NaN chunks are expected."""
+    if not stats:
+        return stats
+    import dask
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+        (out,) = dask.compute(stats)
+    return out
 
 
 def build_report(
@@ -239,9 +268,14 @@ def _messages(report: dict) -> list:
     return out
 
 
-def emit_warnings(report: dict) -> None:
+def emit_warnings(report: dict, stacklevel: int = 4) -> None:
+    """Raise each report message as a :class:`QCWarning`.
+
+    The default ``stacklevel`` points at the caller of a public ``get_*``
+    function, via its private helper.
+    """
     for msg in report.get("warnings", []):
-        warnings.warn(msg, QCWarning, stacklevel=4)  # -> the get_* caller
+        warnings.warn(msg, QCWarning, stacklevel=stacklevel)
 
 
 def report_path(product_path: Path) -> Path:

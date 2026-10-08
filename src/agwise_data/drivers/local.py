@@ -27,7 +27,7 @@ import numpy as np
 import xarray as xr
 
 from ..catalog import variable_spec
-from ..harmonize import apply_conversion, canonical_name
+from ..harmonize import apply_conversion, canonical_name, integer_sentinel
 from ..spatial import subset_bbox
 
 logger = logging.getLogger("agwise_data")
@@ -118,7 +118,11 @@ def fetch_local_year(
 
 def _read_tif_window(path, bbox):
     """Read only the ``bbox`` window of a GeoTIFF (global tifs would OOM if
-    read whole). Returns ``(array, lats, lons, nodata)`` on the window grid."""
+    read whole). Returns ``(array, lats, lons, nodata)`` on the window grid.
+
+    An integer tif that declares no nodata reports its dtype sentinel
+    (:func:`harmonize.integer_sentinel`) so callers mask it before scaling.
+    """
     import rasterio
     from rasterio.windows import from_bounds
     from rasterio.windows import transform as window_transform
@@ -131,7 +135,10 @@ def _read_tif_window(path, bbox):
         h, wd = arr.shape
         lons = t.c + t.a * (np.arange(wd) + 0.5)
         lats = t.f + t.e * (np.arange(h) + 0.5)
-        return arr, lats, lons, src.nodata
+        nodata = src.nodata
+        if nodata is None:
+            nodata = integer_sentinel(src.dtypes[0])
+        return arr, lats, lons, nodata
 
 
 def fetch_local_static(

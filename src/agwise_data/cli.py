@@ -100,6 +100,17 @@ def _parse_qc_ranges(value: str) -> dict:
         )
 
 
+def _csv_output(df, out_path: Path) -> dict:
+    """CSV output record; the frame's QC reports go to ``<csv>.qc.json``."""
+    record = {"csv": str(out_path), "rows": len(df), "qc": None}
+    reports = df.attrs.get("qc")
+    if reports:
+        from .qc import write_report
+
+        record["qc"] = str(write_report(out_path, reports))
+    return record
+
+
 def cmd_get(args) -> dict:
     from .api import get_climate
 
@@ -151,6 +162,8 @@ def cmd_extract(args) -> dict:
             source=args.source,
             lon_col=args.lon_col,
             lat_col=args.lat_col,
+            qc=args.qc,
+            qc_ranges=args.qc_ranges,
         )
     elif args.start and args.end:
         df = extract_points(
@@ -162,6 +175,8 @@ def cmd_extract(args) -> dict:
             source=args.source,
             lon_col=args.lon_col,
             lat_col=args.lat_col,
+            qc=args.qc,
+            qc_ranges=args.qc_ranges,
         )
     else:
         raise SystemExit(
@@ -170,7 +185,7 @@ def cmd_extract(args) -> dict:
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
-    return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+    return {"ok": True, "outputs": [_csv_output(df, out_path)]}
 
 
 def cmd_get_static(args) -> dict:
@@ -233,6 +248,8 @@ def cmd_get_seasonal(args) -> dict:
         out_format=[f.strip() for f in args.format.split(",")],
         out_dir=Path(args.out_dir) if args.out_dir else None,
         overwrite=args.overwrite,
+        qc=args.qc,
+        qc_ranges=args.qc_ranges,
     )
     return {
         "ok": True,
@@ -243,6 +260,7 @@ def cmd_get_seasonal(args) -> dict:
                 "source": info["source"],
                 "nc": str(info["nc"]) if info["nc"] else None,
                 "tif": str(info["tif"]) if info["tif"] else None,
+                "qc": str(info["qc"]) if info.get("qc") else None,
             }
             for var, info in results.items()
         ],
@@ -300,13 +318,15 @@ def cmd_get_season(args) -> dict:
             freq=args.freq,
             satellite=args.satellite,
             source=args.source,
+            qc=args.qc,
+            qc_ranges=args.qc_ranges,
         )
         if not args.out:
             raise SystemExit("point mode (--points) needs --out for the CSV")
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
-        return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+        return {"ok": True, "outputs": [_csv_output(df, out_path)]}
 
     results = get_season(
         variables=args.vars,
@@ -323,6 +343,8 @@ def cmd_get_season(args) -> dict:
         out_format=[f.strip() for f in args.format.split(",")],
         out_dir=Path(args.out_dir) if args.out_dir else None,
         overwrite=args.overwrite,
+        qc=args.qc,
+        qc_ranges=args.qc_ranges,
     )
     return {
         "ok": True,
@@ -430,11 +452,13 @@ def cmd_extract_static(args) -> dict:
         fill_nearest_m=args.fill_nearest_m or None,
         derive=derive,
         calcareous=args.calcareous,
+        qc=args.qc,
+        qc_ranges=args.qc_ranges,
     )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
-    return {"ok": True, "outputs": [{"csv": str(out_path), "rows": len(df)}]}
+    return {"ok": True, "outputs": [_csv_output(df, out_path)]}
 
 
 def cmd_to_dssat(args) -> dict:
@@ -740,6 +764,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ex.add_argument("--source", type=_parse_source,
                       help="Source id (all vars) or per-variable "
                            "'PRCP=chirps_v3,TMAX=agera5'")
+    _add_qc_args(p_ex)
     p_ex.set_defaults(func=cmd_extract)
 
     p_se = sub.add_parser(
@@ -762,6 +787,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_se.add_argument("--domain", help="Cache domain (default: auto)")
     p_se.add_argument("--out-dir", dest="out_dir")
     p_se.add_argument("--overwrite", action="store_true")
+    _add_qc_args(p_se)
     p_se.set_defaults(func=cmd_get_seasonal)
 
     p_mo = sub.add_parser(
@@ -852,6 +878,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sn.add_argument("--source", help="Override the default source for the variables")
     p_sn.add_argument("--out-dir", dest="out_dir")
     p_sn.add_argument("--overwrite", action="store_true")
+    _add_qc_args(p_sn)
     p_sn.set_defaults(func=cmd_get_season)
 
     p_cm = sub.add_parser(
@@ -913,6 +940,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use the calcareous Mehlich-3->Olsen P regression (derive=olsen_p)",
     )
+    _add_qc_args(p_es)
     p_es.set_defaults(func=cmd_extract_static)
 
     def _add_cropmodel_args(p, engine):

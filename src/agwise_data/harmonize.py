@@ -353,6 +353,21 @@ _CONVERSIONS = {
 }
 
 
+def integer_sentinel(dtype) -> Union[float, None]:
+    """The conventional nodata of an integer raster that declares none.
+
+    Unsigned rasters use their maximum (255, 65535), signed ones their
+    minimum (-32768). Masking it BEFORE a scaling conversion keeps a nodata
+    255 from becoming pH 25.5 (``d10``). Float rasters return ``None``.
+    """
+    dtype = np.dtype(dtype)
+    if dtype.kind == "u":
+        return float(np.iinfo(dtype).max)
+    if dtype.kind == "i":
+        return float(np.iinfo(dtype).min)
+    return None
+
+
 def apply_conversion(da: xr.DataArray, conversion: Union[str, None]) -> xr.DataArray:
     key = conversion.lower() if isinstance(conversion, str) else conversion
     if key not in _CONVERSIONS:
@@ -542,13 +557,14 @@ def standardize_static(da: xr.DataArray, variable: str, source_id: str) -> xr.Da
 def to_monthly(da: xr.DataArray, variable: str) -> xr.DataArray:
     """Aggregate a daily DataArray to monthly (sum for PRCP, mean otherwise).
 
-    Cells that are all-NaN in a month stay NaN (matches the terra
-    ``na.rm=TRUE`` behaviour of the legacy scripts for masked areas).
+    Cells that are all-NaN in a month stay NaN. A monthly **sum** with any
+    missing day is NaN too: skipping it would count the missing rain as
+    zero. Means skip missing days.
     """
     how = monthly_how(variable)
     resampler = da.resample(time="MS")
     if how == "sum":
-        out = resampler.sum(skipna=True, min_count=1)
+        out = resampler.sum(skipna=False)
     else:
         out = resampler.mean(skipna=True)
     # Resampling spans first..last month, so a non-contiguous year list

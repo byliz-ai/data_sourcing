@@ -93,7 +93,8 @@ ad_get_climate <- function(vars, years, country = NULL, bbox = NULL,
 #' nrRainyDays — the same columns the legacy get_geoSpatialClimate produced.
 ad_extract_growing_season <- function(points, vars, planting_col, harvest_col,
                                       lon_col = NULL, lat_col = NULL,
-                                      legacy_names = TRUE, source = NULL) {
+                                      legacy_names = TRUE, source = NULL,
+                                      qc = "warn", qc_ranges = NULL) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -110,6 +111,7 @@ ad_extract_growing_season <- function(points, vars, planting_col, harvest_col,
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!legacy_names)     args <- c(args, "--agwise-names")
   if (!is.null(source))  args <- c(args, "--source", source)
+  args <- c(args, ad_qc_args(qc, qc_ranges))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
@@ -117,7 +119,8 @@ ad_extract_growing_season <- function(points, vars, planting_col, harvest_col,
 
 #' Point time series between two dates (long format).
 ad_extract_points <- function(points, vars, start, end, freq = "daily",
-                              lon_col = NULL, lat_col = NULL, source = NULL) {
+                              lon_col = NULL, lat_col = NULL, source = NULL,
+                              qc = "warn", qc_ranges = NULL) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -133,6 +136,7 @@ ad_extract_points <- function(points, vars, start, end, freq = "daily",
   if (!is.null(lon_col)) args <- c(args, "--lon-col", lon_col)
   if (!is.null(lat_col)) args <- c(args, "--lat-col", lat_col)
   if (!is.null(source))  args <- c(args, "--source", source)
+  args <- c(args, ad_qc_args(qc, qc_ranges))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)
@@ -211,7 +215,7 @@ ad_get_cropmask <- function(...) {
 ad_get_seasonal <- function(vars, init_month, years, country = NULL,
                             bbox = NULL, admin_level = 0, admin_name = NULL, aoi = NULL,
                             ensemble = "members", source = NULL,
-                            overwrite = FALSE) {
+                            overwrite = FALSE, qc = "warn", qc_ranges = NULL) {
   args <- c("get-seasonal",
             "--vars", paste(vars, collapse = ","),
             "--init-month", as.character(init_month),
@@ -224,6 +228,7 @@ ad_get_seasonal <- function(vars, init_month, years, country = NULL,
   if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (!is.null(source))     args <- c(args, "--source", source)
   if (overwrite)            args <- c(args, "--overwrite")
+  args <- c(args, ad_qc_args(qc, qc_ranges))
 
   res <- ad_run(args)
   paths <- lapply(res$outputs, function(o) o$nc)
@@ -335,11 +340,12 @@ ad_get_season <- function(vars, planting_date = NULL, harvest_date = NULL,
                           planting_col = NULL, harvest_col = NULL,
                           lon_col = NULL, lat_col = NULL, freq = "daily",
                           satellite = "both", source = NULL,
-                          overwrite = FALSE) {
+                          overwrite = FALSE, qc = "warn", qc_ranges = NULL) {
   args <- c("get-season",
             "--vars", paste(vars, collapse = ","),
             "--freq", freq,
-            "--satellite", satellite)
+            "--satellite", satellite,
+            ad_qc_args(qc, qc_ranges))
   if (!is.null(planting_date)) args <- c(args, "--planting-date", planting_date)
   if (!is.null(harvest_date))  args <- c(args, "--harvest-date", harvest_date)
   if (!is.null(source))        args <- c(args, "--source", source)
@@ -659,7 +665,8 @@ ad_to_oryza <- function(points, planting_date = NULL, harvest_date = NULL,
 ad_extract_static_points <- function(points, vars, depths = NULL,
                                      lon_col = NULL, lat_col = NULL,
                                      source = NULL, fill_nearest_m = 1000,
-                                     derive = NULL, calcareous = FALSE) {
+                                     derive = NULL, calcareous = FALSE,
+                                     qc = "warn", qc_ranges = NULL) {
   points_csv <- points
   if (is.data.frame(points)) {
     points_csv <- tempfile(fileext = ".csv")
@@ -677,6 +684,7 @@ ad_extract_static_points <- function(points, vars, depths = NULL,
   if (!is.null(derive))  args <- c(args, "--derive", paste(derive, collapse = ","))
   if (isTRUE(calcareous)) args <- c(args, "--calcareous")
   args <- c(args, "--fill-nearest-m", as.character(fill_nearest_m))
+  args <- c(args, ad_qc_args(qc, qc_ranges))
 
   res <- ad_run(args)
   utils::read.csv(res$outputs[[1]]$csv)

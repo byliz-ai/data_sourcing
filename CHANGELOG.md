@@ -5,6 +5,45 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.35.0 — Phase 1 (part 2): QC everywhere, no zero-filled rain, nodata gate
+
+Output values can change: monthly PRCP sums with a missing day, and
+`totalRF`/`nrRainyDays` of a season with a missing day, are now NaN.
+
+- **Range QC in every climate/soil entry point.** `get_seasonal` (each member
+  is checked before `ensemble="mean"/"median"`), `get_season` (region mode
+  inherits the `get_climate` product checks and its products carry
+  `qc_signature` + a QC stem tag; point mode checks the extracted values),
+  `extract_points`, `extract_growing_season` and `extract_static_points` take
+  `qc=`/`qc_ranges=`. Point extractions return the reports in
+  `df.attrs["qc"]`; the CLI writes them to `<out>.qc.json`. In
+  `extract_static_points` a QC-masked point is filled from the nearest valid
+  pixel, like a NoData one. CLI `--qc/--qc-ranges` on `get-seasonal`,
+  `get-season`, `extract`, `extract-static`; R wrappers take `qc`/`qc_ranges`.
+- **Point extractions QC the daily values, then aggregate.** `extract_points`
+  and `extract_growing_season` now aggregate the extracted point series
+  instead of the whole bbox cube (same values, less work).
+- **Missing rain is never zero.** `to_monthly` sums (PRCP) are NaN when any
+  day of the month is missing (means still skip missing days);
+  `extract_growing_season` gives NaN `totalRF`/`nrRainyDays` when any day of
+  the season is missing (was `nansum`).
+- **Nodata before scaling.** An integer GeoTIFF without a declared nodata
+  (local adapter, SoilGrids WCS tiles) has its dtype sentinel (255, 65535,
+  -32768) masked before the catalog conversion, so 255 can no longer become
+  pH 25.5. The staged iSDA/SoilGrids rasters are float32 with NaN nodata and
+  were already safe.
+- **Product writes can no longer deadlock.** Writing a product NetCDF that
+  streams from lazily opened harmonized files hung now and then on xarray's
+  netCDF/HDF5 locks (reader vs. writer threads) — a pre-existing flake (seen
+  in ~1 of 5 full test runs, also on v0.32.2) that could hit real
+  `get_climate` calls too. `_write_nc_product` now runs the write on dask's
+  synchronous scheduler: 15/15 clean suite runs, and no measurable slowdown
+  (Kenya 2 yr daily PRCP: 3.6 s threaded vs 3.7 s synchronous) since HDF5
+  serializes the I/O anyway. QC counts are computed in their own pass after
+  the write (the 0.34 single-pass write+count graph made the hang frequent).
+
+---
+
 ## 0.34.0 — Phase 1 (part 1): two-level range QC with default ranges
 
 First part of the quality-control phase in `docs/prismpy_comparison.md`.

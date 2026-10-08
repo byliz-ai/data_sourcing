@@ -156,6 +156,18 @@ shared default product. Products built before QC existed are rebuilt once
 from the harmonized cache (nothing is downloaded again). Variables without a
 default range (`TPI`, `TRI`) are only checked if you pass one.
 
+The same `qc`/`qc_ranges` work in `get_seasonal` (every member is checked
+before any ensemble reduction), `get_season`, `extract_points`,
+`extract_growing_season` and `extract_static_points`. Point extractions
+return their reports in `df.attrs["qc"]` (the CLI writes them to
+`<out>.qc.json`); a soil point masked by QC is filled from the nearest valid
+pixel like a NoData one.
+
+Missing rainfall is never counted as zero: a monthly PRCP sum with a missing
+day is NaN, and so are `totalRF`/`nrRainyDays` for a season with a missing
+day. Integer rasters that declare no nodata have their sentinel (255,
+65535, -32768) masked before any scaling conversion.
+
 ```python
 res = get_climate("PRCP", years=2020, country="Kenya", freq="daily",
                   qc_ranges={"PRCP": {"plausible": [0, 300]}})
@@ -240,6 +252,8 @@ automatically on first use — no re-download.
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
@@ -350,6 +364,8 @@ Climate and/or NDVI **already sliced to a growing season** (cross-year aware).
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
@@ -376,6 +392,8 @@ Long-format climate **time series at point locations** between two dates.
 | `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
@@ -400,6 +418,8 @@ Per-trial **growing-season climate** in the fertilizer-ML wide format.
 | `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
@@ -425,6 +445,8 @@ df = extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 | `fill_nearest_m` | float | No | `1000.0` | Fill points on NoData pixels from the nearest valid pixel within this many metres; `None` or `0` disables. |
 | `derive` | str \| list[str] | No | `None` | Add pedotransfer-derived columns (a name or list). Values: `"hydraulics"`, `"olsen_p"`. |
 | `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
@@ -735,4 +757,4 @@ agwise-data cache info        # what is cached, and where
 
 Region flags on the CLI: `--country`, `--admin-level`, `--admin-name`, `--bbox`;
 output flags: `--format nc,tif`, `--out-dir`, `--overwrite`.
-`get` and `get-static` also take `--qc warn|strict|off` and `--qc-ranges`.
+`get`, `get-static`, `get-seasonal`, `get-season`, `extract` and `extract-static` also take `--qc warn|strict|off` and `--qc-ranges`.

@@ -19,7 +19,7 @@ import numpy as np
 import xarray as xr
 
 from ..catalog import primary_access
-from ..harmonize import apply_conversion
+from ..harmonize import apply_conversion, integer_sentinel
 from ..retry import retry_call
 from . import register
 from .static import StaticDriver
@@ -60,6 +60,13 @@ class SoilGridsDriver(StaticDriver):
             ]
             datasets = [MemoryFile(body).open() for body in parts]
             try:
+                # merge masks each tile's declared nodata; a tile that
+                # declares none keeps its integer sentinel, masked below
+                # before the scaling conversion.
+                undeclared = {
+                    integer_sentinel(ds.dtypes[0])
+                    for ds in datasets if ds.nodata is None
+                } - {None}
                 arr, transform = merge(
                     datasets, bounds=tuple(bbox), nodata=np.nan, dtype="float32"
                 )
@@ -67,7 +74,8 @@ class SoilGridsDriver(StaticDriver):
                 for ds in datasets:
                     ds.close()
             z = arr[0]
-            z[z == nodata] = np.nan
+            for value in {nodata, *undeclared}:
+                z[z == value] = np.nan
             if "lats" not in grid:
                 h, w = z.shape
                 grid["lons"] = transform.c + transform.a * (np.arange(w) + 0.5)

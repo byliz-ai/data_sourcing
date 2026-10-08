@@ -194,11 +194,14 @@ def _qc_tag(variable: str, mode: str, overrides) -> str:
     return "_qcoff" if mode == "off" else f"_qc{_qc.signature(variable, mode, overrides)}"
 
 
-def _qc_current(nc_path: Path, variable: str, mode: str, overrides) -> bool:
+def _qc_current(
+    nc_path: Path, variable: str, mode: str, overrides, report: bool = True
+) -> bool:
     """Whether a cached product was built with this request's QC.
 
     Products from before QC existed (no ``qc_signature`` in the manifest, or
-    no ``.qc.json`` report) are rebuilt once from the harmonized cache.
+    no ``.qc.json`` report when ``report``) are rebuilt once from the
+    harmonized cache.
     """
     nc_path = Path(nc_path)
     if not nc_path.exists():
@@ -208,18 +211,32 @@ def _qc_current(nc_path: Path, variable: str, mode: str, overrides) -> bool:
         return True
     if meta.get("qc_signature") != _qc.signature(variable, mode, overrides):
         return False
-    return mode == "off" or _qc.report_path(nc_path).exists()
+    return not report or mode == "off" or _qc.report_path(nc_path).exists()
+
+
+def _qc_points(series, variable, source_id, mode, overrides, reports, stacklevel=5):
+    """Range-check an extracted point series; record its report and warn.
+
+    The default ``stacklevel`` reaches the user's call through
+    ``emit_warnings`` -> here -> ``extract_*``.
+    """
+    out, stats = _qc.apply(series, variable, mode, overrides)
+    if stats:
+        report = _qc.build_report(
+            variable, source_id, mode, _qc.compute(stats), overrides
+        )
+        reports[report["variable"]] = report
+        _qc.emit_warnings(report, stacklevel=stacklevel)
+    return out
 
 
 def _qc_finish(nc_path, variable, source_id, mode, overrides, stats):
     """Compute (if needed), write and announce the product's QC report."""
     if mode == "off":
         return None
-    import dask
-
-    with warnings.catch_warnings():  # min/max over all-NaN chunks
-        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
-        (stats,) = dask.compute(stats)  # no-op if the write already computed it
+    # A separate pass after the write: computing the counts in the write's
+    # own dask graph deadlocked on the HDF5 locks (readers vs the writer).
+    stats = _qc.compute(stats)
     report = _qc.build_report(variable, source_id, mode, stats, overrides)
     path = _qc.write_report(Path(nc_path), report)
     _qc.emit_warnings(report)
@@ -462,27 +479,23 @@ def _pinned_cog_workers(config: Config, value: int):
         config.cog_workers = saved
 
 
-def _write_nc_product(da: xr.DataArray, path, encoding: dict, also=None):
+def _write_nc_product(da: xr.DataArray, path, encoding: dict) -> None:
     """Write a product NetCDF atomically (temp file + rename).
 
     A crash mid-write must not leave a half-written or zero-variable ``.nc``
     that a later run treats as a cache hit and fails to open — the failure
     surfaced in a QA run where a broken write poisoned every subsequent call.
 
-    ``also`` (e.g. lazy QC counts) is computed in the same dask pass as the
-    write, so the source data is read once; its computed value is returned.
+    The write runs on dask's synchronous scheduler. With threads, a product
+    write that streams from lazily opened harmonized NetCDFs deadlocked now
+    and then (about 1 run in 5 of the test suite): reader and writer tasks
+    each held one of xarray's netCDF/HDF5 locks and waited for the other.
+    HDF5 serializes all netCDF I/O anyway, so threads gained almost nothing.
     """
-    with atomic_write(Path(path)) as tmp:
-        if not also:
-            da.to_netcdf(tmp, encoding=encoding)
-            return also
-        import dask
+    import dask
 
-        write = da.to_netcdf(tmp, encoding=encoding, compute=False)
-        with warnings.catch_warnings():  # QC min/max over all-NaN chunks
-            warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
-            _, out = dask.compute(write, also)
-    return out
+    with atomic_write(Path(path)) as tmp, dask.config.set(scheduler="synchronous"):
+        da.to_netcdf(tmp, encoding=encoding)
 
 
 def _write_tif_product(da: xr.DataArray, path, labels) -> None:
@@ -650,9 +663,7 @@ def get_climate(
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                qc_stats = _write_nc_product(
-                    da, nc_path, {da.name: nc_encoding(da)}, also=qc_stats
-                )
+                _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 _write_tif_product(da, tif_path, labels=time_labels(da, freq))
@@ -736,6 +747,8 @@ def extract_points(
     source: Optional[str] = None,
     lon_col: Optional[str] = None,
     lat_col: Optional[str] = None,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
     """Long-format climate time series at point locations between two dates.
@@ -746,9 +759,14 @@ def extract_points(
     is ``"daily"`` or ``"monthly"``. Returns a long DataFrame with columns
     ``point, <lon_col>, <lat_col>, time, variable, value`` (one row per point
     x time x variable).
+
+    ``qc``/``qc_ranges`` range-check the extracted daily values as in
+    :func:`get_climate`; the per-variable reports are in ``df.attrs["qc"]``.
     """
     config = config or Config.load()
     variables = _as_variables(variables)
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
     start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
     years = list(range(start_ts.year, end_ts.year + 1))
@@ -758,17 +776,26 @@ def extract_points(
     bbox = points_bbox(lons, lats)
     plans = _plan_extraction(config, variables, years, bbox, source)
 
-    # A mid-month start must not drop that month's aggregate.
-    sel_start = start_ts.to_period("M").to_timestamp() if freq == "monthly" else start_ts
+    # A monthly request covers whole months: a mid-month start or end must
+    # not truncate that month's aggregate.
+    if freq == "monthly":
+        sel_start = start_ts.to_period("M").to_timestamp()
+        sel_end = end_ts.to_period("M").to_timestamp(how="end").normalize()
+    else:
+        sel_start, sel_end = start_ts, end_ts
 
     frames = []
+    reports: Dict[str, dict] = {}
     for var, driver, dom in plans:
         da = driver.open_years(var, years, dom)
-        da = subset_bbox(da, bbox)
-        if freq == "monthly":
-            da = to_monthly(da, var)
-        da = da.sel(time=slice(sel_start, end_ts))
+        da = subset_bbox(da, bbox).sel(time=slice(sel_start, sel_end))
+        # QC the daily point values, then aggregate (ranges are daily).
         series = _point_series(da, lons, lats).load()
+        series = _qc_points(
+            series, var, driver.source_id, qc_mode, qc_ranges, reports
+        )
+        if freq == "monthly":
+            series = to_monthly(series, var)
 
         long = series.to_pandas()  # index=time, columns=point position
         long.columns = df.index
@@ -782,7 +809,9 @@ def extract_points(
     out = out.merge(
         df[[lon_col, lat_col]], left_on="point", right_index=True, how="left"
     )
-    return out[["point", lon_col, lat_col, "time", "variable", "value"]]
+    out = out[["point", lon_col, lat_col, "time", "variable", "value"]]
+    out.attrs["qc"] = reports
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -795,6 +824,8 @@ def extract_growing_season(
     source: Optional[str] = None,
     lon_col: Optional[str] = None,
     lat_col: Optional[str] = None,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
     """Per-row growing-season climate for trial data (fertilizer ML format).
@@ -809,9 +840,16 @@ def extract_growing_season(
     With ``legacy_names=True`` columns use the pre-2026 names
     (``Precipitation_m1``, ``TemperatureMax_m1``, ...) so existing ML code
     keeps working; otherwise the AgWise short names (``PRCP_m1``, ...).
+
+    ``qc``/``qc_ranges`` range-check the daily values as in
+    :func:`get_climate` (reports in ``df.attrs["qc"]``). Missing rainfall is
+    never counted as zero: a season with any missing day gets NaN
+    ``totalRF``/``nrRainyDays``.
     """
     config = config or Config.load()
     variables = _as_variables(variables)
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
 
     pl = pd.to_datetime(df[planting_col], errors="coerce")
@@ -851,13 +889,18 @@ def extract_growing_season(
 
     out = df.copy()
     new_cols: Dict[str, np.ndarray] = {}
+    reports: Dict[str, dict] = {}
 
     for var, driver, dom in plans:
         prefix = legacy_name(var) if legacy_names else short_name(var)
         daily = driver.open_years(var, years, dom)
         daily = subset_bbox(daily, bbox)
+        daily_pts = _point_series(daily, lons, lats).load()
+        daily_pts = _qc_points(
+            daily_pts, var, driver.source_id, qc_mode, qc_ranges, reports
+        )
 
-        monthly_pts = _point_series(to_monthly(daily, var), lons, lats).load()
+        monthly_pts = to_monthly(daily_pts, var)
         m_times = pd.DatetimeIndex(monthly_pts["time"].values)
         m_vals = monthly_pts.values  # (time, point)
 
@@ -871,7 +914,6 @@ def extract_growing_season(
             new_cols[f"{prefix}_m{m + 1}"] = cols[:, m]
 
         if short_name(var) == "PRCP":
-            daily_pts = _point_series(daily, lons, lats).load()
             d_times = pd.DatetimeIndex(daily_pts["time"].values)
             d_vals = daily_pts.values
             total = np.full(len(sub), np.nan, dtype="float32")
@@ -880,8 +922,9 @@ def extract_growing_season(
             j1 = d_times.searchsorted(hv_v.dt.normalize().to_numpy(), side="right")
             for p in range(len(sub)):
                 window = d_vals[j0[p] : j1[p], p]
-                if window.size and not np.all(np.isnan(window)):
-                    total[p] = np.nansum(window)
+                # A missing day is unknown rain, not zero rain.
+                if window.size and not np.isnan(window).any():
+                    total[p] = window.sum()
                     wet[p] = np.sum(window >= 2.0)
             new_cols["totalRF"] = total
             new_cols["nrRainyDays"] = wet
@@ -890,6 +933,7 @@ def extract_growing_season(
         col = pd.Series(np.nan, index=df.index, dtype="float64")
         col.loc[sub.index] = values
         out[name] = col
+    out.attrs["qc"] = reports
     return out
 
 
@@ -1096,9 +1140,7 @@ def get_static(
                 meta["depths"] = [str(d) for d in da["depth"].values]
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                qc_stats = _write_nc_product(
-                    da, nc_path, {da.name: static_nc_encoding(da)}, also=qc_stats
-                )
+                _write_nc_product(da, nc_path, {da.name: static_nc_encoding(da)})
                 write_manifest(nc_path, meta)
             if need_tif:
                 labels = (
@@ -1212,6 +1254,8 @@ def get_seasonal(
     out_format: Union[str, Sequence[str]] = "nc",
     out_dir: Optional[Path] = None,
     overwrite: bool = False,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ) -> Dict[str, dict]:
     """Fetch, harmonize and cache seasonal forecast/hindcast cubes.
@@ -1227,8 +1271,12 @@ def get_seasonal(
     member axis (required for GeoTIFF export); the default keeps all
     members. Cached files/products from versions before 0.31 (labeled one
     day late, init + lead) are migrated/rebuilt automatically on first use.
+    ``qc``/``qc_ranges`` range-check every member's daily values before any
+    ensemble reduction, as in :func:`get_climate` (``"qc"`` in the result).
     """
     config = config or Config.load()
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     variables = _as_variables(variables)
     years = _as_years(years)
     init_month = int(init_month)
@@ -1269,9 +1317,13 @@ def get_seasonal(
         if ensemble != "members":
             stem += f"_{ensemble}"
         stem += _source_tag(source_id, _DEFAULT_SEASONAL_SOURCE)
+        stem += _qc_tag(var, qc_mode, qc_ranges)
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        stale = not _product_reusable(nc_path, source_id=source_id)
+        stale = not (
+            _product_reusable(nc_path, source_id=source_id)
+            and _qc_current(nc_path, var, qc_mode, qc_ranges)
+        )
         need_nc = overwrite or stale or not nc_path.exists()
         need_tif = write_tif and (overwrite or stale or not tif_path.exists())
         # A product written before v0.31 carries window-END daily labels
@@ -1299,6 +1351,7 @@ def get_seasonal(
             da = subset_bbox(da, region_bbox, buffer=0.05)
             if gdf is not None:
                 da = clip_geometry(da, gdf).load()  # clip materializes anyway
+            da, qc_stats = _qc.apply(da, var, qc_mode, qc_ranges)
             if ensemble != "members":
                 da = getattr(da, ensemble)(dim="member", keep_attrs=True)
             # Stamp the daily-label convention so a cache hit can tell this
@@ -1317,6 +1370,8 @@ def get_seasonal(
                 "years": [years[0], years[-1]],
                 "ensemble": ensemble,
                 "domain": var_domain,
+                "qc": qc_mode,
+                "qc_signature": _qc.signature(var, qc_mode, qc_ranges),
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1325,13 +1380,16 @@ def get_seasonal(
             if need_tif:
                 _write_tif_product(da, tif_path, labels=time_labels(da, "daily"))
                 write_manifest(tif_path, meta)
+            _qc_finish(nc_path, var, source_id, qc_mode, qc_ranges, qc_stats)
             da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
+        qc_path = _qc.report_path(nc_path)
         results[var] = {
             "short": short_name(var),
             "source": source_id,
             "nc": nc_path if nc_path.exists() else None,
             "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "qc": qc_path if qc_path.exists() else None,
             "data": da,
         }
     return results
@@ -1727,7 +1785,8 @@ def _modis_stack_driverlevel(config, var, years, bbox, satellite, source):
 
 
 def _season_long_points(
-    config, variables, df, lon_col, lat_col, pl_v, hv_v, freq, satellite, source
+    config, variables, df, lon_col, lat_col, pl_v, hv_v, freq, satellite, source,
+    qc_mode="warn", qc_ranges=None,
 ):
     """Per-point season slice -> long DataFrame (point, lon, lat, time, variable, value).
 
@@ -1743,6 +1802,7 @@ def _season_long_points(
     hv_np = hv_v.dt.normalize().to_numpy()
 
     frames = []
+    reports: Dict[str, dict] = {}
     for var in variables:
         kind, canon = _classify_season_var(var)
         if kind == "rs":
@@ -1751,17 +1811,22 @@ def _season_long_points(
             )
             da = subset_bbox(da, bbox, buffer=0.05)
             label = rs_short_name(canon)
+            series = _point_series(da, lons, lats).load()  # (time, point)
         else:
             driver, source_id = _driver_for(canon, source, config, years)
             dom = _effective_domain(config, source_id, canon, years, bbox, None)
             _prefetch(config, [(driver, canon, y, dom) for y in years])
             da = driver.open_years(canon, years, dom)
             da = subset_bbox(da, bbox)
+            series = _point_series(da, lons, lats).load()  # (time, point)
+            series = _qc_points(
+                series, canon, source_id, qc_mode, qc_ranges, reports,
+                stacklevel=6,
+            )
             if freq == "monthly":
-                da = to_monthly(da, canon)
+                series = to_monthly(series, canon)
             label = short_name(canon)
 
-        series = _point_series(da, lons, lats).load()  # (time, point)
         s_times = pd.DatetimeIndex(series["time"].values).normalize().to_numpy()
         vals = series.values  # (time, point)
         for p in range(len(df)):
@@ -1785,7 +1850,9 @@ def _season_long_points(
             "planting/harvest dates against the available years."
         )
     out = pd.concat(frames, ignore_index=True)
-    return out[["point", lon_col, lat_col, "time", "variable", "value"]]
+    out = out[["point", lon_col, lat_col, "time", "variable", "value"]]
+    out.attrs["qc"] = reports
+    return out
 
 
 def get_season(
@@ -1808,6 +1875,8 @@ def get_season(
     out_format: Union[str, Sequence[str]] = "nc",
     out_dir: Optional[Path] = None,
     overwrite: bool = False,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ):
     """Climate and/or NDVI already sliced to a growing season.
@@ -1833,8 +1902,15 @@ def get_season(
     ``freq`` (``"daily"``/``"monthly"``) aggregates the climate variables;
     it does not affect the NDVI/EVI composite cadence. This is distinct from
     :func:`get_seasonal`, which fetches SEAS5 seasonal *forecasts*.
+
+    ``qc``/``qc_ranges`` range-check the climate variables as in
+    :func:`get_climate` (NDVI/EVI keep the MODIS valid-range mask). Point
+    mode puts the reports in ``df.attrs["qc"]``; region mode inherits the
+    ``get_climate`` product checks.
     """
     config = config or Config.load()
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     if isinstance(variables, str):
         variables = [v for v in variables.split(",") if v.strip()]
     variables = list(variables)
@@ -1875,6 +1951,7 @@ def get_season(
         return _season_long_points(
             config, variables, sub, lon_col, lat_col,
             pl_v[~bad], hv_v[~bad], freq, satellite, source,
+            qc_mode, qc_ranges,
         )
 
     # ---- Region mode ------------------------------------------------------
@@ -1913,10 +1990,14 @@ def get_season(
                 canon, _effective_source(canon, source, config, years))
             src_tag = _source_tag(src, catalog.source_for(
                 canon, _effective_source(canon, None, config, years)))
+            src_tag += _qc_tag(canon, qc_mode, qc_ranges)
         stem = f"Season_{short}_{pl:%Y%m%d}_{hv:%Y%m%d}{src_tag}"
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        stale = not _product_reusable(nc_path, source=src)
+        stale = not _product_reusable(nc_path, source=src) or (
+            kind == "climate"
+            and not _qc_current(nc_path, canon, qc_mode, qc_ranges, report=False)
+        )
         need_nc = overwrite or stale or not nc_path.exists()
         need_tif = write_tif and (overwrite or stale or not tif_path.exists())
 
@@ -1934,7 +2015,8 @@ def get_season(
             else:
                 full = get_climate(
                     variables=[canon], years=years, freq=freq,
-                    source=source, **region_kwargs,
+                    source=source, qc=qc_mode, qc_ranges=qc_ranges,
+                    **region_kwargs,
                 )[canon]["data"]
             da = full.sel(time=slice(pl, hv))
             if da.sizes.get("time", 0) == 0:
@@ -1954,6 +2036,9 @@ def get_season(
                 "freq": freq if kind == "climate" else "composite",
                 "n_steps": int(da.sizes["time"]),
             }
+            if kind == "climate":
+                meta["qc"] = qc_mode
+                meta["qc_signature"] = _qc.signature(canon, qc_mode, qc_ranges)
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
                 _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
@@ -2048,6 +2133,8 @@ def extract_static_points(
     fill_nearest_m: Optional[float] = 1000.0,
     derive: Optional[Union[str, Sequence[str]]] = None,
     calcareous: bool = False,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ) -> pd.DataFrame:
     """Soil/topography values at point locations (wide format).
@@ -2074,10 +2161,16 @@ def extract_static_points(
     * ``"olsen_p"`` — Olsen P (mg/kg) per depth ``OLSENP_<d>`` from Mehlich-3
       ``EXTP`` (``source="isda"``), via ``mehlich3_to_olsen`` (``calcareous``
       selects the calcareous regression).
+
+    ``qc``/``qc_ranges`` range-check the point values as in
+    :func:`get_static`; masked pixels are filled like NoData ones (when
+    ``fill_nearest_m`` allows). Reports are in ``df.attrs["qc"]``.
     """
     from .writers.soil import saxton_rawls, mehlich3_to_olsen
 
     config = config or Config.load()
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     variables = _as_static_variables(variables)
     derive_kinds = (
         [derive] if isinstance(derive, str)
@@ -2115,11 +2208,13 @@ def extract_static_points(
 
     fill_enabled = bool(fill_nearest_m)
     new_cols: Dict[str, np.ndarray] = {}
+    reports: Dict[str, dict] = {}
     for var in variables:
         short = static_short_name(var)
         depth_labels = None
         collected: Dict[str, np.ndarray] = {}
         fill_m = np.full(len(sub), np.nan, dtype="float32")
+        cell_stats = []
         for box, idx in cells.items():
             driver, dom = plans[(var, box)]
             da = driver.open_static(var, dom)
@@ -2127,6 +2222,11 @@ def extract_static_points(
             ilon = xr.DataArray(lons[idx], dims="point")
             ilat = xr.DataArray(lats[idx], dims="point")
             vals = da.sel(lon=ilon, lat=ilat, method="nearest").load()
+            # Report on the point values; mask the window lazily so a
+            # masked point is filled from a valid neighbour, never a bad one.
+            vals, stats = _qc.apply(vals, var, qc_mode, qc_ranges)
+            cell_stats.append(_qc.compute(stats))
+            da, _ = _qc.apply(da, var, qc_mode, qc_ranges)
             if "depth" in vals.dims:
                 vals = vals.transpose("depth", "point")
             arr = np.asarray(vals.values, dtype="float32")
@@ -2163,6 +2263,13 @@ def extract_static_points(
         if fill_enabled:
             collected[f"{short}_fill_m"] = fill_m
         new_cols.update(collected)
+        merged = _qc.merge_stats(cell_stats)
+        if merged:
+            report = _qc.build_report(
+                var, driver.source_id, qc_mode, merged, qc_ranges
+            )
+            reports[var] = report
+            _qc.emit_warnings(report, stacklevel=3)
 
     out = df.copy()
     for name, values in new_cols.items():
@@ -2195,6 +2302,7 @@ def extract_static_points(
             out[f"OLSENP_{d}"] = mehlich3_to_olsen(
                 out[f"EXTP_{d}"].to_numpy(), calcareous=calcareous
             )
+    out.attrs["qc"] = reports
     return out
 
 

@@ -15,8 +15,8 @@ BBOX = (33.0, -2.0, 40.0, 2.0)  # inside the fake source's domain
 def test_get_seasonal_product(config):
     res = get_seasonal(
         variables="PRCP", init_month=2, years=[2000, 2001],
-        bbox=BBOX, source="fake_seasonal", config=config,
-    )
+        bbox=BBOX, source="fake_seasonal", qc="off", config=config,
+    )  # synthetic member*1000+lead values are not physical rainfall
     info = res["AGRO.PRCP"]
     assert info["nc"].exists()
     da = info["data"]
@@ -57,7 +57,7 @@ def test_seasonal_cache_per_year(config):
 def test_seasonal_ensemble_mean(config):
     res = get_seasonal(
         variables="PRCP", init_month=2, years=2000, bbox=BBOX,
-        ensemble="mean", source="fake_seasonal", config=config,
+        ensemble="mean", source="fake_seasonal", qc="off", config=config,
     )
     da = res["AGRO.PRCP"]["data"]
     assert "member" not in da.dims
@@ -68,7 +68,7 @@ def test_seasonal_ensemble_mean(config):
     # separate product file from the members one
     res2 = get_seasonal(
         variables="PRCP", init_month=2, years=2000, bbox=BBOX,
-        source="fake_seasonal", config=config,
+        source="fake_seasonal", qc="off", config=config,
     )
     assert res["AGRO.PRCP"]["nc"] != res2["AGRO.PRCP"]["nc"]
 

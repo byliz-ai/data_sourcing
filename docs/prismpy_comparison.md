@@ -56,7 +56,9 @@ trazabilidad y reproducibilidad**, justo donde somos más débiles.
 ### Fase 1 — Control de calidad (≈2–3 semanas) · *mayor valor*
 *En curso. v0.34.0: rangos de dos niveles con defaults generales
 (`qc_ranges.yaml`), `qc=`/`qc_ranges=` y `<producto>.qc.json` en
-`get_climate`/`get_static`.*
+`get_climate`/`get_static`. v0.35.0: QC también en `get_seasonal`,
+`get_season` y `extract_*`; lluvia faltante nunca cuenta como 0; nodata de
+rasters enteros enmascarado antes de escalar.*
 - **Rangos de dos niveles** (prismpy `validators/scientific.py:119`): *físico*
   → defecto/rechazo; *plausible* → advertencia. Declarados por variable en el
   catálogo YAML (campo `valid_range` existente), aplicados en
