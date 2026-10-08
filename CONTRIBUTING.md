@@ -1,7 +1,9 @@
 # Contributing to agwise-data
 
 Thanks for improving the AgWise data-sourcing layer. This is a short guide to
-the dev workflow and the conventions the codebase follows.
+the dev workflow and the conventions the codebase follows. Working with an AI
+assistant? It should read [AGENTS.md](AGENTS.md) first. That file has the code
+map and the invariants below in compact form.
 
 ## Dev setup & tests
 
@@ -14,7 +16,7 @@ activated per [README §2.2](README.md#22-install)).
 ```bash
 conda env create -f environment.yml && conda activate agwise_data
 pip install -e ".[dev]"
-pytest -q
+pytest -q -o faulthandler_timeout=60   # ~17 s; prints thread stacks if a test hangs
 ```
 
 The test suite is **network-free and needs no credentials** (drivers are
@@ -66,11 +68,17 @@ The layer is `catalog → driver → harmonize → cache → api`. To add a sour
    implement the fetch method, and `@register("<driver-id>")` it.
 3. **Harmonize** — add the canonical variable (name, units, conversion) to
    `src/agwise_data/harmonize.py` so outputs use the shared `AGRO.*`/`SOIL.*`/
-   `TOPO.*`/`RS.*`/`LC.*` names and units.
-4. **API/CLI/R** — expose it via a function in `api.py` (add to `__all__` and
+   `TOPO.*`/`RS.*`/`LC.*` names and units. Declare the raster's `nodata` in the
+   catalog so it is masked **before** the unit conversion.
+4. **Quality ranges** — add the variable to `src/agwise_data/qc_ranges.yaml`
+   (same units as `harmonize.py`; a *physical* range for impossible values and
+   a broader-than-you-think *plausible* range). `tests/test_qc.py` checks the
+   units and that plausible ⊆ physical. Before you commit, check the ranges on
+   real data: they must flag ~nothing on a normal region.
+5. **API/CLI/R** — expose it via a function in `api.py` (add to `__all__` and
    `__init__.py`), a CLI subcommand in `cli.py`, and an `ad_*` wrapper in
    `r/agwise_data.R`.
-5. **Tests + docs** — add a network-free test, document the function in
+6. **Tests + docs** — add a network-free test, document the function in
    `REFERENCE.md`, and add a `CHANGELOG.md` entry + version bump.
 
 ## Documentation conventions
@@ -86,6 +94,9 @@ README). Each doc has **one job** and one home for each topic:
 | 3 Credentials | `docs/credentials_setup.md` | CDS + GEE create/configure/verify |
 | 4 Workflow, 5 Interfaces | `docs/user_guide.md` | the dataset/area/period/output tables, Python/R/CLI examples |
 | 6 Function reference | `REFERENCE.md` | every function's parameter tables |
+| Data quality | `docs/quality_control.md` | QC behaviour, default ranges, reports, sources/credits |
+| AI assistants | `AGENTS.md` (`CLAUDE.md` imports it) | compact task→function map, code map, invariants |
+| History | `CHANGELOG.md` | what changed per version and **why** (include real-data evidence) |
 
 - **Don't duplicate** setup steps, folder explanations or a doc list across
   files — link to the one canonical place instead.
@@ -93,6 +104,13 @@ README). Each doc has **one job** and one home for each topic:
   `REFERENCE.md` entry, the dataset/interface tables in `docs/user_guide.md`,
   and an `examples/` line if it opens a new workflow.
 - README/REFERENCE/user-guide snippets are expected to run — verify them.
+- **Write for two readers.** A researcher who doesn't read code: say what
+  happens to their data, in plain words, with a runnable example. An AI
+  assistant: name the exact function, parameter and file. Put facts in tables,
+  not long paragraphs.
+- **Credit external sources.** When an idea comes from another project or
+  paper, link it (for repositories, a permalink to the exact commit) in the
+  relevant doc. See [quality_control.md §7](docs/quality_control.md#7-sources-and-credits).
 
 ## Section 7 — General improvements (docs & UX)
 
@@ -129,6 +147,20 @@ true as the module grows:
 [prismpy](https://github.com/izuku-franck1555/prismpy) — known defects plus a
 phased plan (QC ranges, provenance manifests, SPAM, IDW, NASA POWER, HWSD,
 ISIMIP3b) — is in [docs/prismpy_comparison.md](docs/prismpy_comparison.md).
+**Phase 0 (fixes) and Phase 1 (quality control) are done** (v0.33.0–v0.36.1);
+next is Phase 2 (provenance and reproducibility).
+
+## Lessons that shaped the code (don't undo them)
+
+- **Product NetCDF writes run on dask's synchronous scheduler.** With threads,
+  a write that streams from lazily opened NetCDFs deadlocked about 1 run in 5
+  on xarray's HDF5 locks (v0.35.0). Never add other computations to a write's
+  dask graph; compute them in a separate pass.
+- **Missing rain is never zero:** monthly sums use `skipna=False`; writers
+  never gap-fill rain.
+- **Check an external rule on real data before adopting it.** prismpy drops a
+  soil layer whose texture is >5 % off 100 %; on SoilGrids that blanked the
+  topsoil of ~1/3 of profiles (fixed in v0.36.1).
 
 ## Commits & CI
 

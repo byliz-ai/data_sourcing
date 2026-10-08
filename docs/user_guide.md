@@ -141,14 +141,48 @@ extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 
 | You want… | Use | You get |
 | --- | --- | --- |
-| A **raw analysis-ready cube** for a region | `get_climate`, `get_static`, `get_modis`, `get_seasonal`, `get_season` | `{var: {"nc", "tif", "data"}}` — cached NetCDF (+ optional GeoTIFF) |
-| A **table of values at points** | `extract_points`, `extract_growing_season`, `extract_static_points` | a `DataFrame` / CSV |
-| **Crop-model input files** | `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | files written under `out_dir` |
-| Crop-model files from a **corrected forecast** | `forecast_to_dssat` | DSSAT files under `out_dir` |
+| A **raw analysis-ready cube** for a region | `get_climate`, `get_static`, `get_modis`, `get_seasonal`, `get_season` | `{var: {"nc", "tif", "qc", "data"}}` — cached NetCDF (+ optional GeoTIFF) + QC report (climate/soil/forecast) |
+| A **table of values at points** | `extract_points`, `extract_growing_season`, `extract_static_points` | a `DataFrame` / CSV (QC report in `df.attrs["qc"]`) |
+| **Crop-model input files** | `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | files written under `out_dir` + `qc_report.json` |
+| Crop-model files from a **corrected forecast** | `forecast_to_dssat` | DSSAT files under `out_dir` + `qc_report.json` |
 
 Add a GeoTIFF next to the NetCDF with `out_format=["nc", "tif"]`. Reuse work
 across engines by passing `weather=`/`soil=` frames you already extracted, so
 the data is fetched once and written to DSSAT *and* APSIM.
+
+### 4.5 Check the data quality (optional, on by default)
+
+You don't need to do anything: every call checks its data
+([full guide](quality_control.md)). Three things are useful to know:
+
+1. **A `NaN` you didn't expect** is usually a value the source got wrong (an
+   impossible value). The QC report says how many there were:
+
+   ```python
+   res = get_climate("PRCP", years=2020, country="Kenya")
+   res["AGRO.PRCP"]["qc"]          # path to the .qc.json report
+   ```
+   ```python
+   df = extract_points("trials.csv", "TMAX", "2020-01-01", "2020-12-31")
+   df.attrs["qc"]["AGRO.TMAX"]     # same report, for point extractions
+   ```
+
+2. **A `QCWarning`** about *plausible* values changed nothing. It points out
+   extremes in case they matter to you. One about *physical* values means they
+   were set to missing.
+
+3. **Change the strictness** on any data call:
+
+   | You want | Python | R | CLI |
+   | --- | --- | --- | --- |
+   | default (impossible → NaN, warn on unusual) | — | — | — |
+   | also drop unusual values | `qc="strict"` | `qc = "strict"` | `--qc strict` |
+   | raw data, no checks | `qc="off"` | `qc = "off"` | `--qc off` |
+   | your own limit | `qc_ranges={"PRCP": {"plausible": [0, 300]}}` | `qc_ranges = list(PRCP = list(plausible = c(0, 300)))` | `--qc-ranges '{"PRCP": {"plausible": [0, 300]}}'` |
+
+For crop-model runs, open `<out_dir>/qc_report.json`. It lists, per point, the
+days gap-filled, TMIN/TMAX swaps, soil texture fixes, and whether each written
+file passed validation.
 
 ---
 
@@ -302,6 +336,13 @@ It shines for **multi-step or exploratory** work — e.g. *"pull AgERA5 temperat
 and local CHIRPS v3 rainfall for these trial points, then write DSSAT files for a
 March–July season"* becomes one request instead of chaining calls by hand. Ask it
 to show the command it will run first if you want to review before it executes.
+
+It can also **explain the quality checks** for you: *"Why are some July values
+NaN in my rainfall cube?"* or *"Summarize the qc_report.json of my DSSAT run"*.
+The repo has a guide written for AI assistants, [AGENTS.md](../AGENTS.md).
+Claude Code loads it automatically only when started inside the repo folder.
+When you work from your own folder (recommended), start with *"read
+/home/jovyan/agwise-datasourcing/code/data_sourcing/AGENTS.md first"*.
 
 Next: **[Section 6 / REFERENCE.md](../REFERENCE.md)** documents every parameter
 of every function.

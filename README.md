@@ -2,9 +2,27 @@
 
 **For AgWise researchers and module developers** (working in Python *or* R) who
 need analysis-ready climate, soil, terrain and remote-sensing inputs — **without
-reading the source code**. One call fetches, harmonizes and caches the data; the
-same data is downloaded **once** into a shared cache with agreed names and units
-(`PRCP` in mm/day, `CLAY` in %, …) and reused by everyone afterwards.
+reading the source code**. One call fetches, harmonizes, **quality-checks** and
+caches the data. The same data is downloaded **once** into a shared cache with
+agreed names and units (`PRCP` in mm/day, `CLAY` in %, …) and everyone reuses it
+afterwards.
+
+**In one minute:**
+
+```python
+from agwise_data import get_climate, extract_static_points, to_dssat
+get_climate("PRCP", years=range(2015, 2025), country="Rwanda", freq="monthly")  # a cube
+extract_static_points("trials.csv", ["CLAY", "PH", "SOC"])                      # a table
+to_dssat("trials.csv", planting_date="2021-03-01", harvest_date="2021-07-31",
+         out_dir="DSSAT", station_col="site")                                   # model files
+```
+
+(Temperature and radiation come from AgERA5, which needs a free Copernicus
+account. Soil, terrain and rainfall on CGLabs need none; see
+[Section 3](docs/credentials_setup.md).)
+
+Same in R (`ad_get_climate(...)`) and on the command line
+(`agwise-data get ...`). See [what you get back](#15-what-you-get-back).
 
 ## New here? Let Claude Code set you up — and drive the module for you
 
@@ -44,10 +62,12 @@ top to bottom; each is a self-contained step of the journey.
 | 4 | **User workflow** | [docs/user_guide.md](docs/user_guide.md) | choose your area, datasets, time period and output |
 | 5 | **User interface (Python / R / CLI / Claude Code)** | [docs/user_guide.md](docs/user_guide.md#5-user-interface--python--r--cli--claude-code) | run the same task in the language you prefer |
 | 6 | **Function documentation** | [REFERENCE.md](REFERENCE.md) | look up every function: parameters, types, defaults, examples |
+| 6b | **Data quality (QC)** | [docs/quality_control.md](docs/quality_control.md) | understand why a value is `NaN`, what a `QCWarning` means, how to read `qc_report.json` |
 | 7 | **General improvements** | [CONTRIBUTING.md](CONTRIBUTING.md) | maintainer notes and suggested next steps |
 
 Runnable end-to-end scripts (Python + R) are in **[examples/](examples/)**;
-release history is in **[CHANGELOG.md](CHANGELOG.md)**.
+release history is in **[CHANGELOG.md](CHANGELOG.md)**. AI assistants (Claude
+Code, Codex, …) have their own compact guide: **[AGENTS.md](AGENTS.md)**.
 
 ---
 
@@ -56,10 +76,17 @@ release history is in **[CHANGELOG.md](CHANGELOG.md)**.
 ### 1.1 The workflow in one picture
 
 You ask for **variables** (`PRCP`, `CLAY`, `NDVI`, …) over a **region** and a
-**time period**. The tool finds the right data source, downloads only what you
-asked for, converts it to agreed names and units, caches it, and hands you an
-analysis-ready result — a data cube, a table of points, or a crop-model input
-file. You never touch the raw download formats.
+**time period**. The tool:
+
+1. finds the right data source;
+2. downloads only what you asked for;
+3. converts it to the agreed names and units;
+4. caches it;
+5. checks its quality;
+6. hands you an analysis-ready result: a data cube, a table of points, or a
+   crop-model input file.
+
+You never touch the raw download formats.
 
 ```text
    you ask ─────────────────────────────────────────────► you get
@@ -67,11 +94,12 @@ file. You never touch the raw download formats.
 
         │                                        ▲
         ▼                                        │
-   ┌────────────────────────────────────────────────────────┐
-   │  catalog  →  driver  →  harmonize  →  shared cache      │
-   │  (which    (download   (agreed       (download once,    │
-   │   source)   it)         names/units)  reuse forever)    │
-   └────────────────────────────────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────────────┐
+   │  catalog  →  driver  →  harmonize  →  shared cache  →  QC         │
+   │  (which    (download   (agreed       (download once,  (impossible │
+   │   source)   it)         names/units)  reuse forever)   → NaN,     │
+   │                                                        report)    │
+   └──────────────────────────────────────────────────────────────────┘
    sources: CHIRPS · AgERA5 · SEAS5 · SoilGrids · iSDA · Copernicus DEM
             · MODIS · ESA WorldCover · geoBoundaries
 ```
@@ -117,6 +145,34 @@ hit. Nothing global is re-downloaded once it is in `Landing`.
 > Everyone points at the same shared cache, but each person keeps their **own**
 > tokens in their **own** home (`chmod 600`) — never in the repo, a notebook, or
 > the shared folder. See [Section 3](docs/credentials_setup.md).
+
+### 1.4 Data quality is checked for you
+
+Every result is checked before you get it ([details](docs/quality_control.md)):
+
+- **Impossible values become missing.** Negative rain, pH 25.5, solar
+  radiation above the top-of-atmosphere maximum.
+- **Unusual but real values are kept.** You get a `QCWarning` about them.
+- **Missing rainfall is never counted as 0 mm.**
+- **Crop-model files are checked before and after writing.** TMIN/TMAX are
+  ordered, gaps of up to 5 days in temperature or radiation are filled (rain is
+  never filled), and soil texture sums to 100 %. Each file is read back and
+  validated.
+
+Each result comes with a small report (`*.qc.json`, or `qc_report.json` for
+crop-model runs). `qc="strict"` also removes the unusual values, and
+`qc="off"` gives you the raw data.
+
+### 1.5 What you get back
+
+| You call | You get | Files written |
+| --- | --- | --- |
+| `get_climate`, `get_static`, `get_seasonal`, `get_season`, `get_modis` | `{variable: {"nc", "tif", "qc", "data"}}`; `data` is an `xarray.DataArray` (`get_modis` and `get_season` return no `"qc"`; a climate season slice inherits the checks of its `get_climate` product) | `<Kind>_<VAR>_….nc` (+ `.tif` if asked) + `.meta.json` (provenance) + `.qc.json` (quality) |
+| `extract_points`, `extract_growing_season`, `extract_static_points` | a `pandas.DataFrame` (QC in `df.attrs["qc"]`) | a CSV when run from the CLI/R (+ `.qc.json`) |
+| `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | a list, one entry per point, with its files and `"qc"` | one `EXTE<n>/` folder per point + `qc_report.json` |
+
+Gridded products land in the shared cache (`Processed/products/<region>/`)
+unless you pass `out_dir=`. Crop-model files land in your `out_dir`.
 
 ---
 
@@ -202,14 +258,18 @@ credentials next — see [Section 3](docs/credentials_setup.md).
 data_sourcing/
 ├── README.md              ← you are here (Sections 1–2)
 ├── REFERENCE.md           ← Section 6: every function, every parameter
+├── AGENTS.md  CLAUDE.md   ← guide for AI assistants
 ├── CHANGELOG.md  CONTRIBUTING.md
 ├── docs/
 │   ├── onboarding.md          ← new teammates start here
 │   ├── credentials_setup.md   ← Section 3
 │   ├── cglabs_setup.md        ← Section 2 (shared-server deep dive)
-│   └── user_guide.md          ← Sections 4–5
+│   ├── user_guide.md          ← Sections 4–5
+│   ├── quality_control.md     ← data quality checks and reports
+│   └── prismpy_comparison.md  ← comparison with prismpy + roadmap (Spanish)
 ├── examples/              ← runnable quickstart.py / quickstart.R
 ├── src/agwise_data/       ← the Python package (you don't need to read it)
+│   └── qc_ranges.yaml         ← default quality-control ranges
 └── r/agwise_data.R        ← the R wrappers (ad_*)
 ```
 
@@ -248,6 +308,8 @@ follow the **[user workflow (Section 4)](docs/user_guide.md)**.
   the same tasks in Python, R, the CLI, or plain language via Claude Code.
 - **[Section 6 — Function documentation](REFERENCE.md):** every public function
   with all its parameters, types, defaults and a runnable example.
+- **[Data quality](docs/quality_control.md):** what is checked, what a
+  `QCWarning` means, and how to read the reports.
 - **[Section 7 — General improvements](CONTRIBUTING.md):** maintainer notes.
 
 ## License

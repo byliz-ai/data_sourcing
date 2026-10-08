@@ -5,15 +5,15 @@ shared env (or installing off CGLabs) — see [README §2.2](../README.md#22-ins
 
 | File | Run it | Needs |
 | --- | --- | --- |
-| [`quickstart.py`](quickstart.py) | `python examples/quickstart.py` | steps 1–2: network only · steps 3–4: credentials |
+| [`quickstart.py`](quickstart.py) | `python examples/quickstart.py` | steps 1–2: no account on CGLabs · steps 3–4: credentials |
 | [`quickstart.R`](quickstart.R) | `Rscript examples/quickstart.R` (or source in RStudio) | same |
 
 Both scripts do the same thing in each language:
 
 1. **Soil at points** (SoilGrids) — *no account needed*, runs as-is.
-2. **Rainfall cube** for Rwanda (CHIRPS) — needs **Earth Engine** right now (the
-   UCSB host is 403-blocked, so the driver falls back to CHIRPS on Earth Engine);
-   guarded so the script still finishes without it.
+2. **Rainfall cube** for Rwanda (CHIRPS) — *no account on CGLabs* (local CHIRPS
+   v3); elsewhere it needs **Earth Engine** while the UCSB host is 403-blocked.
+   Guarded so the script still finishes, and prints the cube's quality report.
 3. **DSSAT input files** (commented out) — needs Copernicus CDS credentials.
 4. **NDVI** (Python, commented out) — needs Google Earth Engine credentials.
 

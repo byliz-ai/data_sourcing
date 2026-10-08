@@ -66,9 +66,10 @@ Personal, never shared. The full click-by-click (CDS + Earth Engine, from zero,
 with troubleshooting) is in **[credentials_setup.md](credentials_setup.md)**. On
 the shared server, each person keeps their own `~/.cdsapirc` and
 `~/.config/earthengine/credentials` (`chmod 600`) and sets `AGWISE_GEE_PROJECT`
-— never commit a token or put one in a shared folder. Note: while the UCSB host
-is 403-blocked, even CHIRPS rainfall routes through Earth Engine, so `PRCP`
-needs GEE set up too.
+— never commit a token or put one in a shared folder. Rainfall: on CGLabs
+`PRCP` is read from the staged CHIRPS v3 (1981–2025) and needs no account; for
+other years or off CGLabs, CHIRPS v2 routes through Earth Engine while the UCSB
+host is 403-blocked, so it needs GEE set up.
 
 ## 4. Use from R (no reticulate needed)
 

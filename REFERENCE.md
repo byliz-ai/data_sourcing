@@ -16,6 +16,7 @@ the lookup you return to.
 
 - [Conventions](#conventions) — how to read the tables (region, variables, returns)
 - [6.1 Gridded cubes](#61-gridded-cubes-climate-soil-terrain-forecasts-ndvi)
+  - [Quality control (`qc`, `qc_ranges`)](#quality-control-qc-qc_ranges) — shared by every data function
 - [6.2 Point extraction](#62-point-extraction-return-dataframes)
 - [6.3 Crop-model input files](#63-crop-model-input-files-return-the-list-of-files-written)
 - [6.4 Spatial scaffolding](#64-spatial-scaffolding-return-dataframes)
@@ -36,13 +37,24 @@ guidance: [user guide §4.1](docs/user_guide.md#41-decision-1--select-the-study-
 
 **Return shapes** referenced in the tables below:
 
-- *Gridded cube* → `{canonical_var: {"nc": Path, "tif": Path|None, "data": xarray.DataArray}}`.
+- *Gridded cube* → `{canonical_var: {"nc": Path, "tif": Path|None, "qc": Path|None, "data": xarray.DataArray}}`.
   The NetCDF is always written (it **is** the cache); `out_format=["nc","tif"]`
-  adds a GeoTIFF. Product files are named `<Kind>_<VAR>_<first>_<last>`; a
-  non-contiguous year list adds a `_y<digest>` tag and an explicitly requested
-  non-default `source` adds `_<source>` (e.g. `Daily_PRCP_2015_2024_chirps.nc`).
-- *Point extraction* → a `pandas.DataFrame`.
-- *Crop-model writers* → a `list` of the files written.
+  adds a GeoTIFF; `"qc"` is the quality report (`<product>.qc.json`). Product
+  files are named `<Kind>_<VAR>_<first>_<last>`. Optional tags are added only
+  for non-default choices: `_y<digest>` for a non-contiguous year list,
+  `_<source>` for an explicitly requested non-default source (e.g.
+  `Daily_PRCP_2015_2024_chirps.nc`), and `_qcoff` / `_qc<hash>` for
+  non-default quality control.
+- *Point extraction* → a `pandas.DataFrame`; its QC reports are in
+  `df.attrs["qc"]`.
+- *Crop-model writers* → a `list` of the files written per point, each with a
+  `"qc"` record; the run also writes `<out_dir>/qc_report.json`.
+
+**Quality control** (`qc=`, `qc_ranges=`) is on by default in every data and
+writer function. Impossible values become `NaN`, unusual ones are kept with a
+`QCWarning`, and missing rain is never counted as zero. The parameter rows below
+are short; the full explanation is in
+**[docs/quality_control.md](docs/quality_control.md)**.
 
 **Variables** are given by short name (`PRCP`), canonical name (`AGRO.PRCP`) or
 legacy label (`Precipitation`):
@@ -97,7 +109,7 @@ Fetch a harmonized daily/monthly **climate cube** for a region.
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control** below). `warn`: impossible values → NaN, implausible ones kept and warned about; `strict`: both → NaN; `off`: no checks. Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). `warn`: impossible values → NaN, implausible ones kept and warned about; `strict`: both → NaN; `off`: no checks. Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default ranges per variable (any name form); only the levels you give change. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`, `None` for an open side. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -128,7 +140,7 @@ Fetch harmonized **soil / terrain** layers (no time axis).
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control** below). `warn`: impossible values → NaN, implausible ones kept and warned about; `strict`: both → NaN; `off`: no checks. Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). `warn`: impossible values → NaN, implausible ones kept and warned about; `strict`: both → NaN; `off`: no checks. Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default ranges per variable (any name form); only the levels you give change. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`, `None` for an open side. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -139,34 +151,21 @@ get_static(["CLAY", "PH"], country="Rwanda", depths=["0-5cm", "5-15cm"])
 
 ### Quality control (`qc`, `qc_ranges`)
 
-`get_climate` and `get_static` range-check every product before writing it.
-Each variable has two ranges in its harmonized units, with broad defaults in
-[`src/agwise_data/qc_ranges.yaml`](src/agwise_data/qc_ranges.yaml):
+Shared by `get_climate`, `get_static`, `get_seasonal`, `get_season` and the
+three `extract_*` functions. Full guide, default ranges and sources:
+[docs/quality_control.md](docs/quality_control.md).
 
-| Level | Meaning | With `qc="warn"` (default) | With `qc="strict"` |
-| --- | --- | --- | --- |
-| **physical** | Impossible (nodata or scaling error, e.g. pH 25.5) | set to NaN | set to NaN |
-| **plausible** | Unusual but possible (extreme storm, desert heat) | kept, `QCWarning` | set to NaN |
+| `qc=` | Physical outliers (impossible) | Plausible outliers (unusual) |
+| --- | --- | --- |
+| `"warn"` (default) | → `NaN` | kept, `QCWarning` |
+| `"strict"` | → `NaN` | → `NaN` |
+| `"off"` | kept | kept |
 
-Climate ranges apply to the **daily** values, before any monthly aggregation.
-The counts go to `<product>.qc.json` next to the product (returned as
-`res[var]["qc"]`). Default-QC products keep their usual names; `qc="off"` adds
-`_qcoff` and custom `qc_ranges` add `_qc<hash>`, so they never overwrite the
-shared default product. Products built before QC existed are rebuilt once
-from the harmonized cache (nothing is downloaded again). Variables without a
-default range (`TPI`, `TRI`) are only checked if you pass one.
-
-The same `qc`/`qc_ranges` work in `get_seasonal` (every member is checked
-before any ensemble reduction), `get_season`, `extract_points`,
-`extract_growing_season` and `extract_static_points`. Point extractions
-return their reports in `df.attrs["qc"]` (the CLI writes them to
-`<out>.qc.json`); a soil point masked by QC is filled from the nearest valid
-pixel like a NoData one.
-
-Missing rainfall is never counted as zero: a monthly PRCP sum with a missing
-day is NaN, and so are `totalRF`/`nrRainyDays` for a season with a missing
-day. Integer rasters that declare no nodata have their sentinel (255,
-65535, -32768) masked before any scaling conversion.
+`qc_ranges` overrides only what you name, by any variable name form:
+`{"PRCP": {"plausible": [0, 300]}, "PH": {"physical": [3, 11]}}` (`None` = open
+side). Climate checks run on the **daily** values before monthly aggregation;
+SRAD is also capped at the extraterrestrial radiation Ra (FAO-56). Missing rain
+is never zero: a monthly PRCP sum with a missing day is `NaN`.
 
 ```python
 res = get_climate("PRCP", years=2020, country="Kenya", freq="daily",
@@ -227,7 +226,7 @@ mask = get_cropmask(country="Rwanda")["LC.CROPLAND"]["data"]
 
 Fetch a **SEAS5 seasonal forecast / hindcast** cube (one init month across years).
 
-**Returns:** `{canonical_var: {"nc", "tif", "data"}}`, `data` dims `(member, time, lat, lon)`
+**Returns:** `{canonical_var: {"nc", "tif", "qc", "data"}}`, `data` dims `(member, time, lat, lon)`
 
 `time` labels each daily step with the calendar day it **describes** (its
 24-hour window start): the first forecast day is the initialization date
@@ -252,7 +251,7 @@ automatically on first use — no re-download.
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -364,7 +363,7 @@ Climate and/or NDVI **already sliced to a growing season** (cross-year aware).
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -380,7 +379,7 @@ get_season("NDVI", planting_date="2020-09-14",
 
 Long-format climate **time series at point locations** between two dates.
 
-**Returns:** `DataFrame` with columns `point, lon, lat, time, variable, value`
+**Returns:** `DataFrame` with columns `point, lon, lat, time, variable, value` (QC reports in `df.attrs["qc"]`)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -392,7 +391,7 @@ Long-format climate **time series at point locations** between two dates.
 | `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -406,7 +405,7 @@ df = extract_points("trials.csv", ["PRCP", "TMAX"],
 
 Per-trial **growing-season climate** in the fertilizer-ML wide format.
 
-**Returns:** `DataFrame`: input rows + `<VAR>_m1..mN`, `totalRF`, `nrRainyDays`
+**Returns:** `DataFrame`: input rows + `<VAR>_m1..mN`, `totalRF`, `nrRainyDays` (QC reports in `df.attrs["qc"]`; a season with a missing rain day gets `NaN` totals)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -418,7 +417,7 @@ Per-trial **growing-season climate** in the fertilizer-ML wide format.
 | `source` | str | No | `None` | Force one climate source. Values: `"chirps"`, `"chirps_v3"` (local-only, CGLabs), `"agera5"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -432,7 +431,7 @@ df = extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 
 **Soil / terrain at point locations** (wide format), with optional derived columns.
 
-**Returns:** `DataFrame`: input + one column per variable×depth (+ derived)
+**Returns:** `DataFrame`: input + one column per variable×depth (+ derived; QC reports in `df.attrs["qc"]`)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -445,7 +444,7 @@ df = extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 | `fill_nearest_m` | float | No | `1000.0` | Fill points on NoData pixels from the nearest valid pixel within this many metres; `None` or `0` disables. |
 | `derive` | str \| list[str] | No | `None` | Add pedotransfer-derived columns (a name or list). Values: `"hydraulics"`, `"olsen_p"`. |
 | `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
-| `qc` | str | No | `'warn'` | Range quality control (see **Quality control**). Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). Values: `"warn"`, `"strict"`, `"off"`. |
 | `qc_ranges` | dict | No | `None` | Override the default QC ranges per variable. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
@@ -473,31 +472,19 @@ n = rainy_days(cube, threshold=2.0)
 
 ## 6.3 Crop-model input files (return the list of files written)
 
-**Quality control in every writer.** Before writing, each point's daily
-weather goes through `agwise_data.qc.check_weather`:
+**Quality control in every writer** ([details](docs/quality_control.md#5-crop-model-files-to_dssat-to_apsim-to_wofost-to_oryza)):
 
-- every calendar day between the first and last date gets a row (a missing
-  date is a missing row, not a silent jump);
-- days with TMIN > TMAX are swapped (as the legacy scripts did);
-- SRAD above the extraterrestrial radiation Ra (FAO-56) is set to missing;
-- TMAX/TMIN/SRAD gaps of **up to 5 days** are linearly interpolated.
-  Rainfall is **never** filled.
-
-Soil profiles make clay + silt + sand sum to 100 % per layer: they are
-rescaled within 3 %, rescaled with a warning within 5 %, and excluded (`-99`)
-beyond 5 %.
-
-Every written file is then **read back and validated**: date continuity,
-missing values, physical ranges and TMIN ≤ TMAX for weather; SLLL < SDUL <
-SSAT, bulk density, pH and clay + silt ≤ 100 % for `.SOL`. The validators are
-`agwise_data.writers.validate.validate_wth/met/sol/wofost_weather/oryza_weather`,
-and they can be run on any file. Each run writes `<out_dir>/qc_report.json`
-(per point: the weather checks, the texture normalization and the validation
-of each file) and returns the same record as `"qc"`. A `QCWarning` is raised
-when any file fails validation. The single-file writers (`write_wth`,
-`write_met`, `wofost.write_weather`, `oryza.write_weather`, `write_sol`)
-take `gapfill_days=` (0 disables filling) and `report=` (a dict that
-receives the record).
+- **Weather, before writing:** every day between the first and last date gets
+  a row; TMIN > TMAX days are swapped; SRAD above Ra is set to missing; gaps of
+  up to **5 days** in TMAX/TMIN/SRAD are interpolated. **Rain is never filled.**
+- **Soil, before writing:** clay + silt + sand are rescaled to 100 % in every
+  layer. Deviations over 3 % and 5 % are flagged; no layer is dropped.
+- **After writing:** each file is read back and validated (dates, missing
+  values, ranges, TMIN ≤ TMAX; `.SOL`: SLLL < SDUL < SSAT, bulk density, pH,
+  texture). Run `agwise_data.writers.validate.validate_*` on any file.
+- **Report:** `<out_dir>/qc_report.json`, plus `"qc"` on each returned entry. A
+  `QCWarning` is raised if any file fails validation. Single-file writers
+  take `gapfill_days=` (0 = off) and `report=` (a dict to fill).
 
 ### `to_dssat`
 

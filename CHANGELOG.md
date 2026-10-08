@@ -5,6 +5,42 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.36.1 — Fix: soil texture is never excluded, always renormalized · documentation review
+
+- **Regression in 0.36.0 fixed.** `qc.normalize_texture` blanked (`-99`) any
+  soil layer whose clay + silt + sand was more than 5 % off 100 % (the prismpy
+  rule). With real SoilGrids data that is far too strict: the fractions are
+  predicted independently, and in the 0-5 cm layer **28 % (Rwanda), 39 %
+  (Kenya) and 40 % (Ethiopia) of pixels are more than 5 % off** (median 3-4 %,
+  max 39 %; deeper layers are within 1 %; iSDA 0-20 cm: 3-13 % of pixels over
+  5 %). A live `to_dssat` run for Nyagatare wrote a top layer with no SLLL /
+  SDUL / SSAT. Every layer with the three fractions is now rescaled to 100 %;
+  deviations over 3 % and over 5 % are counted in the report
+  (`deviation_over_3pct`, `large_deviation_over_5pct`;
+  `qc_report.json` summary `texture_layers_over_5pct`). Nothing is dropped.
+- **Documentation review** (no code change):
+  - New **[docs/quality_control.md](docs/quality_control.md)**: what is
+    checked, what happens to bad values, default ranges, how to read
+    `.qc.json` / `qc_report.json`, FAQ, and **sources and credits**:
+    permalinks to the prismpy files each idea came from (commit `cfe0219`),
+    FAO-56, the WMO records behind the physical limits, and SoilGrids.
+  - New **[AGENTS.md](AGENTS.md)** (+ `CLAUDE.md` importing it), a compact
+    guide for AI assistants: task → function map, conventions, code map,
+    invariants (synchronous product writes, no zero rain, nodata before
+    scaling), how to run the tests.
+  - README: a one-minute example, QC in the workflow, a "what you get back"
+    table, updated doc map and folder tree. User guide: §4.5 on data quality.
+    REFERENCE: QC in the conventions and return shapes, linked QC section.
+    CONTRIBUTING: the QC-ranges step when adding a variable, doc-writing and
+    credit rules, lessons learned. Onboarding: QC and AGENTS.md.
+  - Fixed stale CHIRPS notes: on CGLabs, rainfall comes from the local CHIRPS
+    v3 and needs no Earth Engine account (quickstarts, cglabs_setup,
+    credentials_setup). The quickstarts now print the QC report.
+  - prismpy_comparison.md: permalinked sources, plan status, and what was
+    learned on real data (§6–7).
+
+---
+
 ## 0.36.0 — Phase 1 (part 3): cross-variable checks, gap-filling, post-write validation
 
 Completes the quality-control phase of `docs/prismpy_comparison.md`.
@@ -29,6 +65,7 @@ texture is renormalized.
 - **Soil texture sums to 100 %** (`qc.normalize_texture`, applied in
   `writers.soil.build_profile`, so in every soil writer): layers within 3 % are
   rescaled, within 5 % rescaled and flagged, beyond 5 % excluded (`-99`).
+  *(The exclusion was a mistake — fixed in 0.36.1.)*
 - **Post-write validation** (new `writers/validate.py`): every written `.WTH`,
   `.met`, `.SOL`, WOFOST weather CSV and ORYZA weather set is re-read and
   checked (date continuity and duplicates, malformed/`nan` rows, missing

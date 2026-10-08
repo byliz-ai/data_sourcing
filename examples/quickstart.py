@@ -6,13 +6,16 @@ CGLabs) — see README §2.2:
     python examples/quickstart.py
 
 Step 1 needs only network access — **no accounts** (SoilGrids). Step 2 (rainfall)
-currently needs Earth Engine because the UCSB CHIRPS host is 403-blocked and the
-driver falls back to CHIRPS on Earth Engine — it is guarded so the script still
-runs. Steps 3-4 need credentials (see ``docs/credentials_setup.md``) and are
-left commented out.
+needs no account on CGLabs (local CHIRPS v3, 1981-2025); elsewhere CHIRPS v2
+comes through Earth Engine while the UCSB host is 403-blocked, so the step is
+guarded. Steps 3-4 need credentials (see ``docs/credentials_setup.md``) and are
+left commented out. Every result is quality-checked; step 2 prints its report
+(see ``docs/quality_control.md``).
 """
 
 from __future__ import annotations
+
+import json
 
 import pandas as pd
 
@@ -33,18 +36,22 @@ def main() -> None:
     soil = extract_static_points(POINTS, ["CLAY", "SAND", "PH", "SOC"])
     print(soil.to_string(index=False), "\n")
 
-    # 2. Rainfall cube — CHIRPS. While the UCSB host is 403-blocked the driver
-    #    uses CHIRPS on Earth Engine, so this needs AGWISE_GEE_PROJECT + GEE
-    #    credentials today. Guarded so the script still finishes without them.
+    # 2. Rainfall cube — CHIRPS. On CGLabs it is read from the staged CHIRPS v3
+    #    (no account). Elsewhere CHIRPS v2 comes through Earth Engine while the
+    #    UCSB host is 403-blocked. Guarded so the script still finishes.
     print("2. get_climate: monthly rainfall for Rwanda 2023 (CHIRPS) ...")
     try:
         res = get_climate("PRCP", years=range(2023, 2024), country="Rwanda",
                           freq="monthly")
         rain = res["AGRO.PRCP"]["data"]
-        print(f"   -> cube dims {dict(rain.sizes)}; cached {res['AGRO.PRCP']['nc']}\n")
+        print(f"   -> cube dims {dict(rain.sizes)}; cached {res['AGRO.PRCP']['nc']}")
+        # Quality report: how many values were impossible (set to NaN) or unusual.
+        qc = json.loads(res["AGRO.PRCP"]["qc"].read_text())
+        print(f"   -> QC: physical outliers {qc['physical']}, "
+              f"plausible outliers {qc['plausible']}\n")
     except Exception as exc:  # noqa: BLE001
-        print(f"   -> skipped: {type(exc).__name__}. CHIRPS needs Earth Engine "
-              "right now (set AGWISE_GEE_PROJECT); see docs/credentials_setup.md\n")
+        print(f"   -> skipped: {type(exc).__name__}. Off CGLabs, CHIRPS needs Earth "
+              "Engine (set AGWISE_GEE_PROJECT); see docs/credentials_setup.md\n")
 
     print("Done. Steps 3-4 below need credentials — see docs/credentials_setup.md.")
 
@@ -53,6 +60,8 @@ def main() -> None:
     # from agwise_data import to_dssat
     # to_dssat(POINTS, planting_date="2023-01-01", harvest_date="2023-04-30",
     #          out_dir="DSSAT_quickstart", station_col="site", country="Rwanda")
+    # Then open DSSAT_quickstart/qc_report.json: gap-filled days, TMIN/TMAX
+    # swaps, soil texture fixes and the validation of every written file.
 
     # 4. NDVI — needs Google Earth Engine (AGWISE_GEE_PROJECT + credentials):
     # from agwise_data import get_ndvi

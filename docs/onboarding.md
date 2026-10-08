@@ -104,6 +104,11 @@ zero credentials (README §2.4 "First success").
   `get_soil`/`get_dem`, `get_seasonal`, `get_modis`, `to_dssat`/`to_apsim`/
   `to_wofost`/`to_oryza`, `bias_correct`, …), each with an `ad_*` R wrapper and a
   CLI subcommand.
+- **Data quality is checked for you** (since v0.34): impossible values become
+  missing, unusual ones trigger a `QCWarning`, and every crop-model run writes a
+  `qc_report.json`. When something looks off, read `docs/quality_control.md`.
+- **Using an AI assistant?** `AGENTS.md` in the repo is written for it. Claude
+  Code loads it automatically only when started inside the repo folder.
 
 ---
 
@@ -120,7 +125,7 @@ zero credentials (README §2.4 "First success").
   at once. After a version bump, re-run `pip install -e` once to refresh
   `agwise_data.__version__`.
 - **Tests** (network-free, no credentials):
-  `"/home/jovyan/agwise-datasourcing/envs/agwise_data/bin/python" -m pytest -q`
+  `"/home/jovyan/agwise-datasourcing/envs/agwise_data/bin/python" -m pytest -q -o faulthandler_timeout=60`
   from the shared clone. One MODIS GeoTIFF test can fail on a local GDAL quirk
   but passes in CI; everything else must stay green. Note the R wrappers
   (`r/agwise_data.R`) are **not** covered by pytest — changes there need a live
@@ -137,7 +142,8 @@ Read in order the first time: **README** (how it works · install/activate ·
 first success) → **docs/credentials_setup.md** (CDS + Earth Engine, click by
 click) → **docs/cglabs_setup.md** (shared-server ops: from-scratch install,
 data roots, R, performance, the ~32 GB container ceiling) → **docs/user_guide.md**
-(workflow + interfaces) → **REFERENCE.md** (function reference) → **CONTRIBUTING.md**.
+(workflow + interfaces) → **REFERENCE.md** (function reference) →
+**docs/quality_control.md** (data quality) → **CONTRIBUTING.md**.
 
 ---
 
