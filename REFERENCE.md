@@ -441,7 +441,7 @@ df = extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 | `source` | str | No | `None` | Soil source. Values: `"soilgrids"` (default; `EXTP` defaults to `"isda"`, its only provider), `"isda"`. |
 | `lon_col` | str | No | `None` | Longitude column in `points` (auto-detected if omitted). |
 | `lat_col` | str | No | `None` | Latitude column in `points` (auto-detected if omitted). |
-| `fill_nearest_m` | float | No | `1000.0` | Fill points on NoData pixels from the nearest valid pixel within this many metres; `None` or `0` disables. |
+| `fill_nearest_m` | float | No | `1000.0` | Fill points on NoData pixels (or with a profile missing some depths) from the nearest pixel complete at every depth within this many metres — never less than the 8 neighbouring pixels of the grid (~1.3 km on the 1 km staged rasters). `None` or `0` disables. |
 | `derive` | str \| list[str] | No | `None` | Add pedotransfer-derived columns (a name or list). Values: `"hydraulics"`, `"olsen_p"`. |
 | `calcareous` | bool | No | `False` | Use the calcareous Mehlich-3→Olsen P regression instead of the default. Values: `True`, `False`. |
 | `qc` | str | No | `'warn'` | Range quality control (see [Quality control](#quality-control-qc-qc_ranges)). Values: `"warn"`, `"strict"`, `"off"`. |

@@ -2088,6 +2088,23 @@ def _static_point_cells(lons: np.ndarray, lats: np.ndarray):
 _M_PER_DEG = 111_320.0
 
 
+def _neighbour_radius_m(da: xr.DataArray, lat: float) -> float:
+    """Distance (m) that reaches all 8 neighbouring pixels of ``da``'s grid.
+
+    The pixel diagonal plus 1 %. The default fill radius (1 km) was set for the
+    250 m SoilGrids WCS grid; on the 1 km staged rasters it reached only the 4
+    edge neighbours, never the diagonal ones (~1.3 km), so a point at a city edge
+    stayed empty even with a valid diagonal neighbour.
+    """
+    def step(coord):
+        v = da[coord].values
+        return float(np.abs(np.diff(v)).min()) if v.size > 1 else 0.0
+
+    dy = step("lat") * _M_PER_DEG
+    dx = step("lon") * _M_PER_DEG * max(np.cos(np.radians(lat)), 0.01)
+    return 1.01 * float(np.hypot(dx, dy))
+
+
 def _nearest_valid_fill(da: xr.DataArray, lon: float, lat: float, max_m: float):
     """Value(s) of the nearest non-NaN pixel within ``max_m`` meters.
 
@@ -2095,7 +2112,10 @@ def _nearest_valid_fill(da: xr.DataArray, lon: float, lat: float, max_m: float):
     the layer has a depth dim — or ``None`` if no valid pixel is in range.
     A pixel only counts as valid when it is finite at *all* depths, so
     every depth column of a filled point comes from the same donor pixel.
+    The search radius never drops below the 8 neighbouring pixels
+    (:func:`_neighbour_radius_m`), whatever the grid resolution.
     """
+    max_m = max(float(max_m), _neighbour_radius_m(da, lat))
     dlat = max_m / _M_PER_DEG
     dlon = max_m / (_M_PER_DEG * max(np.cos(np.radians(lat)), 0.01))
     win = subset_bbox(da, (lon - dlon, lat - dlat, lon + dlon, lat + dlat))
@@ -2147,7 +2167,11 @@ def extract_static_points(
 
     Points on masked pixels (SoilGrids NoData over urban areas/water) are
     filled from the nearest valid pixel within ``fill_nearest_m`` meters
-    (default 1 km; pass ``None`` or 0 to disable). When enabled, each
+    (default 1 km, and never less than the 8 neighbouring pixels of the
+    source grid — ~1.3 km on the 1 km staged rasters; pass ``None`` or 0 to
+    disable). A point whose profile is missing only some depths (the staged
+    1 km SoilGrids rasters have such pixels) is filled too, from a donor that
+    is complete at every depth. When enabled, each
     variable gets a ``<VAR>_fill_m`` column: 0 where the point's own pixel
     was valid, the donor-pixel distance in meters where it was filled, and
     NaN where no valid pixel was in range (the value stays NaN too).

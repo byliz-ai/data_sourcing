@@ -203,3 +203,34 @@ def test_crop_model_run_warns_when_a_file_fails_validation(tmp_path, monkeypatch
     report = json.loads((tmp_path / "A" / "qc_report.json").read_text())
     v = report["points"][0]["validation"]["met"]
     assert not v["ok"] and v["missing"]["tmax"] == 10
+
+
+def test_fill_reaches_diagonal_neighbour_on_a_1km_grid():
+    """Kigali case: the staged 1 km SoilGrids rasters mask some depths only;
+    the only complete pixel is a diagonal neighbour ~1.3 km away, beyond the
+    1 km default radius that was sized for the 250 m WCS grid."""
+    from agwise_data.api import _nearest_valid_fill
+
+    res = 1.0 / 120  # 30 arc-seconds
+    lats = -1.95 + res * np.arange(-1, 2)
+    lons = 30.06 + res * np.arange(-1, 2)
+    data = np.full((3, 3, 3), np.nan)
+    data[0] = 28.0                     # 0-5 cm valid everywhere
+    data[:, 0, 0] = [27.0, 30.0, 33.0]  # one complete diagonal neighbour
+    da = xr.DataArray(data, coords={"depth": ["a", "b", "c"], "lat": lats, "lon": lons},
+                      dims=("depth", "lat", "lon"))
+    hit = _nearest_valid_fill(da, 30.06, -1.95, 1000.0)
+    assert hit is not None
+    donor, dist = hit
+    assert donor.tolist() == [27.0, 30.0, 33.0]
+    assert 1000 < dist < 1400
+
+
+def test_validate_sol_flags_layers_without_water_properties(tmp_path):
+    row = _soil_row()
+    for k in list(row):
+        if k.startswith(("CLAY_5", "SAND_5", "SILT_5")):  # the 5-15 cm layer
+            row[k] = np.nan
+    v = validate_sol(soil.write_sol(row, lat=0.0, lon=0.0, path=tmp_path / "S.SOL"))
+    assert not v["ok"]
+    assert any("no SLLL/SDUL/SSAT" in p for p in v["problems"])

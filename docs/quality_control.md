@@ -256,6 +256,18 @@ year. *Plausible* means nothing was changed; it tells you about real extremes.
 harmless with `qc="warn"`. Widen the range with `qc_ranges` if the warning is
 noise for your region.
 
+**"My soil profile has `-99` / `NaN` at a point (often in or near a city)."**
+SoilGrids does not predict soil under built-up areas or water. A masked point
+is filled from the nearest pixel that is complete at every depth, within
+`fill_nearest_m` (default 1 km, and always at least the 8 neighbouring
+pixels). The `<VAR>_fill_m` column tells you the donor distance (`NaN` = none
+in range). The staged 1 km rasters also have pixels where only *some*
+depths are missing (~1.5 % of land pixels in Rwanda/Kenya); those are filled
+the same way. If a property is still empty, its mask is larger there (e.g.
+nitrogen around central Kigali: nearest complete pixel at 2.5 km). Raise
+`fill_nearest_m=3000` if a donor that far away is acceptable for your study.
+`.SOL` validation flags any layer left without SLLL/SDUL/SSAT.
+
 **"I want the raw values."** `qc="off"`. You get a separate `_qcoff` product,
 so the shared one is untouched.
 

@@ -279,6 +279,14 @@ def validate_sol(path) -> dict:
     over = int((clay_silt[np.isfinite(clay_silt)] > 100.5).sum())
     if over:
         problems.append(f"{over} layers with clay + silt > 100 %")
+    hydraulic = [c for c in ("SLLL", "SDUL", "SSAT") if c in t]
+    no_water = int(t[hydraulic].isna().any(axis=1).sum()) if hydraulic else 0
+    if no_water:
+        problems.append(
+            f"{no_water} of {len(t)} layers have no SLLL/SDUL/SSAT (-99): the "
+            "soil profile is incomplete at this point (masked or partial "
+            "source data) — the model cannot use those layers"
+        )
     missing = {c: int(t[c].isna().sum()) for c in t.columns if c != "SLB"}
     return _record(path, "dssat_sol", problems, n_layers=len(t),
                    out_of_range=oor, layers_missing=missing,

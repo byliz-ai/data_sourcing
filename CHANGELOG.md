@@ -5,6 +5,34 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.36.2 — Soil points: fill reaches diagonal neighbours; incomplete profiles flagged
+
+Found while checking a Kigali trial point (30.06, −1.95) that came back with
+CLAY at 0-5 cm and 60-200 cm but `NaN` at 5-60 cm, and no fill.
+
+- **Cause 1 — partial profiles in the staged rasters.** The 1 km SoilGrids
+  files in `Landing/Soil/soilGrids/profile` mask *some* depths of a pixel and
+  not others (~1.4-1.5 % of land pixels in Rwanda and Kenya; the masked
+  depths differ by property). The online SoilGrids (250 m WCS) masks the
+  whole column at those places (central Kigali: all depths masked).
+  `extract_static_points` already treats such a point as missing and fills it
+  from a donor complete at every depth.
+- **Cause 2 — the fill radius did not reach diagonal pixels.** The 1 km
+  default `fill_nearest_m` was sized for the 250 m WCS grid. On the 1 km staged
+  grid (pixel ≈ 926 m) it reached only the 4 edge neighbours, never the
+  diagonal ones (≈ 1.3 km). The search now always covers the **8 neighbouring
+  pixels** of the source grid (`_neighbour_radius_m`), so the default reaches
+  ≈ 1.3 km on 1 km data and is unchanged at 250 m. Kigali is now filled from a
+  donor at 1291 m, and its DSSAT `.SOL` has water properties in every layer
+  (before: top layer all `-99`).
+- **`.SOL` validation flags incomplete profiles:** a layer without
+  SLLL/SDUL/SSAT is reported as a problem, so `qc_report.json` and the run's
+  `QCWarning` show it. A property can still be empty when its mask is larger
+  than the radius (nitrogen in central Kigali: nearest complete pixel at
+  2.5 km); raise `fill_nearest_m` if that distance is acceptable.
+
+---
+
 ## 0.36.1 — Fix: soil texture is never excluded, always renormalized · documentation review
 
 - **Regression in 0.36.0 fixed.** `qc.normalize_texture` blanked (`-99`) any

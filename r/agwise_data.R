@@ -659,7 +659,8 @@ ad_to_oryza <- function(points, planting_date = NULL, harvest_date = NULL,
 #' soil property and depth (CLAY_0_5cm, CLAY_5_15cm, ...) — the static
 #' counterpart of ad_extract_growing_season for trial data.
 #' Points on masked pixels (SoilGrids NoData over urban/water) are filled
-#' from the nearest valid pixel within fill_nearest_m meters (0 disables);
+#' from the nearest valid pixel within fill_nearest_m meters (never less
+#' than the 8 neighbouring pixels of the source grid; 0 disables);
 #' each variable gets a <VAR>_fill_m traceability column (0 = own pixel,
 #' >0 = donor distance, NA = nothing valid in range).
 ad_extract_static_points <- function(points, vars, depths = NULL,
