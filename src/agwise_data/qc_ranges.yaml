@@ -1,0 +1,49 @@
+# Default quality-control ranges per canonical variable (Phase 1 of
+# docs/prismpy_comparison.md). Values are in the HARMONIZED units (the
+# `units` field must match harmonize.py) and apply to daily values for
+# AGRO.* variables, whatever the source.
+#
+#   physical  : outside this range the value is impossible (usually a nodata
+#               or scaling error) -> set to NaN and counted in the QC report.
+#   plausible : outside this range the value is unusual but possible (an
+#               extreme event, a desert, a high mountain) -> kept, counted,
+#               and reported as a warning.
+#
+# Ranges are inclusive; `null` leaves that side open. Users override them per
+# request with `qc_ranges=` (see agwise_data.qc). Keep them broad: the goal
+# is to catch broken data, not to judge the climate of a region.
+
+version: 1
+
+ranges:
+  # --- daily weather ---------------------------------------------------
+  AGRO.PRCP:   {units: "mm day-1",     physical: [0, 2000],   plausible: [0, 500]}
+  AGRO.TMAX:   {units: "degC",         physical: [-90, 60],   plausible: [-40, 50]}
+  AGRO.TMIN:   {units: "degC",         physical: [-90, 60],   plausible: [-50, 40]}
+  AGRO.TEMP:   {units: "degC",         physical: [-90, 60],   plausible: [-45, 45]}
+  AGRO.SRAD:   {units: "MJ m-2 day-1", physical: [0, 50],     plausible: [0, 35]}
+  AGRO.RHUM:   {units: "%",            physical: [0, 100],    plausible: [1, 100]}
+  AGRO.WIND:   {units: "m s-1",        physical: [0, 75],     plausible: [0, 20]}
+
+  # --- terrain ---------------------------------------------------------
+  TOPO.ELEV:   {units: "m",            physical: [-500, 9000], plausible: [-450, 6500]}
+  TOPO.SLOPE:  {units: "degree",       physical: [0, 90],     plausible: [0, 70]}
+  TOPO.ASPECT: {units: "degree",       physical: [0, 360],    plausible: [0, 360]}
+
+  # --- soil (SoilGrids / iSDA mapped units) ----------------------------
+  SOIL.CLAY:   {units: "%",            physical: [0, 100],    plausible: [0, 100]}
+  SOIL.SAND:   {units: "%",            physical: [0, 100],    plausible: [0, 100]}
+  SOIL.SILT:   {units: "%",            physical: [0, 100],    plausible: [0, 100]}
+  SOIL.PH:     {units: "pH",           physical: [0, 14],     plausible: [3, 10]}
+  SOIL.SOC:    {units: "g kg-1",       physical: [0, 1000],   plausible: [0, 200]}
+  SOIL.NITROGEN: {units: "g kg-1",     physical: [0, 1000],   plausible: [0, 30]}
+  SOIL.CEC:    {units: "cmol(c) kg-1", physical: [0, 500],    plausible: [0, 150]}
+  SOIL.BDOD:   {units: "kg dm-3",      physical: [0, 2.65],   plausible: [0.1, 2.0]}
+  SOIL.CFVO:   {units: "vol%",         physical: [0, 100],    plausible: [0, 90]}
+  SOIL.EXTP:   {units: "mg kg-1",      physical: [0, 10000],  plausible: [0, 500]}
+  SOIL.WV0010: {units: "vol%",         physical: [0, 100],    plausible: [0, 80]}
+  SOIL.WV0033: {units: "vol%",         physical: [0, 100],    plausible: [0, 80]}
+  SOIL.WV1500: {units: "vol%",         physical: [0, 100],    plausible: [0, 70]}
+
+  # --- land cover ------------------------------------------------------
+  LC.CROPLAND: {units: "1",            physical: [0, 1],      plausible: [0, 1]}

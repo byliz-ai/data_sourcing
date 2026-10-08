@@ -70,10 +70,11 @@ def test_harmonized_year_reused_across_products(config):
 def test_get_climate_unit_conversion_applied(config):
     res = get_climate(
         variables="TMAX", years=[2020], bbox=BBOX, freq="daily",
-        source="fake", config=config,
+        source="fake", qc="off", config=config,
     )
     da = res["AGRO.TMAX"]["data"]
     # synthetic Kelvin-ish values are dayofyear; k_to_degc subtracts 273.15
+    # (physically impossible in degC, hence qc="off")
     first = float(da.isel(time=0, lat=0, lon=0))
     assert first == pytest.approx(1 - 273.15)
 

@@ -47,12 +47,16 @@ trazabilidad y reproducibilidad**, justo donde somos más débiles.
 ## 3. Plan de adopción
 
 ### Fase 0 — Correcciones (≈1 semana)
+*Hecha en v0.33.0.*
 - Los 5 defectos anteriores, cada uno con su test.
 - Helper único `retry_with_backoff` inspirado en prismpy
   `sources/common/retry.py:26` (backoff exponencial + jitter, solo errores
   transitorios), aplicado a todos los drivers.
 
 ### Fase 1 — Control de calidad (≈2–3 semanas) · *mayor valor*
+*En curso. v0.34.0: rangos de dos niveles con defaults generales
+(`qc_ranges.yaml`), `qc=`/`qc_ranges=` y `<producto>.qc.json` en
+`get_climate`/`get_static`.*
 - **Rangos de dos niveles** (prismpy `validators/scientific.py:119`): *físico*
   → defecto/rechazo; *plausible* → advertencia. Declarados por variable en el
   catálogo YAML (campo `valid_range` existente), aplicados en

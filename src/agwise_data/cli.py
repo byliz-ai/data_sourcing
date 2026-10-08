@@ -73,6 +73,33 @@ def _add_region_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_qc_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--qc", choices=["warn", "strict", "off"], default="warn",
+        help="Range checks: warn (default: impossible values -> NaN, warn on "
+             "implausible), strict (both -> NaN) or off",
+    )
+    p.add_argument(
+        "--qc-ranges", dest="qc_ranges", type=_parse_qc_ranges,
+        help='Override QC ranges: JSON, e.g. \'{"PRCP": {"plausible": [0, 300]}}\', '
+             "or a path to a JSON/YAML file with that mapping",
+    )
+
+
+def _parse_qc_ranges(value: str) -> dict:
+    path = Path(value)
+    if path.is_file():
+        import yaml
+
+        return yaml.safe_load(path.read_text())  # JSON is valid YAML
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(
+            f"--qc-ranges is neither a file nor valid JSON: {exc}"
+        )
+
+
 def cmd_get(args) -> dict:
     from .api import get_climate
 
@@ -91,6 +118,8 @@ def cmd_get(args) -> dict:
         out_format=[f.strip() for f in args.format.split(",")],
         out_dir=Path(args.out_dir) if args.out_dir else None,
         overwrite=args.overwrite,
+        qc=args.qc,
+        qc_ranges=args.qc_ranges,
     )
     return {
         "ok": True,
@@ -101,6 +130,7 @@ def cmd_get(args) -> dict:
                 "source": info["source"],
                 "nc": str(info["nc"]) if info["nc"] else None,
                 "tif": str(info["tif"]) if info["tif"] else None,
+                "qc": str(info["qc"]) if info.get("qc") else None,
             }
             for var, info in results.items()
         ],
@@ -165,6 +195,8 @@ def cmd_get_static(args) -> dict:
         out_format=[f.strip() for f in args.format.split(",")],
         out_dir=Path(args.out_dir) if args.out_dir else None,
         overwrite=args.overwrite,
+        qc=args.qc,
+        qc_ranges=args.qc_ranges,
     )
     return {
         "ok": True,
@@ -175,6 +207,7 @@ def cmd_get_static(args) -> dict:
                 "source": info["source"],
                 "nc": str(info["nc"]) if info["nc"] else None,
                 "tif": str(info["tif"]) if info["tif"] else None,
+                "qc": str(info["qc"]) if info.get("qc") else None,
             }
             for var, info in results.items()
         ],
@@ -685,6 +718,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_get.add_argument("--domain", help="Cache domain (default: auto)")
     p_get.add_argument("--out-dir", dest="out_dir")
     p_get.add_argument("--overwrite", action="store_true")
+    _add_qc_args(p_get)
     p_get.set_defaults(func=cmd_get)
 
     p_ex = sub.add_parser("extract", help="Extract values at point locations")
@@ -846,6 +880,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_gs.add_argument("--domain", help="Cache domain (default: auto)")
     p_gs.add_argument("--out-dir", dest="out_dir")
     p_gs.add_argument("--overwrite", action="store_true")
+    _add_qc_args(p_gs)
     p_gs.set_defaults(func=cmd_get_static)
 
     p_es = sub.add_parser(

@@ -39,7 +39,8 @@ import pandas as pd
 import xarray as xr
 
 from . import boundaries, catalog, drivers, memory, progress
-from .cache import atomic_write, write_manifest
+from . import qc as _qc
+from .cache import atomic_write, read_manifest, write_manifest
 from .config import (
     Config,
     _cap_dask_scheduler,
@@ -180,6 +181,49 @@ def _product_reusable(nc_path: Path, **expect) -> bool:
     except (OSError, ValueError):
         return True
     return all(meta.get(k, v) == v for k, v in expect.items())
+
+
+def _qc_tag(variable: str, mode: str, overrides) -> str:
+    """Stem suffix for non-default QC settings (empty for the default).
+
+    Default-QC products keep their names; ``qc="off"`` or custom
+    ``qc_ranges`` get their own file instead of overwriting the shared one.
+    """
+    if _qc.is_default(variable, mode, overrides):
+        return ""
+    return "_qcoff" if mode == "off" else f"_qc{_qc.signature(variable, mode, overrides)}"
+
+
+def _qc_current(nc_path: Path, variable: str, mode: str, overrides) -> bool:
+    """Whether a cached product was built with this request's QC.
+
+    Products from before QC existed (no ``qc_signature`` in the manifest, or
+    no ``.qc.json`` report) are rebuilt once from the harmonized cache.
+    """
+    nc_path = Path(nc_path)
+    if not nc_path.exists():
+        return True
+    meta = read_manifest(nc_path)
+    if not meta:
+        return True
+    if meta.get("qc_signature") != _qc.signature(variable, mode, overrides):
+        return False
+    return mode == "off" or _qc.report_path(nc_path).exists()
+
+
+def _qc_finish(nc_path, variable, source_id, mode, overrides, stats):
+    """Compute (if needed), write and announce the product's QC report."""
+    if mode == "off":
+        return None
+    import dask
+
+    with warnings.catch_warnings():  # min/max over all-NaN chunks
+        warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+        (stats,) = dask.compute(stats)  # no-op if the write already computed it
+    report = _qc.build_report(variable, source_id, mode, stats, overrides)
+    path = _qc.write_report(Path(nc_path), report)
+    _qc.emit_warnings(report)
+    return path
 
 
 def _resolve_region(
@@ -418,15 +462,27 @@ def _pinned_cog_workers(config: Config, value: int):
         config.cog_workers = saved
 
 
-def _write_nc_product(da: xr.DataArray, path, encoding: dict) -> None:
+def _write_nc_product(da: xr.DataArray, path, encoding: dict, also=None):
     """Write a product NetCDF atomically (temp file + rename).
 
     A crash mid-write must not leave a half-written or zero-variable ``.nc``
     that a later run treats as a cache hit and fails to open — the failure
     surfaced in a QA run where a broken write poisoned every subsequent call.
+
+    ``also`` (e.g. lazy QC counts) is computed in the same dask pass as the
+    write, so the source data is read once; its computed value is returned.
     """
     with atomic_write(Path(path)) as tmp:
-        da.to_netcdf(tmp, encoding=encoding)
+        if not also:
+            da.to_netcdf(tmp, encoding=encoding)
+            return also
+        import dask
+
+        write = da.to_netcdf(tmp, encoding=encoding, compute=False)
+        with warnings.catch_warnings():  # QC min/max over all-NaN chunks
+            warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+            _, out = dask.compute(write, also)
+    return out
 
 
 def _write_tif_product(da: xr.DataArray, path, labels) -> None:
@@ -498,17 +554,28 @@ def get_climate(
     out_format: Union[str, Sequence[str]] = "nc",
     out_dir: Optional[Path] = None,
     overwrite: bool = False,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ) -> Dict[str, dict]:
     """Fetch, harmonize and cache climate cubes for a region.
 
     Returns ``{canonical_variable: {"nc": Path, "tif": Path|None,
-    "data": xr.DataArray}}``. The NetCDF product is always written (it is
-    the cache); ``out_format`` controls the additional GeoTIFF export.
-    Products are only recomputed with ``overwrite=True``.
+    "qc": Path|None, "data": xr.DataArray}}``. The NetCDF product is always
+    written (it is the cache); ``out_format`` controls the additional GeoTIFF
+    export. Products are only recomputed with ``overwrite=True``.
+
+    ``qc`` range-checks the daily values (see :mod:`agwise_data.qc`):
+    ``"warn"`` (default) sets physically impossible values to NaN and warns
+    about implausible ones, ``"strict"`` sets both to NaN, ``"off"`` skips
+    the checks. ``qc_ranges`` overrides the default ranges, e.g.
+    ``{"PRCP": {"plausible": [0, 300]}}``. The counts are written to
+    ``<product>.qc.json``.
     """
     config = config or Config.load()
     variables = _as_variables(variables)
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     years = _as_years(years)
     if freq not in ("daily", "monthly"):
         raise ValueError("freq must be 'daily' or 'monthly'")
@@ -535,10 +602,14 @@ def get_climate(
         default_id = catalog.source_for(
             var, _effective_source(var, None, config, years))
         stem = (f"{freq.capitalize()}_{short}_{_years_tag(years)}"
-                f"{_source_tag(source_id, default_id)}")
+                f"{_source_tag(source_id, default_id)}"
+                f"{_qc_tag(var, qc_mode, qc_ranges)}")
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        stale = not _product_reusable(nc_path, source_id=source_id)
+        stale = not (
+            _product_reusable(nc_path, source_id=source_id)
+            and _qc_current(nc_path, var, qc_mode, qc_ranges)
+        )
         need_nc = overwrite or stale or not nc_path.exists()
         need_tif = write_tif and (overwrite or stale or not tif_path.exists())
         plans.append(
@@ -558,6 +629,8 @@ def get_climate(
             da = subset_bbox(da, region_bbox, buffer=0.05)
             if gdf is not None:
                 da = clip_geometry(da, gdf).load()  # clip materializes anyway
+            # Ranges are daily, so QC runs before any monthly aggregation.
+            da, qc_stats = _qc.apply(da, var, qc_mode, qc_ranges)
             if freq == "monthly":
                 da = to_monthly(da, var)
             memory.warn_if_over_budget(
@@ -572,24 +645,31 @@ def get_climate(
                 "years": [years[0], years[-1]],
                 "freq": freq,
                 "domain": var_domain,
+                "qc": qc_mode,
+                "qc_signature": _qc.signature(var, qc_mode, qc_ranges),
             }
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                _write_nc_product(da, nc_path, {da.name: nc_encoding(da)})
+                qc_stats = _write_nc_product(
+                    da, nc_path, {da.name: nc_encoding(da)}, also=qc_stats
+                )
                 write_manifest(nc_path, meta)
             if need_tif:
                 _write_tif_product(da, tif_path, labels=time_labels(da, freq))
                 write_manifest(tif_path, meta)
+            _qc_finish(nc_path, var, source_id, qc_mode, qc_ranges, qc_stats)
             # Return the product lazily from disk rather than the loaded cube, so
             # a multi-variable request peaks at one variable, not the sum of all
             # their cubes (the write above streamed the lazy array chunk-by-chunk).
             da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
+        qc_path = _qc.report_path(nc_path)
         results[var] = {
             "short": short_name(var),
             "source": source_id,
             "nc": nc_path if nc_path.exists() else None,
             "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "qc": qc_path if qc_path.exists() else None,
             "data": da,
         }
     return results
@@ -930,18 +1010,23 @@ def get_static(
     out_format: Union[str, Sequence[str]] = "nc",
     out_dir: Optional[Path] = None,
     overwrite: bool = False,
+    qc: str = "warn",
+    qc_ranges: Optional[dict] = None,
     config: Optional[Config] = None,
 ) -> Dict[str, dict]:
     """Fetch, harmonize and cache static layers (soil, DEM) for a region.
 
     Returns ``{canonical_variable: {"nc": Path, "tif": Path|None,
-    "data": xr.DataArray}}`` like :func:`get_climate`. Soil layers carry a
-    ``depth`` dimension (all six SoilGrids depths are cached; ``depths``
-    subsets the returned product). ``TOPO.SLOPE``/``ASPECT``/``TPI``/``TRI``
-    are derived from the cached elevation, fetched once.
+    "qc": Path|None, "data": xr.DataArray}}`` like :func:`get_climate`. Soil
+    layers carry a ``depth`` dimension (all six SoilGrids depths are cached;
+    ``depths`` subsets the returned product). ``TOPO.SLOPE``/``ASPECT``/
+    ``TPI``/``TRI`` are derived from the cached elevation, fetched once.
+    ``qc``/``qc_ranges`` work as in :func:`get_climate`.
     """
     config = config or Config.load()
     variables = _as_static_variables(variables)
+    qc_mode = _qc.resolve_mode(qc)
+    _qc.validate_overrides(qc_ranges)
     formats = [out_format] if isinstance(out_format, str) else list(out_format)
     for f in formats:
         if f not in ("nc", "tif"):
@@ -964,9 +1049,13 @@ def get_static(
         if static_has_depth(var):
             stem += _depth_tag(depths)
         stem += _source_tag(source_id, default_id)
+        stem += _qc_tag(var, qc_mode, qc_ranges)
         nc_path = out_root / f"{stem}.nc"
         tif_path = out_root / f"{stem}.tif" if write_tif else None
-        stale = not _product_reusable(nc_path, source_id=source_id)
+        stale = not (
+            _product_reusable(nc_path, source_id=source_id)
+            and _qc_current(nc_path, var, qc_mode, qc_ranges)
+        )
         need_nc = overwrite or stale or not nc_path.exists()
         need_tif = write_tif and (overwrite or stale or not tif_path.exists())
         plans.append(
@@ -989,6 +1078,7 @@ def get_static(
             da = _subset_depths(da, depths)
             if gdf is not None:
                 da = clip_geometry(da, gdf).load()  # clip materializes anyway
+            da, qc_stats = _qc.apply(da, var, qc_mode, qc_ranges)
             memory.warn_if_over_budget(
                 config.mem_budget_bytes, da.sizes, 4, logger,
                 f"get_static {static_short_name(var)}",
@@ -999,12 +1089,16 @@ def get_static(
                 "variable": var,
                 "region": tag,
                 "domain": var_domain,
+                "qc": qc_mode,
+                "qc_signature": _qc.signature(var, qc_mode, qc_ranges),
             }
             if "depth" in da.dims:
                 meta["depths"] = [str(d) for d in da["depth"].values]
             if need_nc:
                 nc_path.parent.mkdir(parents=True, exist_ok=True)
-                _write_nc_product(da, nc_path, {da.name: static_nc_encoding(da)})
+                qc_stats = _write_nc_product(
+                    da, nc_path, {da.name: static_nc_encoding(da)}, also=qc_stats
+                )
                 write_manifest(nc_path, meta)
             if need_tif:
                 labels = (
@@ -1014,13 +1108,16 @@ def get_static(
                 )
                 _write_tif_product(da, tif_path, labels=labels)
                 write_manifest(tif_path, meta)
+            _qc_finish(nc_path, var, source_id, qc_mode, qc_ranges, qc_stats)
             da = _open_product_da(nc_path) if nc_path.exists() else da.load()
 
+        qc_path = _qc.report_path(nc_path)
         results[var] = {
             "short": static_short_name(var),
             "source": source_id,
             "nc": nc_path if nc_path.exists() else None,
             "tif": tif_path if (tif_path and tif_path.exists()) else None,
+            "qc": qc_path if qc_path.exists() else None,
             "data": da,
         }
     return results

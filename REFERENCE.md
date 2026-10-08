@@ -80,7 +80,7 @@ iSDA: `0-20cm, 20-50cm` (point columns use underscores, e.g. `CLAY_0_5cm`).
 
 Fetch a harmonized daily/monthly **climate cube** for a region.
 
-**Returns:** `{canonical_var: {"nc": Path, "tif": Path|None, "data": DataArray}}`
+**Returns:** `{canonical_var: {"nc": Path, "tif": Path|None, "qc": Path|None, "data": DataArray}}`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -97,6 +97,8 @@ Fetch a harmonized daily/monthly **climate cube** for a region.
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control** below). `warn`: impossible values → NaN, implausible ones kept and warned about; `strict`: both → NaN; `off`: no checks. Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default ranges per variable (any name form); only the levels you give change. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`, `None` for an open side. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
@@ -110,7 +112,7 @@ cube = res["AGRO.PRCP"]["data"]              # (time, lat, lon)
 
 Fetch harmonized **soil / terrain** layers (no time axis).
 
-**Returns:** `{canonical_var: {"nc", "tif", "data"}}` (soil layers carry a `depth` dim)
+**Returns:** `{canonical_var: {"nc", "tif", "qc", "data"}}` (soil layers carry a `depth` dim)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -126,12 +128,43 @@ Fetch harmonized **soil / terrain** layers (no time axis).
 | `out_format` | str \| list[str] | No | `'nc'` | Output format(s). The NetCDF is always written (it *is* the cache); add `tif` for a GeoTIFF. Values: `"nc"`, `"tif"`, `["nc","tif"]`. |
 | `out_dir` | str \| Path | No | `None` → cache | Directory for the output files (see the **Default** column for where it lands when omitted). |
 | `overwrite` | bool | No | `False` | Recompute and overwrite the cached product instead of reusing it. Values: `True`, `False`. |
+| `qc` | str | No | `'warn'` | Range quality control (see **Quality control** below). `warn`: impossible values → NaN, implausible ones kept and warned about; `strict`: both → NaN; `off`: no checks. Values: `"warn"`, `"strict"`, `"off"`. |
+| `qc_ranges` | dict | No | `None` | Override the default ranges per variable (any name form); only the levels you give change. Values: e.g. `{"PRCP": {"plausible": [0, 300]}}`, `None` for an open side. |
 | `config` | Config | No | `None` | Advanced: a preloaded `Config`; omit to load from the environment. |
 
 ```python
 from agwise_data import get_static
 get_static(["CLAY", "PH"], country="Rwanda", depths=["0-5cm", "5-15cm"])
 ```
+
+### Quality control (`qc`, `qc_ranges`)
+
+`get_climate` and `get_static` range-check every product before writing it.
+Each variable has two ranges in its harmonized units, with broad defaults in
+[`src/agwise_data/qc_ranges.yaml`](src/agwise_data/qc_ranges.yaml):
+
+| Level | Meaning | With `qc="warn"` (default) | With `qc="strict"` |
+| --- | --- | --- | --- |
+| **physical** | Impossible (nodata or scaling error, e.g. pH 25.5) | set to NaN | set to NaN |
+| **plausible** | Unusual but possible (extreme storm, desert heat) | kept, `QCWarning` | set to NaN |
+
+Climate ranges apply to the **daily** values, before any monthly aggregation.
+The counts go to `<product>.qc.json` next to the product (returned as
+`res[var]["qc"]`). Default-QC products keep their usual names; `qc="off"` adds
+`_qcoff` and custom `qc_ranges` add `_qc<hash>`, so they never overwrite the
+shared default product. Products built before QC existed are rebuilt once
+from the harmonized cache (nothing is downloaded again). Variables without a
+default range (`TPI`, `TRI`) are only checked if you pass one.
+
+```python
+res = get_climate("PRCP", years=2020, country="Kenya", freq="daily",
+                  qc_ranges={"PRCP": {"plausible": [0, 300]}})
+res["AGRO.PRCP"]["qc"]   # .../Daily_PRCP_2020_2020_qc<hash>.qc.json
+```
+
+R: `ad_get_climate(..., qc = "strict", qc_ranges = list(PRCP = list(plausible = c(0, 300))))`.
+CLI: `--qc strict --qc-ranges '{"PRCP": {"plausible": [0, 300]}}'` (JSON, or a
+path to a JSON/YAML file).
 
 ### `get_dem`
 
@@ -702,3 +735,4 @@ agwise-data cache info        # what is cached, and where
 
 Region flags on the CLI: `--country`, `--admin-level`, `--admin-name`, `--bbox`;
 output flags: `--format nc,tif`, `--out-dir`, `--overwrite`.
+`get` and `get-static` also take `--qc warn|strict|off` and `--qc-ranges`.

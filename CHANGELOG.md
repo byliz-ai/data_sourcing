@@ -5,6 +5,41 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.34.0 — Phase 1 (part 1): two-level range QC with default ranges
+
+First part of the quality-control phase in `docs/prismpy_comparison.md`.
+Default products can change: physically impossible values are now NaN.
+
+- **New `agwise_data.qc` + `qc_ranges.yaml`.** Every canonical variable has a
+  *physical* range (outside = impossible → set to NaN) and a *plausible* range
+  (outside = unusual → kept and reported), in harmonized units, with broad
+  defaults (e.g. PRCP physical 0–2000 / plausible 0–500 mm day-1; pH 0–14 /
+  3–10). TPI/TRI and RS indices have no defaults and are not checked.
+- **`get_climate` and `get_static` take `qc=` and `qc_ranges=`.**
+  `qc="warn"` (default) masks physical outliers and emits a `QCWarning` for
+  plausible ones; `"strict"` masks both; `"off"` skips QC. `qc_ranges`
+  overrides the defaults per variable by any name form, e.g.
+  `{"PRCP": {"plausible": [0, 300]}}`; malformed overrides fail before any
+  fetch. Climate checks run on the daily values, before monthly aggregation.
+- **QC report per product:** `<product>.qc.json` (counts below/above each
+  range, missing input, min/max after QC, warnings), returned as
+  `res[var]["qc"]`. The counts are computed in the same dask pass as the
+  NetCDF write, so the data is still read once.
+- **Product cache:** manifests record `qc` and `qc_signature`. Default-QC
+  products keep their names; `qc="off"` adds `_qcoff` and custom ranges add
+  `_qc<sha1-8>`, so they never overwrite the shared default product. Products
+  built before 0.34 are rebuilt once from the harmonized cache (no refetch).
+  The harmonized cache itself is not modified.
+- **CLI:** `get` and `get-static` take `--qc warn|strict|off` and
+  `--qc-ranges` (JSON or a JSON/YAML file); outputs include the `qc` path.
+  **R:** `ad_get_climate()`/`ad_get_static()` take `qc` and `qc_ranges`
+  (a nested list, sent as JSON).
+- Not yet covered (next Phase 1 parts): `extract_*`, `get_seasonal`,
+  `get_season`, writers; cross-variable checks (TMAX<TMIN, texture sum);
+  nodata gate before scaling; climate gap-fill; post-write validation.
+
+---
+
 ## 0.33.0 — Phase 0 fixes: product cache keys, `-99` sentinels, SLCF, 2 m wind, retries
 
 First batch of the plan in `docs/prismpy_comparison.md`. Output values change

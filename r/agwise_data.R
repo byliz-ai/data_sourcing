@@ -34,6 +34,16 @@ ad_run <- function(args) {
   res
 }
 
+# --qc / --qc-ranges flags for the get / get-static subcommands.
+ad_qc_args <- function(qc, qc_ranges) {
+  out <- c("--qc", qc)
+  if (!is.null(qc_ranges)) {
+    out <- c(out, "--qc-ranges",
+             as.character(jsonlite::toJSON(qc_ranges, auto_unbox = TRUE, na = "null")))
+  }
+  out
+}
+
 #' Fetch a harmonized climate cube for a region.
 #'
 #' Replaces the per-module download-and-stack scripts (e.g.
@@ -46,12 +56,15 @@ ad_run <- function(args) {
 #' @param bbox     c(west, south, east, north)
 #' @param admin_level,admin_name  restrict to one admin unit
 #' @param freq     "monthly" (default) or "daily"
+#' @param qc       range checks: "warn" (default), "strict" or "off"
+#' @param qc_ranges override ranges, e.g.
+#'   list(PRCP = list(plausible = c(0, 300)))
 #' @return a named list of terra::SpatRaster (one per variable), or a single
 #'   SpatRaster when one variable is requested
 ad_get_climate <- function(vars, years, country = NULL, bbox = NULL,
                            admin_level = 0, admin_name = NULL, aoi = NULL,
                            freq = "monthly", source = NULL,
-                           overwrite = FALSE) {
+                           overwrite = FALSE, qc = "warn", qc_ranges = NULL) {
   args <- c("get",
             "--vars", paste(vars, collapse = ","),
             "--years", paste0(min(years), ":", max(years)),
@@ -64,6 +77,7 @@ ad_get_climate <- function(vars, years, country = NULL, bbox = NULL,
   if (!is.null(aoi))        args <- c(args, "--aoi", aoi)
   if (!is.null(source))     args <- c(args, "--source", source)
   if (overwrite)            args <- c(args, "--overwrite")
+  args <- c(args, ad_qc_args(qc, qc_ranges))
 
   res <- ad_run(args)
   rasters <- lapply(res$outputs, function(o) terra::rast(o$tif))
@@ -133,11 +147,13 @@ ad_extract_points <- function(points, vars, start, end, freq = "daily",
 #' @param vars   e.g. c("ELEV", "SLOPE") or c("CLAY", "PH") — short,
 #'   canonical ("SOIL.CLAY") or legacy ("clay", "altitude") names
 #' @param depths soil depth subset, e.g. c("0-5cm", "5-15cm"); NULL = all six
+#' @param qc,qc_ranges range checks, as in ad_get_climate()
 #' @return a named list of terra::SpatRaster (one per variable), or a single
 #'   SpatRaster when one variable is requested
 ad_get_static <- function(vars, country = NULL, bbox = NULL,
                           admin_level = 0, admin_name = NULL, aoi = NULL,
-                          depths = NULL, source = NULL, overwrite = FALSE) {
+                          depths = NULL, source = NULL, overwrite = FALSE,
+                          qc = "warn", qc_ranges = NULL) {
   args <- c("get-static",
             "--vars", paste(vars, collapse = ","),
             "--format", "tif")
@@ -149,6 +165,7 @@ ad_get_static <- function(vars, country = NULL, bbox = NULL,
   if (!is.null(depths))     args <- c(args, "--depths", paste(depths, collapse = ","))
   if (!is.null(source))     args <- c(args, "--source", source)
   if (overwrite)            args <- c(args, "--overwrite")
+  args <- c(args, ad_qc_args(qc, qc_ranges))
 
   res <- ad_run(args)
   rasters <- lapply(res$outputs, function(o) terra::rast(o$tif))
