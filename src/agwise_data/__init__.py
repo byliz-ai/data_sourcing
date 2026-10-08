@@ -17,6 +17,8 @@ Public API (all return a dict of products, a DataFrame, or a list of files):
 * Spatial scaffolding — :func:`make_grid`, :func:`tag_admin`.
 * Seasonal-forecast bias correction — :func:`bias_correct`,
   :func:`forecast_to_dssat`.
+* Provenance — :func:`methods_text` (sources, versions and references of a
+  run or product; see also ``manifest.json`` in every crop-model out_dir).
 
     from agwise_data import get_climate
     result = get_climate(["PRCP", "TMAX"], years=range(2015, 2025),
@@ -39,6 +41,7 @@ from .api import (
     get_soil,
     get_static,
     make_grid,
+    methods_text,
     rainy_days,
     smooth_ndvi,
     tag_admin,
@@ -83,6 +86,7 @@ __all__ = [
     "tag_admin",
     "bias_correct",
     "forecast_to_dssat",
+    "methods_text",
     "Config",
     "__version__",
 ]

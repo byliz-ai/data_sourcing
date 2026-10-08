@@ -53,17 +53,13 @@ class Driver:
         dest = self.config.harmonized_path(self.source_id, domain, short, year)
         partial = year >= date.today().year
 
-        if dest.exists() and not cache.is_stale_partial(
-            dest, self.config.refresh_partial_days
-        ):
+        if self._reusable(dest, variable):
             return dest
 
         self._check_fetch_area(variable, year, domain)
 
         with cache.locked(dest):
-            if dest.exists() and not cache.is_stale_partial(
-                dest, self.config.refresh_partial_days
-            ):
+            if self._reusable(dest, variable):
                 return dest
 
             # Reuse an already-downloaded local file if AGWISE_LOCAL_ROOT is set
@@ -122,6 +118,19 @@ class Driver:
                 },
             )
         return dest
+
+    def _reusable(self, dest: Path, variable: str) -> bool:
+        """An existing harmonized file that is neither a stale partial year
+        nor built with a catalog recipe that has since changed."""
+        if not dest.exists():
+            return False
+        if cache.is_stale_partial(dest, self.config.refresh_partial_days):
+            return False
+        if cache.recipe_stale(dest, self.source_id, canonical_name(variable)):
+            logger.info("Catalog recipe changed for %s %s — rebuilding %s",
+                        self.source_id, variable, dest.name)
+            return False
+        return True
 
     def _check_fetch_area(self, variable: str, year: int, domain: str) -> None:
         """Reject a daily fetch whose window exceeds ``max_fetch_area_deg2``.

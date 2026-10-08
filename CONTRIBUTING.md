@@ -69,7 +69,11 @@ The layer is `catalog → driver → harmonize → cache → api`. To add a sour
 3. **Harmonize** — add the canonical variable (name, units, conversion) to
    `src/agwise_data/harmonize.py` so outputs use the shared `AGRO.*`/`SOIL.*`/
    `TOPO.*`/`RS.*`/`LC.*` names and units. Declare the raster's `nodata` in the
-   catalog so it is masked **before** the unit conversion.
+   catalog so it is masked **before** the unit conversion. Give the entry a
+   `title`, `version` and full `citation`: they feed `manifest.json` and
+   `METHODS.md` ([docs/provenance.md](docs/provenance.md)). Later edits to a
+   variable's recipe (conversion, source name, statistic, nodata) or to
+   `version` rebuild the cached files built with the old recipe.
 4. **Quality ranges** — add the variable to `src/agwise_data/qc_ranges.yaml`
    (same units as `harmonize.py`; a *physical* range for impossible values and
    a broader-than-you-think *plausible* range). `tests/test_qc.py` checks the
@@ -95,6 +99,7 @@ README). Each doc has **one job** and one home for each topic:
 | 4 Workflow, 5 Interfaces | `docs/user_guide.md` | the dataset/area/period/output tables, Python/R/CLI examples |
 | 6 Function reference | `REFERENCE.md` | every function's parameter tables |
 | Data quality | `docs/quality_control.md` | QC behaviour, default ranges, reports, sources/credits |
+| Provenance | `docs/provenance.md` | run manifests, sidecars, recipes, declarations, methods text |
 | AI assistants | `AGENTS.md` (`CLAUDE.md` imports it) | compact task→function map, code map, invariants |
 | History | `CHANGELOG.md` | what changed per version and **why** (include real-data evidence) |
 
@@ -147,20 +152,26 @@ true as the module grows:
 [prismpy](https://github.com/izuku-franck1555/prismpy) — known defects plus a
 phased plan (QC ranges, provenance manifests, SPAM, IDW, NASA POWER, HWSD,
 ISIMIP3b) — is in [docs/prismpy_comparison.md](docs/prismpy_comparison.md).
-**Phase 0 (fixes) and Phase 1 (quality control) are done** (v0.33.0–v0.36.1);
-next is Phase 2 (provenance and reproducibility).
+**Phases 0 (fixes), 1 (quality control) and 2 (provenance) are done**
+(v0.33.0–v0.37.0); next is Phase 3 (new sources and capabilities, to
+prioritize with the team).
 
 ## Lessons that shaped the code (don't undo them)
 
 - **Product NetCDF writes run on dask's synchronous scheduler.** With threads,
   a write that streams from lazily opened NetCDFs deadlocked about 1 run in 5
   on xarray's HDF5 locks (v0.35.0). Never add other computations to a write's
-  dask graph; compute them in a separate pass.
+  dask graph; compute them in a separate pass. The underlying bug was in
+  xarray: a non-blocking `CombinedLock.acquire` leaked the global HDF5 lock
+  when garbage collection closed a lazily opened file. `agwise_data.cache`
+  patches it (v0.37.0); keep the patch until xarray fixes it.
 - **Missing rain is never zero:** monthly sums use `skipna=False`; writers
   never gap-fill rain.
 - **Check an external rule on real data before adopting it.** prismpy drops a
   soil layer whose texture is >5 % off 100 %; on SoilGrids that blanked the
   topsoil of ~1/3 of profiles (fixed in v0.36.1).
+- **Run manifests stay deterministic** (sorted keys, relative paths, no
+  timestamps), so two identical runs can be compared with `diff`.
 
 ## Commits & CI
 

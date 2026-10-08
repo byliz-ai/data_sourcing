@@ -163,6 +163,7 @@ def write_weather(
     wind_height: float = WIND_SOURCE_HEIGHT_M,
     gapfill_days: int = GAPFILL_MAX_DAYS,
     report: Optional[dict] = None,
+    declaration: Sequence[str] = (),
 ) -> List[Path]:
     """Write ORYZA CABO weather files (one per calendar year). Returns the paths.
 
@@ -180,6 +181,9 @@ def write_weather(
     it is converted to 2 m. The files are read back and checked together
     (:func:`.validate.validate_oryza_weather`); ``report`` receives the
     weather QC and the validation.
+
+    ``declaration`` are comment lines (``*`` prefix, which ORYZA skips)
+    naming the package version and data sources, written at the end of the header.
     """
     df = prepare_weather(daily, wind_height=wind_height, lat=lat,
                          gapfill_days=gapfill_days)
@@ -195,6 +199,7 @@ def write_weather(
     for year, grp in df.groupby(df["date"].dt.year):
         lines = _weather_header(id_name, lon, lat, elev,
                                 grp["date"].min(), grp["date"].max())
+        lines[-1:-1] = list(declaration)
         lines.append(station_line)
         for row in grp.itertuples(index=False):
             doy = row.date.timetuple().tm_yday
@@ -276,6 +281,7 @@ def write_soil(
     satav: float = 20.0,
     snh4: float = 0.0,
     sno3: float = 0.0,
+    declaration: Sequence[str] = (),
 ) -> Path:
     """Write one 8-layer ORYZA PADDY ``.sol`` file. Returns the path.
 
@@ -288,6 +294,9 @@ def write_soil(
     (annual mean soil temperature, degC), ``snh4``/``sno3`` (initial mineral N
     per layer, kg ha-1 — 0 = no data). Initial water content defaults to field
     capacity.
+
+    ``declaration`` are comment lines (``*`` prefix, which ORYZA skips)
+    naming the package version and data sources, written in the header.
     """
     L = soil_layers(soil, depths)
     nl = L["n_layers"]
@@ -306,6 +315,7 @@ def write_soil(
     a(f"* Soil        : {id_name} - texture classes: " + "-".join(L["texture"]))
     a(f"* File name    : {Path(path).name}")
     a("* Source       : SoilGrids + Saxton-Rawls pedotransfer (agwise-data)")
+    lines.extend(declaration)
     a("*--------------------------------------------------------------------*")
     a("")
     a("SCODE = 'PADDY'")

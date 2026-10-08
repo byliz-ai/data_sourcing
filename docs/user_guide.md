@@ -143,8 +143,8 @@ extract_growing_season("trials.csv", ["PRCP", "TMAX"],
 | --- | --- | --- |
 | A **raw analysis-ready cube** for a region | `get_climate`, `get_static`, `get_modis`, `get_seasonal`, `get_season` | `{var: {"nc", "tif", "qc", "data"}}` — cached NetCDF (+ optional GeoTIFF) + QC report (climate/soil/forecast) |
 | A **table of values at points** | `extract_points`, `extract_growing_season`, `extract_static_points` | a `DataFrame` / CSV (QC report in `df.attrs["qc"]`) |
-| **Crop-model input files** | `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | files written under `out_dir` + `qc_report.json` |
-| Crop-model files from a **corrected forecast** | `forecast_to_dssat` | DSSAT files under `out_dir` + `qc_report.json` |
+| **Crop-model input files** | `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | files written under `out_dir` + `qc_report.json` + `manifest.json` + `METHODS.md` |
+| Crop-model files from a **corrected forecast** | `forecast_to_dssat` | DSSAT files under `out_dir` + the same three reports |
 
 Add a GeoTIFF next to the NetCDF with `out_format=["nc", "tif"]`. Reuse work
 across engines by passing `weather=`/`soil=` frames you already extracted, so
@@ -183,6 +183,17 @@ You don't need to do anything: every call checks its data
 For crop-model runs, open `<out_dir>/qc_report.json`. It lists, per point, the
 days gap-filled, TMIN/TMAX swaps, soil texture fixes, and whether each written
 file passed validation.
+
+### 4.6 Cite the data and keep the run reproducible
+
+Every crop-model run also writes `<out_dir>/METHODS.md`: a paragraph naming
+each dataset and version and the processing steps, followed by the full
+references. Paste it into your report. `<out_dir>/manifest.json` lists every
+file with its checksum, plus the sources and parameters. Two identical runs
+give the same manifest, so `diff` shows what changed between runs. For a cube,
+`methods_text("…/Daily_PRCP_2015_2024.nc")` gives the same paragraph
+(R `ad_methods_text`, CLI `agwise-data methods`). Details:
+[provenance.md](provenance.md).
 
 ---
 
@@ -299,6 +310,7 @@ agwise-data smooth-ndvi --years 2021:2021 --country Rwanda
 | `extract_static_points` | `ad_extract_static_points` | `extract-static` |
 | `to_dssat` / `to_apsim` / `to_wofost` / `to_oryza` | `ad_to_dssat` / … | `to-dssat` / `to-apsim` / `to-wofost` / `to-oryza` |
 | `make_grid` / `tag_admin` | `ad_make_grid` / `ad_tag_admin` | `make-grid` / `tag-admin` |
+| `methods_text` | `ad_methods_text` | `methods` |
 | `bias_correct` / `forecast_to_dssat` | `ad_bias_correct` / `ad_forecast_to_dssat` | `bias-correct` / `forecast-to-dssat` |
 
 Inspect the catalog and cache from the CLI at any time:

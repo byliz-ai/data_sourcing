@@ -63,6 +63,7 @@ top to bottom; each is a self-contained step of the journey.
 | 5 | **User interface (Python / R / CLI / Claude Code)** | [docs/user_guide.md](docs/user_guide.md#5-user-interface--python--r--cli--claude-code) | run the same task in the language you prefer |
 | 6 | **Function documentation** | [REFERENCE.md](REFERENCE.md) | look up every function: parameters, types, defaults, examples |
 | 6b | **Data quality (QC)** | [docs/quality_control.md](docs/quality_control.md) | understand why a value is `NaN`, what a `QCWarning` means, how to read `qc_report.json` |
+| 6c | **Provenance** | [docs/provenance.md](docs/provenance.md) | cite the data (`METHODS.md`), check files with `manifest.json`, read `.meta.json` |
 | 7 | **General improvements** | [CONTRIBUTING.md](CONTRIBUTING.md) | maintainer notes and suggested next steps |
 
 Runnable end-to-end scripts (Python + R) are in **[examples/](examples/)**;
@@ -169,7 +170,7 @@ crop-model runs). `qc="strict"` also removes the unusual values, and
 | --- | --- | --- |
 | `get_climate`, `get_static`, `get_seasonal`, `get_season`, `get_modis` | `{variable: {"nc", "tif", "qc", "data"}}`; `data` is an `xarray.DataArray` (`get_modis` and `get_season` return no `"qc"`; a climate season slice inherits the checks of its `get_climate` product) | `<Kind>_<VAR>_….nc` (+ `.tif` if asked) + `.meta.json` (provenance) + `.qc.json` (quality) |
 | `extract_points`, `extract_growing_season`, `extract_static_points` | a `pandas.DataFrame` (QC in `df.attrs["qc"]`) | a CSV when run from the CLI/R (+ `.qc.json`) |
-| `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | a list, one entry per point, with its files and `"qc"` | one `EXTE<n>/` folder per point + `qc_report.json` |
+| `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` | a list, one entry per point, with its files and `"qc"` | one `EXTE<n>/` folder per point + `qc_report.json` + `manifest.json` + `METHODS.md` ([provenance](docs/provenance.md)) |
 
 Gridded products land in the shared cache (`Processed/products/<region>/`)
 unless you pass `out_dir=`. Crop-model files land in your `out_dir`.
@@ -266,6 +267,7 @@ data_sourcing/
 │   ├── cglabs_setup.md        ← Section 2 (shared-server deep dive)
 │   ├── user_guide.md          ← Sections 4–5
 │   ├── quality_control.md     ← data quality checks and reports
+│   ├── provenance.md          ← manifests, checksums, methods text
 │   └── prismpy_comparison.md  ← comparison with prismpy + roadmap (Spanish)
 ├── examples/              ← runnable quickstart.py / quickstart.R
 ├── src/agwise_data/       ← the Python package (you don't need to read it)
@@ -310,6 +312,8 @@ follow the **[user workflow (Section 4)](docs/user_guide.md)**.
   with all its parameters, types, defaults and a runnable example.
 - **[Data quality](docs/quality_control.md):** what is checked, what a
   `QCWarning` means, and how to read the reports.
+- **[Provenance](docs/provenance.md):** where each file came from, the
+  run manifest, and a ready-made methods paragraph with citations.
 - **[Section 7 — General improvements](CONTRIBUTING.md):** maintainer notes.
 
 ## License

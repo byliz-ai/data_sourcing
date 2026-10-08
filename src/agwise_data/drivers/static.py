@@ -61,11 +61,11 @@ class StaticDriver:
         short = static_short_name(canonical)
         dest = self.config.static_path(self.source_id, domain, short)
 
-        if dest.exists():
+        if self._reusable(dest, canonical):
             return dest
 
         with cache.locked(dest):
-            if dest.exists():
+            if self._reusable(dest, canonical):
                 return dest
 
             from .local import fetch_local_static
@@ -107,6 +107,16 @@ class StaticDriver:
                 },
             )
         return dest
+
+    def _reusable(self, dest: Path, canonical: str) -> bool:
+        """An existing harmonized layer whose catalog recipe is unchanged."""
+        if not dest.exists():
+            return False
+        if cache.recipe_stale(dest, self.source_id, canonical):
+            logger.info("Catalog recipe changed for %s %s — rebuilding %s",
+                        self.source_id, canonical, dest.name)
+            return False
+        return True
 
     def open_static(self, variable: str, domain: str) -> xr.DataArray:
         """Open the harmonized static layer (lazy)."""

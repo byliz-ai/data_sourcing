@@ -82,6 +82,13 @@ de .WTH/.met/.SOL/WOFOST/ORYZA con `qc_report.json` por corrida.*
 - Entregable: `qc_report.json` junto a cada producto.
 
 ### Fase 2 — Trazabilidad y reproducibilidad (≈2 semanas)
+*Hecha en v0.37.0 ([provenance.md](provenance.md)). Un cambio respecto al
+plan: la versión del catálogo no va en el nombre del archivo de caché. Cada
+`.meta.json` guarda una "receta" (digest de la versión del dataset y de cómo se
+lee la variable). Si la receta cambia, el archivo se reconstruye en su mismo
+lugar. Así los productos por defecto conservan su nombre y se siguen
+compartiendo, y los archivos anteriores a v0.37 (sin receta) siguen siendo
+válidos.*
 - `.meta.json` ampliado: SHA256 del archivo, versión de `agwise_data`,
   `catalog_version` (incluirla también en la clave de caché) y lista de
   transformaciones aplicadas (unidades, recorte, regrid, gap-fill, bias-correct).
@@ -119,9 +126,9 @@ de .WTH/.met/.SOL/WOFOST/ORYZA con `qc_report.json` por corrida.*
 - El volumen de tests "sprint-pinned": tomar el patrón, no la cantidad.
 
 ## 5. Siguiente paso
-Las **Fases 0 y 1** están hechas (v0.33.0–v0.36.0). Sigue la **Fase 2**
-(trazabilidad y reproducibilidad); la Fase 4 (tests y CI) puede avanzar en
-paralelo.
+Las **Fases 0, 1 y 2** están hechas (v0.33.0–v0.37.0). Sigue la **Fase 3**
+(nuevas capacidades, a priorizar con el equipo); la Fase 4 (tests y CI) puede
+avanzar en paralelo.
 
 ## 6. Lo aprendido al aplicar la Fase 1 con datos reales
 
@@ -149,6 +156,11 @@ paralelo.
   aunque prismpy evolucione. La tabla de qué idea se adoptó, desde qué archivo
   y cómo se adaptó está en
   [quality_control.md §7](quality_control.md#7-sources-and-credits).
+- Fase 2: prismpy [`packaging/manifest.py`](https://github.com/izuku-franck1555/prismpy/blob/cfe0219a8f8ef59d43c5af8cabea01d4097643d3/src/prismpy/packaging/manifest.py)
+  (manifest determinista con SHA256) y
+  [`packaging/soil_declaration.py`](https://github.com/izuku-franck1555/prismpy/blob/cfe0219a8f8ef59d43c5af8cabea01d4097643d3/src/prismpy/packaging/soil_declaration.py)
+  (declaración de la fuente dentro del archivo). Se adaptaron como ideas, sin
+  copiar código: ver [provenance.md](provenance.md).
 - Allen et al. (1998), FAO-56: ec. 21 (radiación extraterrestre Ra) y ec. 47
   (viento 10 m → 2 m).
 - Poggio et al. (2021), SoilGrids 2.0, *SOIL* 7:217-240.

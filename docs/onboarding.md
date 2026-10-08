@@ -100,13 +100,16 @@ zero credentials (README §2.4 "First success").
   folder you own and describe the task — it picks the function, runs it, and
   reports the output path (`docs/user_guide.md` §5.3).
 - **Runnable quickstarts:** `examples/quickstart.py` / `examples/quickstart.R`.
-- The public API is 22 functions (`get_climate`, `extract_points`,
+- The public API is 23 functions (`get_climate`, `extract_points`,
   `get_soil`/`get_dem`, `get_seasonal`, `get_modis`, `to_dssat`/`to_apsim`/
   `to_wofost`/`to_oryza`, `bias_correct`, …), each with an `ad_*` R wrapper and a
   CLI subcommand.
 - **Data quality is checked for you** (since v0.34): impossible values become
   missing, unusual ones trigger a `QCWarning`, and every crop-model run writes a
   `qc_report.json`. When something looks off, read `docs/quality_control.md`.
+- **Every run is traceable** (since v0.37): crop-model runs also write
+  `manifest.json` (files + checksums, sources, parameters) and `METHODS.md`
+  (a paragraph with citations, ready for a report) — `docs/provenance.md`.
 - **Using an AI assistant?** `AGENTS.md` in the repo is written for it. Claude
   Code loads it automatically only when started inside the repo folder.
 
@@ -143,7 +146,8 @@ first success) → **docs/credentials_setup.md** (CDS + Earth Engine, click by
 click) → **docs/cglabs_setup.md** (shared-server ops: from-scratch install,
 data roots, R, performance, the ~32 GB container ceiling) → **docs/user_guide.md**
 (workflow + interfaces) → **REFERENCE.md** (function reference) →
-**docs/quality_control.md** (data quality) → **CONTRIBUTING.md**.
+**docs/quality_control.md** (data quality) → **docs/provenance.md**
+(manifests, citations) → **CONTRIBUTING.md**.
 
 ---
 

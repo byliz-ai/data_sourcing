@@ -21,6 +21,7 @@ the lookup you return to.
 - [6.3 Crop-model input files](#63-crop-model-input-files-return-the-list-of-files-written)
 - [6.4 Spatial scaffolding](#64-spatial-scaffolding-return-dataframes)
 - [6.5 Seasonal-forecast bias correction](#65-seasonal-forecast-bias-correction)
+- [6.6 Provenance](#66-provenance) — `methods_text`, run manifests, sidecars
 - [R and CLI equivalents](#r-and-cli-equivalents)
 
 ---
@@ -48,7 +49,12 @@ guidance: [user guide §4.1](docs/user_guide.md#41-decision-1--select-the-study-
 - *Point extraction* → a `pandas.DataFrame`; its QC reports are in
   `df.attrs["qc"]`.
 - *Crop-model writers* → a `list` of the files written per point, each with a
-  `"qc"` record; the run also writes `<out_dir>/qc_report.json`.
+  `"qc"` record; the run also writes `<out_dir>/qc_report.json`,
+  `<out_dir>/manifest.json` (files + SHA256, sources, parameters) and
+  `<out_dir>/METHODS.md` ([docs/provenance.md](docs/provenance.md)).
+- *Point extraction* frames also carry `df.attrs["provenance"]`
+  (`{canonical: {"source", "recipe"}}`); every cached file has a
+  `<file>.meta.json` sidecar with version, SHA256, recipe and steps.
 
 **Quality control** (`qc=`, `qc_ranges=`) is on by default in every data and
 writer function. Impossible values become `NaN`, unusual ones are kept with a
@@ -485,6 +491,12 @@ n = rainy_days(cube, threshold=2.0)
 - **Report:** `<out_dir>/qc_report.json`, plus `"qc"` on each returned entry. A
   `QCWarning` is raised if any file fails validation. Single-file writers
   take `gapfill_days=` (0 = off) and `report=` (a dict to fill).
+- **Provenance** ([details](docs/provenance.md)): every run also writes a
+  deterministic `<out_dir>/manifest.json` (each file with its SHA256, sources
+  and citations, parameters, processing steps, QC summary) and
+  `<out_dir>/METHODS.md`. `.WTH`, `.SOL`, `.met` and ORYZA files start with
+  comment lines naming the agwise-data version and the sources. The
+  single-file writers take `declaration=` (a list of comment lines).
 
 ### `to_dssat`
 
@@ -751,6 +763,32 @@ forecast_to_dssat("trials.csv", init_month=2, forecast_year=2024,
                   calib_years=range(1993, 2017), out_dir="DSSAT_fc",
                   station_col="site")
 ```
+
+---
+
+## 6.6 Provenance
+
+### `methods_text`
+
+A **methods paragraph** for a run or a product: agwise-data version, which
+variable came from which dataset and version, processing steps, and full
+references (dataset citations from the catalog plus method papers). The
+crop-model writers already save it as `<out_dir>/METHODS.md`.
+
+**Returns:** `str`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | str \| Path | Yes | — | A crop-model `out_dir`, its `manifest.json`, or a cached product (`.nc`/`.tif`, whose `.meta.json` sidecar is read). |
+
+```python
+from agwise_data import methods_text
+print(methods_text("DSSAT"))
+```
+
+R: `ad_methods_text("DSSAT", out = "methods.md")` · CLI: `agwise-data methods DSSAT --out methods.md`.
+Helpers for scripts are in `agwise_data.provenance` (`sha256_file`,
+`recipe`, `source_info`). Full guide: [docs/provenance.md](docs/provenance.md).
 
 ---
 

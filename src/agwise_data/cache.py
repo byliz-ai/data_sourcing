@@ -32,6 +32,42 @@ CHUNK = 8 * 1024 * 1024
 # netCDF open/load/write that can run inside a prefetch worker thread;
 # downloads stay parallel — only the netCDF I/O is serialized.
 NC_LOCK = threading.RLock()
+
+
+def _fix_xarray_combined_lock() -> None:
+    """Make xarray's non-blocking ``CombinedLock.acquire`` all-or-nothing.
+
+    xarray (seen in 2026.7) does ``all(acquire(l, blocking=False) for l in
+    locks)``: when the first lock is taken and a later one is busy, it
+    returns False *without releasing the first*. ``CachingFileManager.__del__``
+    makes exactly that call when garbage collection closes a lazily opened
+    NetCDF, so a GC pass at the wrong moment left xarray's global HDF5 lock
+    held forever and the next NetCDF write hung (intermittent test-suite and
+    prefetch deadlocks; 1/2 of attempts leak in a direct reproduction).
+    """
+    try:
+        from xarray.backends import locks as xr_locks
+    except ImportError:  # pragma: no cover - xarray is a hard dependency
+        return
+    cls = xr_locks.CombinedLock
+    if getattr(cls, "_agwise_all_or_nothing", False):
+        return
+
+    def acquire(self, blocking=True):
+        taken = []
+        for lock in self.locks:
+            if not xr_locks.acquire(lock, blocking=blocking):
+                for held in reversed(taken):
+                    held.release()
+                return False
+            taken.append(lock)
+        return True
+
+    cls.acquire = acquire
+    cls._agwise_all_or_nothing = True
+
+
+_fix_xarray_combined_lock()
 # Below this size a single stream is fine; above it, parallel range
 # requests meaningfully beat one TCP connection's throughput.
 PART_MIN_BYTES = 64 * 1024 * 1024
@@ -175,13 +211,21 @@ def manifest_path(data_path: Path) -> Path:
 
 
 def write_manifest(data_path: Path, meta: dict) -> Path:
-    """Write the provenance sidecar for a cached file."""
+    """Write the provenance sidecar for a cached file.
+
+    Besides ``meta`` it records the package version, the file's SHA256 and
+    size, the catalog recipe of the source variable and the processing steps
+    (see :func:`agwise_data.provenance.enrich_sidecar`).
+    """
+    from .provenance import enrich_sidecar
+
     record = {
         "file": data_path.name,
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "created_by": "agwise-data",
         **meta,
     }
+    record.update(enrich_sidecar(data_path, record))
     mpath = manifest_path(data_path)
     with atomic_write(mpath) as tmp:
         tmp.write_text(json.dumps(record, indent=2, default=str))
@@ -196,6 +240,14 @@ def read_manifest(data_path: Path) -> dict:
         return json.loads(mpath.read_text())
     except json.JSONDecodeError:
         return {}
+
+
+def recipe_stale(data_path: Path, source_id: str, variable: str) -> bool:
+    """True if the file was built with a catalog recipe that has since changed."""
+    from .provenance import recipe_current
+
+    meta = read_manifest(data_path)
+    return bool(meta) and not recipe_current(meta, source_id, variable)
 
 
 def is_stale_partial(data_path: Path, max_age_days: int) -> bool:

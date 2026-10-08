@@ -9,7 +9,7 @@ and APSIM read it back), removing the weather half of the per-module
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -38,6 +38,7 @@ def write_met(
     comments: Optional[str] = None,
     gapfill_days: int = GAPFILL_MAX_DAYS,
     report: Optional[dict] = None,
+    declaration: Sequence[str] = (),
 ) -> Path:
     """Write one APSIM ``.met`` file.
 
@@ -46,6 +47,9 @@ def write_met(
     written into the header (APSIM requires both). The file is read back and
     checked (:func:`.validate.validate_met`); ``report`` receives the weather
     QC and the validation. Returns the written path.
+
+    ``declaration`` are comment lines (``!`` prefix, which APSIM skips)
+    naming the package version and data sources, written after the first comment line.
     """
     df = prepare_weather(daily, lat=lat, gapfill_days=gapfill_days)
     if df.empty:
@@ -54,6 +58,7 @@ def write_met(
 
     header = [
         comments or "! weather derived from AgWise harmonized climate",
+        *declaration,
         "[weather.met.weather]",
         f"site = {site}",
         f"latitude = {lat}",

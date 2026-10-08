@@ -9,7 +9,7 @@ per-module ``readGeo_CM_zone.R`` weather half. The soil (.SOL) half lives in
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -59,6 +59,7 @@ def write_wth(
     wndht: float = 2.0,
     gapfill_days: int = GAPFILL_MAX_DAYS,
     report: Optional[dict] = None,
+    declaration: Sequence[str] = (),
 ) -> Path:
     """Write one DSSAT ``.WTH`` file.
 
@@ -67,6 +68,9 @@ def write_wth(
     derived from the series. The written file is read back and checked
     (:func:`.validate.validate_wth`); pass a dict as ``report`` to receive
     the weather QC and the validation. Returns the written path.
+
+    ``declaration`` are comment lines (``!`` prefix, which DSSAT skips)
+    naming the package version and data sources, written after the ``$WEATHER`` line.
     """
     df = prepare_weather(daily, lat=lat, gapfill_days=gapfill_days)
     if df.empty:
@@ -74,7 +78,7 @@ def write_wth(
     tav, amp = tav_amp(df)
     insi = station_code(station)
 
-    lines = ["$WEATHER: ", "", ""]
+    lines = ["$WEATHER: ", *declaration, "", ""]
     lines.append(_GENERAL_HEADER)
     lines.append(_fmt_general(insi, lat, lon, elev, tav, amp, refht, wndht))
     lines.append("")

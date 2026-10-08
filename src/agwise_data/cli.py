@@ -470,6 +470,26 @@ def _cm_qc_report(res) -> Optional[str]:
     return str(path) if path.exists() else None
 
 
+def _cm_provenance(res) -> dict:
+    """Paths of the run's ``manifest.json`` and ``METHODS.md``."""
+    out = {"manifest": None, "methods": None}
+    if res:
+        root = Path(res[0]["dir"]).parent
+        for key, name in (("manifest", "manifest.json"), ("methods", "METHODS.md")):
+            if (root / name).exists():
+                out[key] = str(root / name)
+    return out
+
+
+def cmd_methods(args) -> dict:
+    from .provenance import methods_text
+
+    text = methods_text(args.path)
+    if args.out:
+        Path(args.out).write_text(text + "\n")
+    return {"ok": True, "methods": text, "out": args.out}
+
+
 def cmd_to_dssat(args) -> dict:
     from .api import to_dssat
 
@@ -494,6 +514,7 @@ def cmd_to_dssat(args) -> dict:
         "ok": True,
         "n_points": len(res),
         "qc_report": _cm_qc_report(res),
+        **_cm_provenance(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
              "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
@@ -524,6 +545,7 @@ def cmd_to_apsim(args) -> dict:
         "ok": True,
         "n_points": len(res),
         "qc_report": _cm_qc_report(res),
+        **_cm_provenance(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
              "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
@@ -554,6 +576,7 @@ def cmd_to_wofost(args) -> dict:
         "ok": True,
         "n_points": len(res),
         "qc_report": _cm_qc_report(res),
+        **_cm_provenance(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
              "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
@@ -584,6 +607,7 @@ def cmd_to_oryza(args) -> dict:
         "ok": True,
         "n_points": len(res),
         "qc_report": _cm_qc_report(res),
+        **_cm_provenance(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
              "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
@@ -653,6 +677,7 @@ def cmd_forecast_to_dssat(args) -> dict:
         "ok": True,
         "n_points": len(res),
         "qc_report": _cm_qc_report(res),
+        **_cm_provenance(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
              "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
@@ -1098,6 +1123,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_tag.add_argument("--lon-col", dest="lon_col")
     p_tag.add_argument("--lat-col", dest="lat_col")
     p_tag.set_defaults(func=cmd_tag_admin)
+
+    p_me = sub.add_parser(
+        "methods",
+        help="Methods paragraph (sources, versions, steps, references) for a "
+             "crop-model run folder, its manifest.json or a cached product",
+    )
+    p_me.add_argument("path", help="Run out_dir, manifest.json, or product .nc/.tif")
+    p_me.add_argument("--out", help="Also write the text to this file")
+    p_me.set_defaults(func=cmd_methods)
 
     p_cat = sub.add_parser("catalog", help="Inspect the dataset catalog")
     p_cat.add_argument("action", choices=["list", "show", "stac"])

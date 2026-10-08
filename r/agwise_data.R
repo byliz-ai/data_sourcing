@@ -691,6 +691,18 @@ ad_extract_static_points <- function(points, vars, depths = NULL,
   utils::read.csv(res$outputs[[1]]$csv)
 }
 
+#' Methods paragraph for a crop-model run or a cached product.
+#'
+#' `path` is a to_dssat/to_apsim/to_wofost/to_oryza out_dir (or its
+#' manifest.json) or a product .nc/.tif. Returns the text (agwise-data
+#' version, datasets and versions, processing steps, full references), ready
+#' to paste into a report. Pass `out` to also save it to a file.
+ad_methods_text <- function(path, out = NULL) {
+  args <- c("methods", path)
+  if (!is.null(out)) args <- c(args, "--out", out)
+  ad_run(args)$methods
+}
+
 #' Where is the shared cache?
 ad_cache_path <- function() {
   ad_run(c("cache", "path"))$root

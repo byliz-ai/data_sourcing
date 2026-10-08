@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from . import boundaries, catalog, drivers, memory, progress
+from . import boundaries, catalog, drivers, memory, progress, provenance
 from . import qc as _qc
 from .cache import atomic_write, read_manifest, write_manifest
 from .config import (
@@ -169,7 +169,8 @@ def _product_reusable(nc_path: Path, **expect) -> bool:
 
     A product whose manifest records a different value for any ``expect``
     key (e.g. another ``source_id``, because the default source changed) is
-    stale and must be rebuilt. A product without a readable manifest is
+    stale and must be rebuilt, as is one whose catalog recipe has changed
+    since (:func:`provenance.recipe`). A product without a readable manifest is
     reused, as before (sidecars have been written alongside every product).
     """
     import json
@@ -180,6 +181,9 @@ def _product_reusable(nc_path: Path, **expect) -> bool:
         meta = json.loads(manifest_path(Path(nc_path)).read_text())
     except (OSError, ValueError):
         return True
+    if meta.get("source_id") and meta.get("variable") and not \
+            provenance.recipe_current(meta, meta["source_id"], meta["variable"]):
+        return False  # the catalog changed how this variable is read
     return all(meta.get(k, v) == v for k, v in expect.items())
 
 
@@ -811,6 +815,10 @@ def extract_points(
     )
     out = out[["point", lon_col, lat_col, "time", "variable", "value"]]
     out.attrs["qc"] = reports
+    out.attrs["provenance"] = {
+        var: provenance.variable_record(var, driver.source_id)
+        for var, driver, _ in plans
+    }
     return out
 
 
@@ -934,6 +942,10 @@ def extract_growing_season(
         col.loc[sub.index] = values
         out[name] = col
     out.attrs["qc"] = reports
+    out.attrs["provenance"] = {
+        var: provenance.variable_record(var, driver.source_id)
+        for var, driver, _ in plans
+    }
     return out
 
 
@@ -1803,6 +1815,7 @@ def _season_long_points(
 
     frames = []
     reports: Dict[str, dict] = {}
+    prov: Dict[str, dict] = {}
     for var in variables:
         kind, canon = _classify_season_var(var)
         if kind == "rs":
@@ -1823,6 +1836,7 @@ def _season_long_points(
                 series, canon, source_id, qc_mode, qc_ranges, reports,
                 stacklevel=6,
             )
+            prov[canon] = provenance.variable_record(canon, source_id)
             if freq == "monthly":
                 series = to_monthly(series, canon)
             label = short_name(canon)
@@ -1852,6 +1866,7 @@ def _season_long_points(
     out = pd.concat(frames, ignore_index=True)
     out = out[["point", lon_col, lat_col, "time", "variable", "value"]]
     out.attrs["qc"] = reports
+    out.attrs["provenance"] = prov
     return out
 
 
@@ -2327,6 +2342,11 @@ def extract_static_points(
                 out[f"EXTP_{d}"].to_numpy(), calcareous=calcareous
             )
     out.attrs["qc"] = reports
+    out.attrs["provenance"] = {
+        var: provenance.variable_record(
+            var, catalog.static_source_for(var, source))
+        for var in variables
+    }
     return out
 
 
@@ -2396,6 +2416,8 @@ def _cm_inputs(
                     # only the depth-value columns, not the _fill_m companion
                     if c.startswith("EXTP_") and c != "EXTP_fill_m":
                         soil[c] = pcols[c]
+                soil.attrs.setdefault("provenance", {}).update(
+                    pcols.attrs.get("provenance") or {})
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Could not extract phosphorus (EXTP) for the .SOL P "
@@ -2410,6 +2432,8 @@ def _cm_inputs(
                 for c in ccols.columns:
                     if c.startswith("CFVO_") and c != "CFVO_fill_m":
                         soil[c] = ccols[c]
+                soil.attrs.setdefault("provenance", {}).update(
+                    ccols.attrs.get("provenance") or {})
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Could not extract coarse fragments (CFVO) for .SOL SLCF "
@@ -2430,9 +2454,12 @@ def _cm_inputs(
     elev = None
     if need_elev and sourcing_statics:
         try:
-            elev = extract_static_points(
+            ecols = extract_static_points(
                 df, ["ELEV"], lon_col=lon_col, lat_col=lat_col, config=config,
-            )["ELEV"]
+            )
+            elev = ecols["ELEV"]
+            soil.attrs.setdefault("provenance", {}).update(
+                ecols.attrs.get("provenance") or {})
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Could not fetch elevation for the weather header (%s) — "
@@ -2499,6 +2526,108 @@ def _write_cm_qc_report(out_dir: Path, records: List[dict]) -> Optional[Path]:
     return path
 
 
+def _cm_variables(weather: pd.DataFrame, soil: pd.DataFrame) -> Dict[str, dict]:
+    """Per-variable provenance of a crop-model run's weather and soil frames.
+
+    Frames produced by the layer carry ``attrs["provenance"]``; a frame the
+    caller built some other way is recorded as ``user-supplied``.
+    """
+    out: Dict[str, dict] = {}
+    wprov = (weather.attrs.get("provenance") or {}) if weather is not None else {}
+    if wprov:
+        out.update(wprov)
+    elif weather is not None and "variable" in weather:
+        for v in sorted(weather["variable"].dropna().unique()):
+            try:
+                out[canonical_name(str(v))] = {"source": "user-supplied"}
+            except (KeyError, ValueError):
+                out[f"AGRO.{v}"] = {"source": "user-supplied"}
+    sprov = (soil.attrs.get("provenance") or {}) if soil is not None else {}
+    if sprov:
+        out.update(sprov)
+    elif soil is not None:
+        out["SOIL.*"] = {"source": "user-supplied"}
+    for frame in (weather, soil):
+        for var, rep in ((frame.attrs.get("qc") or {}) if frame is not None
+                         else {}).items():
+            if var in out and rep.get("mode"):
+                out[var] = {**out[var], "qc": rep["mode"],
+                            "qc_signature": rep.get("signature")}
+    return out
+
+
+def _cm_finish(
+    function: str, out_dir: Path, written: List[dict], df: pd.DataFrame,
+    lon_col: str, lat_col: str, variables: Dict[str, dict],
+    parameters: dict, transforms: Sequence[str],
+) -> None:
+    """Write the run's ``qc_report.json``, ``METHODS.md`` and ``manifest.json``.
+
+    The manifest is deterministic (see :mod:`agwise_data.provenance`): it
+    lists every written file with its SHA256, the sources with citations,
+    the parameters and the processing steps.
+    """
+    from .writers.validate import summarize
+
+    records = [w["qc"] for w in written]
+    qc_path = _write_cm_qc_report(out_dir, records)
+    if not written:
+        return
+    manifest = provenance.build_run_manifest(
+        function, out_dir, written, variables,
+        parameters={k: v for k, v in parameters.items() if v is not None},
+        points=provenance.points_digest(df, lon_col, lat_col),
+        transforms=transforms,
+        qc_summary={**summarize(records), "report": "qc_report.json"},
+        extra_files=[qc_path] if qc_path else [],
+    )
+    provenance.write_run(out_dir, manifest)
+
+
+def _cm_parameters(**params) -> dict:
+    """JSON-able run parameters: frames become a marker, paths strings."""
+    out = {}
+    for k, v in params.items():
+        if isinstance(v, pd.DataFrame):
+            v = "<DataFrame supplied>"
+        elif isinstance(v, Path):
+            v = str(v)
+        out[k] = v
+    return out
+
+
+def _cm_transforms(weather: pd.DataFrame, soil: pd.DataFrame,
+                   extra: Sequence[str] = ()) -> List[str]:
+    """The :data:`provenance.TRANSFORMS` keys a crop-model run applied.
+
+    Steps of the extraction are only claimed for frames the layer produced
+    (they carry ``attrs["provenance"]``); range QC only when it ran.
+    """
+    steps = []
+    if weather.attrs.get("provenance") or soil.attrs.get("provenance"):
+        steps.append("point_nearest")
+    if soil.attrs.get("provenance"):
+        steps.append("soil_fill")
+    if weather.attrs.get("qc") or soil.attrs.get("qc"):
+        steps.append("qc_ranges")
+    steps += list(extra)
+    steps += ["weather_checks", "gapfill", "texture_normalize", "saxton_rawls"]
+    return steps
+
+
+def methods_text(path) -> str:
+    """Methods paragraph for a run or product, ready for a report or paper.
+
+    ``path`` is a crop-model ``out_dir`` (or its ``manifest.json``), or a
+    cached product (``.nc``/``.tif``) whose ``.meta.json`` sidecar is read.
+    Returns the text: the agwise-data version, which variables came from
+    which dataset and version, the processing steps, and the full
+    references (dataset citations from the catalog plus the method papers).
+    The crop-model writers already save it as ``<out_dir>/METHODS.md``.
+    """
+    return provenance.methods_text(path)
+
+
 def to_dssat(
     points,
     planting_date: Optional[str] = None,
@@ -2545,11 +2674,22 @@ def to_dssat(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "DSSAT"
+    params = _cm_parameters(
+        planting_date=planting_date, harvest_date=harvest_date,
+        planting_col=planting_col, harvest_col=harvest_col,
+        weather_source=weather_source, soil_source=soil_source,
+        weather=weather, soil=soil, phosphorus=phosphorus,
+        calcareous=calcareous, country=country,
+    )
     df, lon_col, lat_col, weather, soil, elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
         need_elev=True, phosphorus=phosphorus, coarse=True,
     )
+    variables = _cm_variables(weather, soil)
+    run = weather.attrs.get("agwise_run") or {}
+    decl_wth = provenance.declaration(variables, ("AGRO", "TOPO"))
+    decl_sol = provenance.declaration(variables, ("SOIL",))
 
     written = []
     for n, (idx, prow) in enumerate(
@@ -2571,6 +2711,7 @@ def to_dssat(
                 wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
                 path=d / f"WHTE{n:04d}.WTH", station=name,
                 elev=_point_elev(elev, idx), report=record,
+                declaration=decl_wth,
             )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
@@ -2587,11 +2728,18 @@ def to_dssat(
         sol = soil_w.write_sol(
             srow, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
             path=d / "SOIL.SOL", pedon=f"{insi}{n:05d}", site=name, country=country,
-            calcareous=calcareous, report=record,
+            calcareous=calcareous, report=record, declaration=decl_sol,
         )
         written.append({"point": idx, "dir": d, "wth": wth, "sol": sol,
                         "qc": record})
-    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
+    _cm_finish(
+        run.get("function", "to_dssat"), out_dir, written, df, lon_col,
+        lat_col, variables, {**params, **run.get("parameters", {})},
+        _cm_transforms(
+            weather, soil,
+            (["olsen_p"] if phosphorus else []) + run.get("transforms", []),
+        ),
+    )
     return written
 
 
@@ -2626,10 +2774,18 @@ def to_apsim(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "APSIM"
+    params = _cm_parameters(
+        planting_date=planting_date, harvest_date=harvest_date,
+        planting_col=planting_col, harvest_col=harvest_col,
+        weather_source=weather_source, soil_source=soil_source,
+        weather=weather, soil=soil,
+    )
     df, lon_col, lat_col, weather, soil, _elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
     )
+    variables = _cm_variables(weather, soil)
+    decl_met = provenance.declaration(variables, ("AGRO",))
 
     written = []
     for n, (idx, prow) in enumerate(
@@ -2649,6 +2805,7 @@ def to_apsim(
             met = apsim_w.write_met(
                 wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
                 path=d / f"wth_loc_{n}.met", site=name, report=record,
+                declaration=decl_met,
             )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
@@ -2665,7 +2822,10 @@ def to_apsim(
         record["texture"] = soil_w.build_profile(soil.loc[idx])["texture_qc"]
         written.append({"point": idx, "dir": d, "met": met, "soil": soil_csv,
                         "qc": record})
-    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
+    _cm_finish(
+        "to_apsim", out_dir, written, df, lon_col, lat_col, variables, params,
+        _cm_transforms(weather, soil),
+    )
     return written
 
 
@@ -2704,6 +2864,12 @@ def to_wofost(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "WOFOST"
+    params = _cm_parameters(
+        planting_date=planting_date, harvest_date=harvest_date,
+        planting_col=planting_col, harvest_col=harvest_col,
+        weather_source=weather_source, soil_source=soil_source,
+        weather=weather, soil=soil,
+    )
     df, lon_col, lat_col, weather, soil, _elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
@@ -2733,7 +2899,11 @@ def to_wofost(
         record["texture"] = soil_w.build_profile(soil.loc[idx])["texture_qc"]
         written.append({"point": idx, "dir": d, "weather": wth, "soil": sol,
                         "qc": record})
-    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
+    _cm_finish(
+        "to_wofost", out_dir, written, df, lon_col, lat_col,
+        _cm_variables(weather, soil), params,
+        _cm_transforms(weather, soil, ["wind_2m", "vapour_pressure"]),
+    )
     return written
 
 
@@ -2771,11 +2941,20 @@ def to_oryza(
 
     config = config or Config.load()
     out_dir = Path(out_dir) if out_dir else Path.cwd() / "ORYZA"
+    params = _cm_parameters(
+        planting_date=planting_date, harvest_date=harvest_date,
+        planting_col=planting_col, harvest_col=harvest_col,
+        weather_source=weather_source, soil_source=soil_source,
+        weather=weather, soil=soil,
+    )
     df, lon_col, lat_col, weather, soil, elev = _cm_inputs(
         points, planting_date, harvest_date, planting_col, harvest_col,
         lon_col, lat_col, weather, soil, weather_source, soil_source, config,
         weather_vars=_WOFOST_WEATHER_VARS, need_elev=True,
     )
+    variables = _cm_variables(weather, soil)
+    decl_wth = provenance.declaration(variables, ("AGRO", "TOPO"), prefix="*")
+    decl_sol = provenance.declaration(variables, ("SOIL",), prefix="*")
 
     written = []
     for n, (idx, prow) in enumerate(
@@ -2796,17 +2975,22 @@ def to_oryza(
                 wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
                 out_dir=d, id_name=name, stn=n,
                 elev=_point_elev(elev, idx) or 0.0, report=record,
+                declaration=decl_wth,
             )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
             continue
         sol = oryza_w.write_soil(
             soil.loc[idx], path=d / f"soil_{n}.sol", id_name=station_code(name),
+            declaration=decl_sol,
         )
         record["texture"] = soil_w.build_profile(soil.loc[idx])["texture_qc"]
         written.append({"point": idx, "dir": d, "weather": wth, "soil": sol,
                         "qc": record})
-    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
+    _cm_finish(
+        "to_oryza", out_dir, written, df, lon_col, lat_col, variables, params,
+        _cm_transforms(weather, soil, ["wind_2m", "vapour_pressure"]),
+    )
     return written
 
 
@@ -3012,6 +3196,7 @@ def forecast_to_dssat(
     config = config or Config.load()
     if ensemble not in ("mean", "median"):
         raise ValueError("ensemble must be 'mean' or 'median'")
+    corrected_given = corrected is not None
     df, lon_col, lat_col = _read_points(points, lon_col, lat_col)
     lons = df[lon_col].to_numpy(dtype=float)
     lats = df[lat_col].to_numpy(dtype=float)
@@ -3030,8 +3215,14 @@ def forecast_to_dssat(
         )
 
     frames = []
+    prov: Dict[str, dict] = {}
     for var, info in corrected.items():
         cube = info["data"] if isinstance(info, dict) else info
+        try:
+            sid = _seasonal_driver_for(var, weather_source, config)[1]
+            prov[canonical_name(var)] = provenance.variable_record(var, sid)
+        except (KeyError, ValueError):
+            pass
         short = cube.name or short_name(var)
         if "member" in cube.dims:
             cube = cube.mean("member") if ensemble == "mean" else cube.median("member")
@@ -3044,6 +3235,17 @@ def forecast_to_dssat(
         long["variable"] = short
         frames.append(long)
     weather = pd.concat(frames, ignore_index=True)
+    weather.attrs["provenance"] = prov
+    weather.attrs["agwise_run"] = {
+        "function": "forecast_to_dssat",
+        "parameters": _cm_parameters(
+            init_month=init_month, forecast_year=forecast_year,
+            calib_years=[int(y) for y in calib_years], ensemble=ensemble,
+            window_days=window_days,
+            corrected="<supplied>" if corrected_given else None,
+        ),
+        "transforms": ["bias_correction"],
+    }
 
     return to_dssat(
         df, out_dir=out_dir, weather=weather, soil=soil, soil_source=soil_source,

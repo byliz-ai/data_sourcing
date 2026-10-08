@@ -321,6 +321,7 @@ def write_sol(
     calcareous: bool = False,
     depths: Sequence[str] = DEPTH_LABELS,
     report: Optional[dict] = None,
+    declaration: Sequence[str] = (),
 ) -> Path:
     """Write one DSSAT ``.SOL`` profile from a soil-point row.
 
@@ -337,13 +338,15 @@ def write_sol(
 
     The file is read back and checked (:func:`.validate.validate_sol`);
     ``report`` receives the validation and the texture normalization.
+    ``declaration`` are comment lines (``!`` prefix, which DSSAT skips)
+    naming the package version and data sources, written after the ``*SOILS`` line.
     """
     p = build_profile(soil, depths)
     if olsen_p is not None:
         olsen = np.asarray(olsen_p, dtype="float64")
     else:
         olsen = olsen_by_layer(soil, depths, calcareous)
-    lines = ["*SOILS: General DSSAT Soil Input File", ""]
+    lines = ["*SOILS: General DSSAT Soil Input File", *declaration, ""]
     total_depth = p["slb"][-1]
     lines.append(
         f"*{pedon:<12}{source:<12}{p['texture_code']:<6}{total_depth:>5} "

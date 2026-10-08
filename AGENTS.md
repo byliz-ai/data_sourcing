@@ -42,6 +42,7 @@ WOFOST, ORYZA). Python package `agwise_data` (`src/agwise_data/`), R wrappers
 | Cropland mask | `get_cropmask` | `get-cropmask` | `ad_get_cropmask` |
 | Crop-model files | `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza`, `forecast_to_dssat` | `to-dssat`, … | `ad_to_dssat`, … |
 | Point grid / admin names | `make_grid`, `tag_admin` | `make-grid`, `tag-admin` | `ad_make_grid`, `ad_tag_admin` |
+| Methods paragraph / citations | `methods_text(out_dir_or_product)` | `methods` | `ad_methods_text` |
 
 Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
 [docs/user_guide.md §5](docs/user_guide.md#5-user-interface--python--r--cli--claude-code).
@@ -57,7 +58,9 @@ Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
   **or** `geometry=` (file/GeoDataFrame/shapely; CLI `--aoi`, R `aoi=`).
 - **Returns:** gridded → `{canonical: {"nc", "tif", "qc", "data"}}`; points →
   `DataFrame` (QC reports in `df.attrs["qc"]`); writers → list of
-  `{"point", "dir", <files>, "qc"}` plus `<out_dir>/qc_report.json`.
+  `{"point", "dir", <files>, "qc"}` plus `<out_dir>/qc_report.json`,
+  `manifest.json` and `METHODS.md`. Point frames also carry
+  `df.attrs["provenance"]`.
 - **Defaults:** `PRCP` → CHIRPS v3 local on CGLabs (1981–2025), else CHIRPS
   v2; other weather → AgERA5 (needs CDS); soil → SoilGrids (`source="isda"` for
   iSDA); MODIS/WorldCover/CHIRPS v2 → Earth Engine.
@@ -67,6 +70,9 @@ Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
   implausible → kept + `QCWarning`, missing rain never 0, crop-model files
   gap-filled ≤ 5 days (never rain) and validated after writing. Explain this
   to users when they see NaN or warnings: [docs/quality_control.md](docs/quality_control.md).
+- **Provenance:** when a user needs to cite data or describe methods, point
+  them to `<out_dir>/METHODS.md` or `methods_text(...)`. Don't write citations
+  yourself; they come from the catalog ([docs/provenance.md](docs/provenance.md)).
 
 ## Code map
 
@@ -77,6 +83,7 @@ Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
 | `src/agwise_data/qc.py` + `qc_ranges.yaml` | range QC, SRAD ≤ Ra, texture normalization, `check_weather` (gap-fill) |
 | `src/agwise_data/catalog/*.yaml` + `catalog.py` | one YAML per source (access, variables, conversion, nodata) |
 | `src/agwise_data/drivers/` | one driver per source (`base.Driver`, `static.StaticDriver`, `seasonal`, `modis`, `local` = reads staged `Landing` files) |
+| `src/agwise_data/provenance.py` | recipes, sidecar enrichment, run manifests, `!` declarations, methods text |
 | `src/agwise_data/writers/` | crop-model writers (`dssat`, `apsim`, `wofost`, `oryza`, `soil`) + `validate.py` (post-write checks) |
 | `src/agwise_data/cache.py`, `config.py`, `retry.py`, `memory.py` | atomic writes + manifests, data roots/domains, download retries, memory budget |
 | `src/agwise_data/cli.py`, `r/agwise_data.R` | CLI subcommands; R wrappers (not covered by pytest) |
@@ -88,7 +95,11 @@ Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
    (`api._write_nc_product`). With threads, writes that stream from lazily
    opened NetCDFs deadlocked intermittently on the HDF5 locks. Don't revert
    this. **Never compute anything else inside a write's dask graph** (QC counts
-   are computed in a separate pass, `_qc_finish`).
+   are computed in a separate pass, `_qc_finish`). The root cause of those
+   hangs was an xarray bug: a non-blocking `CombinedLock.acquire` leaked the
+   global HDF5 lock during garbage collection. `agwise_data.cache` patches it
+   at import (`_fix_xarray_combined_lock`). Keep that patch until xarray fixes
+   the bug upstream; `tests/test_provenance.py` checks it.
 2. **Missing rain is never zero:** `to_monthly` sums use `skipna=False`;
    season totals are NaN with a missing day; writers never gap-fill rain.
 3. **Mask nodata before unit conversion** (`integer_sentinel`, catalog
@@ -102,7 +113,15 @@ Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
 6. **Measure on real data before adopting an external rule.** The prismpy
    ">5 % texture deviation → drop the layer" rule blanked the topsoil of ~1/3 of
    SoilGrids profiles (fixed in 0.36.1).
-7. Synthetic test data is not physical (e.g. TMAX = day-of-year − 273.15);
+7. **Provenance must stay deterministic.** `manifest.json` has sorted keys,
+   relative paths and no timestamps. Don't add run times or absolute paths
+   to it. Cache sidecars (`.meta.json`) may keep `created_utc`: the cache
+   uses it to refresh partial years.
+8. **Changing how a catalog variable is read** (conversion, source name,
+   statistic, nodata, dataset `version`) changes its recipe, and the cached
+   files built with the old recipe are rebuilt automatically. That is
+   intended. Pure text edits don't trigger it.
+9. Synthetic test data is not physical (e.g. TMAX = day-of-year − 273.15);
    tests that assert raw synthetic values pass `qc="off"`.
 
 ## Run the tests
@@ -128,6 +147,7 @@ updates for everyone.
 | [docs/cglabs_setup.md](docs/cglabs_setup.md) | server install, data roots, R, performance env vars |
 | [docs/user_guide.md](docs/user_guide.md) | area / data / period / output decisions; Python · R · CLI · Claude Code |
 | [docs/quality_control.md](docs/quality_control.md) | everything QC: ranges, reports, writers, sources |
+| [docs/provenance.md](docs/provenance.md) | manifests, checksums, recipes, declarations, methods text |
 | [REFERENCE.md](REFERENCE.md) | every public function and parameter |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | dev workflow, adding a source, doc rules, roadmap |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each version and why |

@@ -381,9 +381,14 @@ def test_to_dssat_writes_per_point_files(tmp_path):
         assert r["wth"].exists() and r["sol"].exists()
         assert r["dir"].name == f"EXTE{n:04d}"
     # the .WTH carries the station code and cross-year weather
-    wth = res[0]["wth"].read_text().splitlines()
+    lines = res[0]["wth"].read_text().splitlines()
+    # a "!" declaration (skipped by DSSAT) follows the $WEATHER line
+    assert lines[1].startswith("! agwise-data ")
+    wth = [ln for ln in lines if not ln.startswith("!")]
     assert wth[3].startswith("@ INSI")
     assert "KIGA" in wth[4]
+    assert (tmp_path / "DSSAT" / "manifest.json").exists()
+    assert (tmp_path / "DSSAT" / "METHODS.md").exists()
     # first/last data dates straddle the New Year
     data = [ln for ln in wth if ln[:2].isdigit()]
     assert data[0].startswith("2020") and data[-1].startswith("2021")
@@ -492,7 +497,8 @@ def test_to_dssat_with_injected_soil_writes_elev_sentinel(tmp_path):
         pts, out_dir=tmp_path / "D", station_col="site",
         weather=_season_weather_long(pts), soil=_soil_frame(pts),
     )
-    general = res[0]["wth"].read_text().splitlines()[4]
+    lines = res[0]["wth"].read_text().splitlines()
+    general = lines[lines.index(next(ln for ln in lines if ln.startswith("@ INSI"))) + 1]
     assert "   -99" in general  # no elevation fetched when soil is supplied
 
 

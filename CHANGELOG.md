@@ -5,6 +5,63 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.37.0 — Provenance: run manifests, checksums, recipes, methods text
+
+Phase 2 of [docs/prismpy_comparison.md](docs/prismpy_comparison.md). Full
+guide: [docs/provenance.md](docs/provenance.md).
+
+- **Run manifest.** `to_dssat`, `to_apsim`, `to_wofost`, `to_oryza` and
+  `forecast_to_dssat` write `<out_dir>/manifest.json`. It records every file
+  written with its SHA256 and size, the source and catalog recipe of each
+  variable (with its QC mode), each dataset's title, version, license and
+  citation, the call's parameters, a digest of the point coordinates, the
+  processing steps with their method references, and the QC summary. It is
+  deterministic: sorted keys, relative paths, no timestamps. Two identical
+  runs into the same folder gave byte-identical manifests.
+- **`METHODS.md` and `methods_text(path)`** (R `ad_methods_text`, CLI
+  `agwise-data methods`). A methods paragraph with datasets and versions,
+  processing steps, and full references, built from the catalog citations. It
+  works for a run folder or for a cached product.
+- **Declarations in the files.** `.WTH`, `.SOL`, `.met` and the ORYZA files
+  start with `!`/`*` comment lines, which the models skip, naming the
+  agwise-data version and the sources. The single-file writers take
+  `declaration=`. The WOFOST and APSIM soil CSVs have no comment syntax, so
+  they rely on the manifest.
+- **Richer `.meta.json` sidecars.** Every cached file now records
+  `agwise_data_version`, `sha256`, `bytes`, `recipe` and `transforms`.
+- **Recipes keep the shared cache honest.** `recipe` is a digest of the
+  dataset version and how the variable is read (source name, statistic,
+  conversion, nodata). When the catalog changes it, harmonized files and
+  products built with the old recipe are rebuilt on their next request.
+  Product names do not change, so default products stay shared. Text-only
+  catalog edits do not trigger a rebuild, and files from before 0.37 (without
+  a recipe) stay valid. The plan had put the catalog version in the cache key;
+  rebuilding in place keeps the names stable instead.
+- **Point frames carry provenance.** `extract_points`,
+  `extract_growing_season`, `get_season` (points) and `extract_static_points`
+  return `df.attrs["provenance"] = {canonical: {"source", "recipe"}}`. That is
+  how a run records its sources even when you extract the frames first and
+  pass them to a writer. A frame built some other way is recorded as
+  `user-supplied`.
+- **Fix: intermittent NetCDF deadlock, root cause found.** xarray's
+  non-blocking `CombinedLock.acquire` (xarray 2026.7) takes the global HDF5
+  lock, finds the per-file lock busy, and returns False *without releasing the
+  HDF5 lock*. Garbage collection makes that call when it closes a lazily opened
+  NetCDF (`CachingFileManager.__del__`). When that happened at the wrong
+  moment, the next NetCDF write waited forever. A direct reproduction leaked the
+  lock in 100 of 200 attempts. The test suite hung in 2 of ~14 runs while this
+  release was developed, during the prefetch's harmonized writes.
+  `agwise_data.cache` now makes that acquire all-or-nothing. With the fix the
+  suite passed 15 of 15 runs, and a regression test was added. The earlier
+  hangs that 0.35.0 fixed by running product writes on the synchronous
+  scheduler were very likely the same bug. That setting stays as a second
+  safeguard.
+- Checked live: `to_dssat` for 3 Rwanda points (2020 season) wrote 6 valid
+  files plus the manifest. AgERA5, CHIRPS v3, Copernicus DEM and SoilGrids
+  were cited correctly. New tests: `tests/test_provenance.py` (329 pass).
+
+---
+
 ## 0.36.2 — Soil points: fill reaches diagonal neighbours; incomplete profiles flagged
 
 Found while checking a Kigali trial point (30.06, −1.95) that came back with
