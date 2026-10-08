@@ -21,6 +21,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 def _parse_years(text: str):
@@ -461,6 +462,14 @@ def cmd_extract_static(args) -> dict:
     return {"ok": True, "outputs": [_csv_output(df, out_path)]}
 
 
+def _cm_qc_report(res) -> Optional[str]:
+    """Path of the run's ``qc_report.json`` (next to the per-point folders)."""
+    if not res:
+        return None
+    path = Path(res[0]["dir"]).parent / "qc_report.json"
+    return str(path) if path.exists() else None
+
+
 def cmd_to_dssat(args) -> dict:
     from .api import to_dssat
 
@@ -484,8 +493,10 @@ def cmd_to_dssat(args) -> dict:
     return {
         "ok": True,
         "n_points": len(res),
+        "qc_report": _cm_qc_report(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
+             "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
              "wth": str(r["wth"]), "sol": str(r["sol"])}
             for r in res
         ],
@@ -512,8 +523,10 @@ def cmd_to_apsim(args) -> dict:
     return {
         "ok": True,
         "n_points": len(res),
+        "qc_report": _cm_qc_report(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
+             "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
              "met": str(r["met"]), "soil": str(r["soil"])}
             for r in res
         ],
@@ -540,8 +553,10 @@ def cmd_to_wofost(args) -> dict:
     return {
         "ok": True,
         "n_points": len(res),
+        "qc_report": _cm_qc_report(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
+             "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
              "weather": str(r["weather"]), "soil": str(r["soil"])}
             for r in res
         ],
@@ -568,8 +583,10 @@ def cmd_to_oryza(args) -> dict:
     return {
         "ok": True,
         "n_points": len(res),
+        "qc_report": _cm_qc_report(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
+             "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
              "weather": [str(w) for w in r["weather"]], "soil": str(r["soil"])}
             for r in res
         ],
@@ -635,8 +652,10 @@ def cmd_forecast_to_dssat(args) -> dict:
     return {
         "ok": True,
         "n_points": len(res),
+        "qc_report": _cm_qc_report(res),
         "outputs": [
             {"point": str(r["point"]), "dir": str(r["dir"]),
+             "qc_ok": all(v["ok"] for v in r.get("qc", {}).get("validation", {}).values()),
              "wth": str(r["wth"]), "sol": str(r["sol"])}
             for r in res
         ],

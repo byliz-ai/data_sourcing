@@ -118,7 +118,9 @@ def test_write_wth_missing_elev_uses_sentinel(tmp_path):
 def test_write_wth_partial_missing_day_uses_sentinel(tmp_path):
     df = _two_month_series()
     df.loc[2, "SRAD"] = np.nan  # one value missing, the rest of the day valid
-    p = dssat.write_wth(df, lat=0.0, lon=0.0, path=tmp_path / "m.WTH")
+    # gap-filling off: a 1-day SRAD gap would otherwise be interpolated
+    p = dssat.write_wth(df, lat=0.0, lon=0.0, path=tmp_path / "m.WTH",
+                        gapfill_days=0)
     text = p.read_text()
     assert "nan" not in text.lower()
     row = [ln for ln in text.splitlines() if ln.startswith("2021003")][0]

@@ -2447,6 +2447,34 @@ def _point_weather_wide(weather_long: pd.DataFrame, point_id) -> pd.DataFrame:
     return wide
 
 
+def _write_cm_qc_report(out_dir: Path, records: List[dict]) -> Optional[Path]:
+    """Write ``<out_dir>/qc_report.json`` for a crop-model run and warn once.
+
+    One record per written point: the weather checks (gap-filled days,
+    swapped TMIN/TMAX, SRAD above Ra), the soil texture normalization and the
+    post-write validation of every file.
+    """
+    import json
+
+    from .writers.validate import summarize
+
+    if not records:
+        return None
+    summary = summarize(records)
+    path = Path(out_dir) / "qc_report.json"
+    with atomic_write(path) as tmp:
+        tmp.write_text(json.dumps(
+            {"summary": summary, "points": records}, indent=2, default=str
+        ))
+    if summary["files_with_problems"]:
+        warnings.warn(
+            f"{summary['files_with_problems']} written file(s) failed "
+            f"post-write validation — see {path}",
+            _qc.QCWarning, stacklevel=3,
+        )
+    return path
+
+
 def to_dssat(
     points,
     planting_date: Optional[str] = None,
@@ -2475,7 +2503,9 @@ def to_dssat(
     ``planting_col``/``harvest_col``); soil is SoilGrids at the point plus the
     Saxton-Rawls hydraulics. Pass ``weather``/``soil`` to reuse frames you have
     already extracted instead of re-fetching. Returns a list of
-    ``{"point", "dir", "wth", "sol"}`` for the files written.
+    ``{"point", "dir", "wth", "sol", "qc"}`` for the files written; the
+    per-point QC records (weather checks, texture normalization, post-write
+    validation) also go to ``<out_dir>/qc_report.json``.
 
     ``phosphorus=True`` also extracts Mehlich-3 extractable P (iSDA ``EXTP``)
     at each point and writes the DSSAT P block (``SLPX`` = Olsen P) into the
@@ -2511,11 +2541,12 @@ def to_dssat(
         )
         insi = station_code(name)
         d = out_dir / f"EXTE{n:04d}"
+        record = {"point": idx, "dir": str(d)}
         try:
             wth = dssat_w.write_wth(
                 wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
                 path=d / f"WHTE{n:04d}.WTH", station=name,
-                elev=_point_elev(elev, idx),
+                elev=_point_elev(elev, idx), report=record,
             )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
@@ -2532,9 +2563,11 @@ def to_dssat(
         sol = soil_w.write_sol(
             srow, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
             path=d / "SOIL.SOL", pedon=f"{insi}{n:05d}", site=name, country=country,
-            calcareous=calcareous,
+            calcareous=calcareous, report=record,
         )
-        written.append({"point": idx, "dir": d, "wth": wth, "sol": sol})
+        written.append({"point": idx, "dir": d, "wth": wth, "sol": sol,
+                        "qc": record})
+    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
     return written
 
 
@@ -2587,10 +2620,11 @@ def to_apsim(
             str(prow[id_col]) if id_col else f"P{n:04d}"
         )
         d = out_dir / f"EXTE{n:04d}"
+        record = {"point": idx, "dir": str(d)}
         try:
             met = apsim_w.write_met(
                 wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
-                path=d / f"wth_loc_{n}.met", site=name,
+                path=d / f"wth_loc_{n}.met", site=name, report=record,
             )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
@@ -2604,7 +2638,10 @@ def to_apsim(
                 f"texture={table.attrs['texture']}\n"
             )
             table.to_csv(fh, index=False)
-        written.append({"point": idx, "dir": d, "met": met, "soil": soil_csv})
+        record["texture"] = soil_w.build_profile(soil.loc[idx])["texture_qc"]
+        written.append({"point": idx, "dir": d, "met": met, "soil": soil_csv,
+                        "qc": record})
+    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
     return written
 
 
@@ -2638,6 +2675,7 @@ def to_wofost(
     per-row/scalar season and reuse options as :func:`to_dssat`. Returns a list
     of ``{"point", "dir", "weather", "soil"}``.
     """
+    from .writers import soil as soil_w
     from .writers import wofost as wofost_w
 
     config = config or Config.load()
@@ -2658,13 +2696,20 @@ def to_wofost(
             logger.warning("Point %s has no weather in season; skipped", idx)
             continue
         d = out_dir / f"EXTE{n:04d}"
+        record = {"point": idx, "dir": str(d)}
         try:
-            wth = wofost_w.write_weather(wide, path=d / f"weather_{n}.csv")
+            wth = wofost_w.write_weather(
+                wide, path=d / f"weather_{n}.csv", lat=float(prow[lat_col]),
+                report=record,
+            )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
             continue
         sol = wofost_w.write_soil(soil.loc[idx], path=d / f"soil_{n}.csv")
-        written.append({"point": idx, "dir": d, "weather": wth, "soil": sol})
+        record["texture"] = soil_w.build_profile(soil.loc[idx])["texture_qc"]
+        written.append({"point": idx, "dir": d, "weather": wth, "soil": sol,
+                        "qc": record})
+    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
     return written
 
 
@@ -2697,6 +2742,7 @@ def to_oryza(
     ``{"point", "dir", "weather": [paths], "soil"}``.
     """
     from .writers import oryza as oryza_w
+    from .writers import soil as soil_w
     from .writers._common import station_code
 
     config = config or Config.load()
@@ -2720,11 +2766,12 @@ def to_oryza(
             str(prow[id_col]) if id_col else f"P{n:04d}"
         )
         d = out_dir / f"EXTE{n:04d}"
+        record = {"point": idx, "dir": str(d)}
         try:
             wth = oryza_w.write_weather(
                 wide, lat=float(prow[lat_col]), lon=float(prow[lon_col]),
                 out_dir=d, id_name=name, stn=n,
-                elev=_point_elev(elev, idx) or 0.0,
+                elev=_point_elev(elev, idx) or 0.0, report=record,
             )
         except ValueError as exc:
             logger.warning("Point %s: %s; skipped", idx, exc)
@@ -2732,7 +2779,10 @@ def to_oryza(
         sol = oryza_w.write_soil(
             soil.loc[idx], path=d / f"soil_{n}.sol", id_name=station_code(name),
         )
-        written.append({"point": idx, "dir": d, "weather": wth, "soil": sol})
+        record["texture"] = soil_w.build_profile(soil.loc[idx])["texture_qc"]
+        written.append({"point": idx, "dir": d, "weather": wth, "soil": sol,
+                        "qc": record})
+    _write_cm_qc_report(out_dir, [w["qc"] for w in written])
     return written
 
 

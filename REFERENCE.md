@@ -473,11 +473,37 @@ n = rainy_days(cube, threshold=2.0)
 
 ## 6.3 Crop-model input files (return the list of files written)
 
+**Quality control in every writer.** Before writing, each point's daily
+weather goes through `agwise_data.qc.check_weather`:
+
+- every calendar day between the first and last date gets a row (a missing
+  date is a missing row, not a silent jump);
+- days with TMIN > TMAX are swapped (as the legacy scripts did);
+- SRAD above the extraterrestrial radiation Ra (FAO-56) is set to missing;
+- TMAX/TMIN/SRAD gaps of **up to 5 days** are linearly interpolated.
+  Rainfall is **never** filled.
+
+Soil profiles make clay + silt + sand sum to 100 % per layer: they are
+rescaled within 3 %, rescaled with a warning within 5 %, and excluded (`-99`)
+beyond 5 %.
+
+Every written file is then **read back and validated**: date continuity,
+missing values, physical ranges and TMIN ≤ TMAX for weather; SLLL < SDUL <
+SSAT, bulk density, pH and clay + silt ≤ 100 % for `.SOL`. The validators are
+`agwise_data.writers.validate.validate_wth/met/sol/wofost_weather/oryza_weather`,
+and they can be run on any file. Each run writes `<out_dir>/qc_report.json`
+(per point: the weather checks, the texture normalization and the validation
+of each file) and returns the same record as `"qc"`. A `QCWarning` is raised
+when any file fails validation. The single-file writers (`write_wth`,
+`write_met`, `wofost.write_weather`, `oryza.write_weather`, `write_sol`)
+take `gapfill_days=` (0 disables filling) and `report=` (a dict that
+receives the record).
+
 ### `to_dssat`
 
 Write **DSSAT** weather (`.WTH`) + soil (`.SOL`) files for every point.
 
-**Returns:** `list` of `{"point", "dir", "wth", "sol"}`
+**Returns:** `list` of `{"point", "dir", "wth", "sol", "qc"}` (+ `<out_dir>/qc_report.json`)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -517,7 +543,7 @@ frame). Missing daily weather values are written as `-99` in the `.WTH`.
 
 Write **APSIM** weather (`.met`) + soil files for every point.
 
-**Returns:** `list` of the files written per point
+**Returns:** `list` of the files written per point, each with its `"qc"` record (+ `<out_dir>/qc_report.json`)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -547,7 +573,7 @@ to_apsim("trials.csv", planting_date="2021-01-01",
 
 Write **WOFOST** weather + soil files for every point.
 
-**Returns:** `list` of the files written per point
+**Returns:** `list` of the files written per point, each with its `"qc"` record (+ `<out_dir>/qc_report.json`)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -580,7 +606,7 @@ expects (FAO-56 eq. 47, factor ≈ 0.748).
 
 Write **ORYZA** CABO weather + PADDY soil files for every point.
 
-**Returns:** `list` of the files written per point
+**Returns:** `list` of the files written per point, each with its `"qc"` record (+ `<out_dir>/qc_report.json`)
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |

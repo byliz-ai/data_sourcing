@@ -54,11 +54,13 @@ trazabilidad y reproducibilidad**, justo donde somos más débiles.
   transitorios), aplicado a todos los drivers.
 
 ### Fase 1 — Control de calidad (≈2–3 semanas) · *mayor valor*
-*En curso. v0.34.0: rangos de dos niveles con defaults generales
+*Hecha. v0.34.0: rangos de dos niveles con defaults generales
 (`qc_ranges.yaml`), `qc=`/`qc_ranges=` y `<producto>.qc.json` en
 `get_climate`/`get_static`. v0.35.0: QC también en `get_seasonal`,
 `get_season` y `extract_*`; lluvia faltante nunca cuenta como 0; nodata de
-rasters enteros enmascarado antes de escalar.*
+rasters enteros enmascarado antes de escalar. v0.36.0: TMIN>TMAX, SRAD > Ra,
+suma de textura, gap-fill ≤5 días (nunca lluvia) y validación post-escritura
+de .WTH/.met/.SOL/WOFOST/ORYZA con `qc_report.json` por corrida.*
 - **Rangos de dos niveles** (prismpy `validators/scientific.py:119`): *físico*
   → defecto/rechazo; *plausible* → advertencia. Declarados por variable en el
   catálogo YAML (campo `valid_range` existente), aplicados en
@@ -114,5 +116,6 @@ rasters enteros enmascarado antes de escalar.*
 - El volumen de tests "sprint-pinned": tomar el patrón, no la cantidad.
 
 ## 5. Siguiente paso
-Empezar por la **Fase 0** (el defecto de clave de caché puede estar
-devolviendo datos de la fuente equivocada) y seguir con la **Fase 1**.
+Las **Fases 0 y 1** están hechas (v0.33.0–v0.36.0). Sigue la **Fase 2**
+(trazabilidad y reproducibilidad); la Fase 4 (tests y CI) puede avanzar en
+paralelo.

@@ -5,6 +5,44 @@ All notable changes to `agwise-data`. Versions follow the `version` field in
 
 ---
 
+## 0.36.0 — Phase 1 (part 3): cross-variable checks, gap-filling, post-write validation
+
+Completes the quality-control phase of `docs/prismpy_comparison.md`.
+Crop-model files can change: short TMAX/TMIN/SRAD gaps are now filled,
+missing dates appear as `-99` rows instead of being skipped, and soil
+texture is renormalized.
+
+- **Weather checks before every crop-model writer** (`qc.check_weather`,
+  used by the DSSAT, APSIM, WOFOST and ORYZA `prepare_weather`):
+  - a continuous daily axis: interior missing dates become missing rows
+    (DSSAT/APSIM used to drop all-missing days, leaving silent date jumps);
+    leading/trailing empty days are trimmed;
+  - TMIN > TMAX days are swapped and counted (same fix as before, now
+    reported);
+  - SRAD above the extraterrestrial radiation Ra (FAO-56 eq. 21, new
+    `qc.extraterrestrial_radiation`) is set to missing;
+  - TMAX/TMIN/SRAD gaps of up to 5 consecutive days are linearly
+    interpolated (`gapfill_days=`, 0 disables). **Rainfall is never filled.**
+- **SRAD > Ra in the gridded range QC too:** `get_climate`, `get_seasonal`
+  and the point extractions mask it as physically impossible and report
+  `srad_above_extraterrestrial`.
+- **Soil texture sums to 100 %** (`qc.normalize_texture`, applied in
+  `writers.soil.build_profile`, so in every soil writer): layers within 3 % are
+  rescaled, within 5 % rescaled and flagged, beyond 5 % excluded (`-99`).
+- **Post-write validation** (new `writers/validate.py`): every written `.WTH`,
+  `.met`, `.SOL`, WOFOST weather CSV and ORYZA weather set is re-read and
+  checked (date continuity and duplicates, malformed/`nan` rows, missing
+  values, physical ranges, TMIN ≤ TMAX; SLLL < SDUL < SSAT, bulk density,
+  pH, clay + silt ≤ 100 %). A failure is logged.
+- **`qc_report.json` per crop-model run:** `to_dssat`, `to_apsim`,
+  `to_wofost`, `to_oryza` (and `forecast_to_dssat`) write per-point records
+  (weather checks, texture, validation) plus a summary to
+  `<out_dir>/qc_report.json`, return them as `"qc"` in each entry, and raise
+  a `QCWarning` when any file failed validation. Single-file writers take
+  `report=` (a dict to fill) and `gapfill_days=`.
+
+---
+
 ## 0.35.0 — Phase 1 (part 2): QC everywhere, no zero-filled rain, nodata gate
 
 Output values can change: monthly PRCP sums with a missing day, and

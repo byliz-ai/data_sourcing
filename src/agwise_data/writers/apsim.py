@@ -13,7 +13,9 @@ from typing import Optional
 
 import numpy as np
 
-from ._common import prepare_weather, tav_amp
+from ..qc import GAPFILL_MAX_DAYS
+from ._common import prepare_weather, record_written, tav_amp
+from .validate import validate_met
 
 _COLNAMES = "year day radn maxt mint rain"
 _UNITS = "() () (MJ/m2/day) (oC) (oC) (mm)"
@@ -34,14 +36,18 @@ def write_met(
     path,
     site: str = "AGWISE",
     comments: Optional[str] = None,
+    gapfill_days: int = GAPFILL_MAX_DAYS,
+    report: Optional[dict] = None,
 ) -> Path:
     """Write one APSIM ``.met`` file.
 
     ``daily`` needs a date column and TMAX/TMIN/SRAD/RAIN (or PRCP); see
     :func:`prepare_weather`. TAV and AMP are derived from the series and
-    written into the header (APSIM requires both). Returns the written path.
+    written into the header (APSIM requires both). The file is read back and
+    checked (:func:`.validate.validate_met`); ``report`` receives the weather
+    QC and the validation. Returns the written path.
     """
-    df = prepare_weather(daily)
+    df = prepare_weather(daily, lat=lat, gapfill_days=gapfill_days)
     if df.empty:
         raise ValueError("No weather rows to write")
     tav, amp = tav_amp(df)
@@ -67,4 +73,5 @@ def write_met(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(header + rows) + "\n")
+    record_written(report, "met", validate_met(path), df.attrs.get("qc"))
     return path

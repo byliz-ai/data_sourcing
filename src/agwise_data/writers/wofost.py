@@ -37,7 +37,12 @@ import numpy as np
 import pandas as pd
 
 from . import soil as soil_w
-from ._common import WIND_SOURCE_HEIGHT_M, require_data, wind_to_2m
+from ..qc import GAPFILL_MAX_DAYS, check_weather
+from ._common import (
+    WIND_SOURCE_HEIGHT_M, record_written, require_data, trim_empty_days,
+    wind_to_2m,
+)
+from .validate import validate_wofost_weather
 
 # WOFOST daily weather columns, in order, with their units.
 WOFOST_WEATHER_COLS = ["date", "srad", "tmin", "tmax", "vapr", "wind", "prec"]
@@ -70,7 +75,10 @@ def esat_kpa(tdegc, pa: float = 101.0):
 
 
 def prepare_weather(
-    daily: pd.DataFrame, wind_height: float = WIND_SOURCE_HEIGHT_M
+    daily: pd.DataFrame,
+    wind_height: float = WIND_SOURCE_HEIGHT_M,
+    lat: Optional[float] = None,
+    gapfill_days: int = GAPFILL_MAX_DAYS,
 ) -> pd.DataFrame:
     """Build the WOFOST weather table from a per-point daily frame.
 
@@ -79,9 +87,12 @@ def prepare_weather(
     accepted for ``PRCP``). Returns a frame with WOFOST's exact columns
     (:data:`WOFOST_WEATHER_COLS`) and units: SRAD scaled MJ->kJ, ``vapr`` the
     actual vapour pressure (kPa) from RHUM and mean temperature. Rows are
-    sorted by date, any TMIN>TMAX day is swapped (as the legacy scripts did),
-    and — matching the legacy ``complete.cases`` — only rows with every
-    required value present are kept (WOFOST needs a gapless daily series).
+    sorted by date and checked by :func:`agwise_data.qc.check_weather`
+    (TMIN>TMAX swapped as the legacy scripts did, SRAD > Ra set to NaN when
+    ``lat`` is given, TMAX/TMIN/SRAD gaps of up to ``gapfill_days`` days
+    interpolated, never rain); then — matching the legacy ``complete.cases``
+    — only rows with every required value present are kept. The QC record is
+    in ``df.attrs["qc"]`` (with ``incomplete_days_dropped``).
     """
     df = daily.copy()
     date_col = next(
@@ -105,14 +116,9 @@ def prepare_weather(
     for c in _WEATHER_INPUTS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     require_data(df, _WEATHER_INPUTS)
-    df = df.sort_values("date").reset_index(drop=True)
-
-    # Guarantee TMIN <= TMAX (some pixels/days have them crossed).
-    crossed = df["TMIN"] > df["TMAX"]
-    if crossed.any():
-        tmin = df.loc[crossed, "TMIN"].copy()
-        df.loc[crossed, "TMIN"] = df.loc[crossed, "TMAX"]
-        df.loc[crossed, "TMAX"] = tmin
+    df = df[["date", *_WEATHER_INPUTS]].sort_values("date").reset_index(drop=True)
+    df = trim_empty_days(df, _WEATHER_INPUTS)
+    df, report = check_weather(df, "date", lat=lat, gapfill_days=gapfill_days)
 
     tmean = (df["TMIN"] + df["TMAX"]) / 2.0
     out = pd.DataFrame({
@@ -125,24 +131,38 @@ def prepare_weather(
         "prec": df["PRCP"],
     })
     # WOFOST assumes consecutive days with no gaps; keep only complete rows.
+    n_all = len(out)
     out = out.dropna(subset=[c for c in WOFOST_WEATHER_COLS if c != "date"])
     if out.empty:
         raise ValueError(
             "no complete weather rows for this point (every day is missing "
             "at least one required value) — cannot write a WOFOST series"
         )
-    return out.reset_index(drop=True)
+    out = out.reset_index(drop=True)
+    report["incomplete_days_dropped"] = n_all - len(out)
+    out.attrs["qc"] = report
+    return out
 
 
 def write_weather(
-    daily: pd.DataFrame, path, wind_height: float = WIND_SOURCE_HEIGHT_M
+    daily: pd.DataFrame,
+    path,
+    wind_height: float = WIND_SOURCE_HEIGHT_M,
+    lat: Optional[float] = None,
+    gapfill_days: int = GAPFILL_MAX_DAYS,
+    report: Optional[dict] = None,
 ) -> Path:
     """Write one WOFOST weather CSV (:data:`WOFOST_WEATHER_COLS`). Returns path.
 
     ``wind_height`` is the measurement height (m) of ``WIND`` in ``daily``;
-    it is converted to the 2 m wind WOFOST expects.
+    it is converted to the 2 m wind WOFOST expects. ``lat``/``gapfill_days``
+    go to :func:`prepare_weather`. The CSV is read back and checked
+    (:func:`.validate.validate_wofost_weather`); ``report`` receives the
+    weather QC and the validation.
     """
-    df = prepare_weather(daily, wind_height=wind_height)
+    df = prepare_weather(daily, wind_height=wind_height, lat=lat,
+                         gapfill_days=gapfill_days)
+    qc_record = df.attrs.get("qc")
     if df.empty:
         raise ValueError("No complete weather rows to write")
     df = df.copy()
@@ -154,6 +174,7 @@ def write_weather(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
+    record_written(report, "weather", validate_wofost_weather(path), qc_record)
     return path
 
 

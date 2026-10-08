@@ -30,9 +30,12 @@ import numpy as np
 import pandas as pd
 
 from . import soil as soil_w
+from ..qc import GAPFILL_MAX_DAYS, check_weather
 from ._common import (
-    WIND_SOURCE_HEIGHT_M, require_data, station_code, wind_to_2m,
+    WIND_SOURCE_HEIGHT_M, record_written, require_data, station_code,
+    trim_empty_days, wind_to_2m,
 )
+from .validate import validate_oryza_weather
 from .wofost import esat_kpa
 
 # ORYZA's fixed 8-layer scheme (top metre) and how SoilGrids' six depths map
@@ -52,16 +55,22 @@ _MISSING = -99.0
 # Weather (CABO format)
 # --------------------------------------------------------------------------
 def prepare_weather(
-    daily: pd.DataFrame, wind_height: float = WIND_SOURCE_HEIGHT_M
+    daily: pd.DataFrame,
+    wind_height: float = WIND_SOURCE_HEIGHT_M,
+    lat: Optional[float] = None,
+    gapfill_days: int = GAPFILL_MAX_DAYS,
 ) -> pd.DataFrame:
     """Build the ORYZA weather frame from a per-point daily frame.
 
     ``daily`` needs a date column and the six short-name columns ``TMAX, TMIN,
     SRAD, RHUM, WIND, PRCP`` (``RAIN`` accepted for ``PRCP``). Returns a frame
     with ``date`` plus ORYZA's ``srad`` (kJ m-2 day-1), ``tmin``, ``tmax``,
-    ``vapr`` (kPa), ``wind`` (m s-1) and ``rain`` (mm), sorted by date and with
-    any TMIN>TMAX day swapped. Rows are **kept** (ORYZA needs a continuous
-    daily series); individual missing values become ``-99`` at write time.
+    ``vapr`` (kPa), ``wind`` (m s-1) and ``rain`` (mm) on a continuous daily
+    axis, after :func:`agwise_data.qc.check_weather` (TMIN>TMAX swapped, SRAD
+    > Ra set to NaN when ``lat`` is given, TMAX/TMIN/SRAD gaps of up to
+    ``gapfill_days`` days interpolated, never rain; record in
+    ``df.attrs["qc"]``). Rows are **kept** (ORYZA needs a continuous daily
+    series); individual missing values become ``-99`` at write time.
     ``vapr`` is the FAO-56 actual vapour pressure
     ``0.5*(esat(tmax)+esat(tmin)) * RH/100`` (kPa).
     """
@@ -87,19 +96,15 @@ def prepare_weather(
     for c in _WEATHER_INPUTS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     require_data(df, _WEATHER_INPUTS)
-    df = df.sort_values("date").reset_index(drop=True)
-
-    crossed = df["TMIN"] > df["TMAX"]
-    if crossed.any():
-        tmin = df.loc[crossed, "TMIN"].copy()
-        df.loc[crossed, "TMIN"] = df.loc[crossed, "TMAX"]
-        df.loc[crossed, "TMAX"] = tmin
+    df = df[["date", *_WEATHER_INPUTS]].sort_values("date").reset_index(drop=True)
+    df = trim_empty_days(df, _WEATHER_INPUTS)
+    df, report = check_weather(df, "date", lat=lat, gapfill_days=gapfill_days)
 
     # FAO-56 mean saturation vapour pressure -> actual VP (kPa).
     es_mean = 0.5 * (esat_kpa(df["TMAX"]) + esat_kpa(df["TMIN"]))
     vapr = (df["RHUM"] / 100.0) * es_mean
 
-    return pd.DataFrame({
+    out = pd.DataFrame({
         "date": df["date"],
         "srad": df["SRAD"] * 1000.0,   # MJ -> kJ m-2 day-1
         "tmin": df["TMIN"],
@@ -108,6 +113,8 @@ def prepare_weather(
         "wind": wind_to_2m(df["WIND"], wind_height),   # -> 2 m (FAO-56)
         "rain": df["PRCP"],
     })
+    out.attrs["qc"] = report
+    return out
 
 
 def _fmt_wth(x, nd: int) -> str:
@@ -154,6 +161,8 @@ def write_weather(
     elev: float = 0.0,
     angstrom=(0.0, 0.0),
     wind_height: float = WIND_SOURCE_HEIGHT_M,
+    gapfill_days: int = GAPFILL_MAX_DAYS,
+    report: Optional[dict] = None,
 ) -> List[Path]:
     """Write ORYZA CABO weather files (one per calendar year). Returns the paths.
 
@@ -168,9 +177,12 @@ def write_weather(
     provide the real ANGA/ANGB in the experiment (.exp) file.
 
     ``wind_height`` is the measurement height (m) of ``WIND`` in ``daily``;
-    it is converted to 2 m.
+    it is converted to 2 m. The files are read back and checked together
+    (:func:`.validate.validate_oryza_weather`); ``report`` receives the
+    weather QC and the validation.
     """
-    df = prepare_weather(daily, wind_height=wind_height)
+    df = prepare_weather(daily, wind_height=wind_height, lat=lat,
+                         gapfill_days=gapfill_days)
     if df.empty:
         raise ValueError("No weather rows to write")
     code = station_code(id_name)
@@ -195,6 +207,8 @@ def write_weather(
         path = out_dir / f"{code}{stn}.{_year_ext(int(year))}"
         path.write_text("\n".join(lines) + "\n")
         paths.append(path)
+    record_written(report, "weather", validate_oryza_weather(paths),
+                   df.attrs.get("qc"))
     return paths
 
 

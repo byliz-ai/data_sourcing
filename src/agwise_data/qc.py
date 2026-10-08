@@ -33,6 +33,7 @@ import warnings
 from pathlib import Path
 from typing import Dict, Mapping, Optional
 
+import numpy as np
 import yaml
 
 from .cache import atomic_write
@@ -139,6 +140,30 @@ def is_default(variable: str, mode: str, overrides: Optional[Mapping] = None) ->
     return signature(variable, mode, overrides) == signature(variable, DEFAULT_MODE)
 
 
+def extraterrestrial_radiation(lat_deg, doy):
+    """Daily top-of-atmosphere radiation Ra (MJ m-2 day-1), FAO-56 eq. 21.
+
+    Surface solar radiation can never exceed it, so SRAD > Ra is physically
+    impossible whatever the source. Works on scalars, numpy arrays and
+    (broadcasting) xarray objects.
+    """
+    phi = np.deg2rad(lat_deg)
+    dr = 1 + 0.033 * np.cos(2 * np.pi / 365 * doy)
+    decl = 0.409 * np.sin(2 * np.pi / 365 * doy - 1.39)
+    ws = np.arccos(np.clip(-np.tan(phi) * np.tan(decl), -1.0, 1.0))
+    return (24 * 60 / np.pi) * 0.0820 * dr * (
+        ws * np.sin(phi) * np.sin(decl) + np.cos(phi) * np.cos(decl) * np.sin(ws)
+    )
+
+
+def _srad_over_ra(da):
+    """Mask of SRAD values above Ra, or None without lat/time coordinates."""
+    if "lat" not in da.coords or "time" not in da.coords:
+        return None
+    ra = extraterrestrial_radiation(da["lat"], da["time"].dt.dayofyear)
+    return da > ra
+
+
 def _outside(da, lo, hi):
     """(below, above) boolean masks; NaN is never outside."""
     below = da < lo if lo is not None else None
@@ -166,6 +191,11 @@ def apply(da, variable: str, mode: str, overrides: Optional[Mapping] = None):
             stats[f"{lvl}_{side}"] = 0 if mask is None else mask.sum()
             if mask is not None and (lvl == "physical" or mode == "strict"):
                 keep = ~mask if keep is None else keep & ~mask
+    if _canonical(variable) == "AGRO.SRAD":
+        over = _srad_over_ra(da)
+        if over is not None:
+            stats["srad_above_ra"] = over.sum()
+            keep = ~over if keep is None else keep & ~over
     out = da.where(keep) if keep is not None else da
     out.attrs.update(da.attrs)
     out.attrs["qc"] = mode
@@ -248,6 +278,11 @@ def build_report(
             "max_after_qc": num(stats["max"]),
         }
     )
+    if "srad_above_ra" in stats:
+        report["srad_above_extraterrestrial"] = {
+            "count": int(stats["srad_above_ra"]),
+            "action": "set to NaN",
+        }
     report["warnings"] = _messages(report)
     return report
 
@@ -255,6 +290,12 @@ def build_report(
 def _messages(report: dict) -> list:
     out = []
     name = f"{report['variable']} ({report['source_id']})"
+    n_ra = report.get("srad_above_extraterrestrial", {}).get("count", 0)
+    if n_ra:
+        out.append(
+            f"{name}: {n_ra} values above the extraterrestrial radiation "
+            "(physically impossible) — set to NaN"
+        )
     for lvl in _LEVELS:
         info = report[lvl]
         n = info["below"] + info["above"]
@@ -287,3 +328,118 @@ def write_report(product_path: Path, report: dict) -> Path:
     with atomic_write(path) as tmp:
         tmp.write_text(json.dumps(report, indent=2))
     return path
+
+
+# ---------------------------------------------------------------------------
+# Cross-variable checks used by the crop-model writers.
+
+TEXTURE_RENORMALIZE_PCT = 3.0  # |sum - 100| <= 3: rescale silently
+TEXTURE_WARN_PCT = 5.0         # <= 5: rescale and warn; > 5: exclude (NaN)
+
+
+def normalize_texture(clay, silt, sand):
+    """Make clay + silt + sand sum to 100 % per layer.
+
+    Returns ``(clay, silt, sand, info)``. A layer whose sum is within 3 % of
+    100 is rescaled; within 5 % it is rescaled and counted as a warning;
+    further off, the three values become NaN (the layer is excluded and is
+    written as -99). A layer with any missing fraction is left as is.
+    """
+    clay, silt, sand = (np.asarray(v, dtype="float64").copy() for v in (clay, silt, sand))
+    total = clay + silt + sand
+    dev = np.abs(total - 100.0)
+    ok = np.isfinite(total) & (total > 0)
+    rescale = ok & (dev <= TEXTURE_WARN_PCT)
+    excluded = ok & (dev > TEXTURE_WARN_PCT)
+    factor = np.where(rescale, 100.0 / np.where(ok, total, 1.0), 1.0)
+    clay, silt, sand = clay * factor, silt * factor, sand * factor
+    for arr in (clay, silt, sand):
+        arr[excluded] = np.nan
+    info = {
+        "renormalized": int((rescale & (dev > 0) & (dev <= TEXTURE_RENORMALIZE_PCT)).sum()),
+        "renormalized_with_warning": int((rescale & (dev > TEXTURE_RENORMALIZE_PCT)).sum()),
+        "excluded": int(excluded.sum()),
+        "max_deviation_pct": float(np.nanmax(dev)) if ok.any() else None,
+    }
+    return clay, silt, sand, info
+
+
+GAPFILL_MAX_DAYS = 5
+GAPFILL_VARS = ("TMAX", "TMIN", "SRAD")  # never rainfall
+
+
+def _short_gaps(series, max_days: int):
+    """Boolean mask of NaN runs no longer than ``max_days``, with data on both sides."""
+    isna = series.isna().to_numpy()
+    mask = np.zeros(len(isna), dtype=bool)
+    i = 0
+    while i < len(isna):
+        if not isna[i]:
+            i += 1
+            continue
+        j = i
+        while j < len(isna) and isna[j]:
+            j += 1
+        if i > 0 and j < len(isna) and (j - i) <= max_days:
+            mask[i:j] = True
+        i = j
+    return mask
+
+
+def check_weather(df, date_col: str = "DATE", lat: Optional[float] = None,
+                  gapfill_days: int = GAPFILL_MAX_DAYS):
+    """Cross-variable checks and short gap-filling for a point's daily weather.
+
+    ``df`` has a date column and some of ``TMAX, TMIN, SRAD`` and a rain
+    column (``RAIN`` or ``PRCP``). Returns ``(df, report)`` where ``df``:
+
+    * covers every calendar day between its first and last date (a missing
+      date becomes a row of NaN instead of silently vanishing);
+    * has TMIN <= TMAX (crossed days are swapped, as crop models require and
+      the legacy scripts did) — counted;
+    * has SRAD > extraterrestrial radiation set to NaN when ``lat`` is given;
+    * has TMAX/TMIN/SRAD gaps of at most ``gapfill_days`` consecutive days
+      linearly interpolated (``0`` disables). Rainfall is never filled.
+
+    The report lists what was changed so it can be written next to the files.
+    """
+    import pandas as pd
+
+    df = df.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df = df.sort_values(date_col).drop_duplicates(date_col, keep="first")
+    full = pd.date_range(df[date_col].iloc[0], df[date_col].iloc[-1], freq="D")
+    n_inserted = len(full) - len(df)
+    df = df.set_index(date_col).reindex(full)
+    df.index.name = date_col
+
+    report = {"n_days": len(df), "dates_inserted": int(n_inserted)}
+    if {"TMAX", "TMIN"} <= set(df.columns):
+        crossed = df["TMIN"] > df["TMAX"]
+        report["tmin_gt_tmax_swapped"] = int(crossed.sum())
+        if crossed.any():
+            df.loc[crossed, ["TMAX", "TMIN"]] = df.loc[crossed, ["TMIN", "TMAX"]].to_numpy()
+    if "SRAD" in df.columns and lat is not None:
+        ra = extraterrestrial_radiation(float(lat), df.index.dayofyear.to_numpy())
+        over = df["SRAD"].to_numpy() > ra
+        report["srad_above_extraterrestrial"] = int(over.sum())
+        df.loc[over, "SRAD"] = np.nan
+
+    filled = {}
+    if gapfill_days:
+        for col in GAPFILL_VARS:
+            if col not in df.columns:
+                continue
+            gaps = _short_gaps(df[col], gapfill_days)
+            if gaps.any():
+                interp = df[col].interpolate(method="linear", limit_area="inside")
+                df.loc[gaps, col] = interp[gaps]
+                filled[col] = [d.strftime("%Y-%m-%d") for d in df.index[gaps]]
+    report["gapfilled"] = {k: len(v) for k, v in filled.items()}
+    report["gapfilled_dates"] = filled
+    report["gapfill_max_days"] = gapfill_days
+    report["missing_after"] = {
+        c: int(df[c].isna().sum()) for c in df.columns
+        if c in (*GAPFILL_VARS, "RAIN", "PRCP", "RHUM", "WIND")
+    }
+    return df.reset_index(), report

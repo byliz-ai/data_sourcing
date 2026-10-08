@@ -14,7 +14,9 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from ._common import prepare_weather, station_code, tav_amp
+from ..qc import GAPFILL_MAX_DAYS
+from ._common import prepare_weather, record_written, station_code, tav_amp
+from .validate import validate_wth
 
 # The two column headers are fixed for the TMAX/TMIN/SRAD/RAIN weather set and
 # are byte-aligned to the data field widths below.
@@ -55,14 +57,18 @@ def write_wth(
     elev: Optional[float] = None,
     refht: float = 2.0,
     wndht: float = 2.0,
+    gapfill_days: int = GAPFILL_MAX_DAYS,
+    report: Optional[dict] = None,
 ) -> Path:
     """Write one DSSAT ``.WTH`` file.
 
     ``daily`` needs a date column and TMAX/TMIN/SRAD/RAIN (or PRCP); see
-    :func:`prepare_weather`. TAV and AMP are derived from the series.
-    Returns the written path.
+    :func:`prepare_weather` (``gapfill_days`` is passed on). TAV and AMP are
+    derived from the series. The written file is read back and checked
+    (:func:`.validate.validate_wth`); pass a dict as ``report`` to receive
+    the weather QC and the validation. Returns the written path.
     """
-    df = prepare_weather(daily)
+    df = prepare_weather(daily, lat=lat, gapfill_days=gapfill_days)
     if df.empty:
         raise ValueError("No weather rows to write")
     tav, amp = tav_amp(df)
@@ -85,4 +91,5 @@ def write_wth(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
+    record_written(report, "wth", validate_wth(path), df.attrs.get("qc"))
     return path

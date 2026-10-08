@@ -24,6 +24,10 @@ from typing import Dict, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
 
+from ..qc import normalize_texture
+from ._common import record_written
+from .validate import validate_sol
+
 # SoilGrids depth intervals -> the DSSAT layer bottom depth (cm) and the
 # extract_static_points column suffix.
 DEPTH_LABELS = ["0_5cm", "5_15cm", "15_30cm", "30_60cm", "60_100cm", "100_200cm"]
@@ -242,11 +246,15 @@ def build_profile(
     :func:`agwise_data.extract_static_points` output — it must carry the six
     SoilGrids depths for CLAY, SAND, SILT, SOC, NITROGEN, PH, CEC and BDOD.
     Returns arrays keyed by DSSAT/APSIM meaning plus scalar metadata
-    (texture, albedo, runoff curve, SLU1).
+    (texture, albedo, runoff curve, SLU1). Clay + silt + sand are first made
+    to sum to 100 % per layer (:func:`agwise_data.qc.normalize_texture`:
+    rescaled within 5 %, excluded beyond); what changed is in
+    ``"texture_qc"``.
     """
     clay = np.array([_prop(soil, "CLAY", d) for d in depths])
     sand = np.array([_prop(soil, "SAND", d) for d in depths])
     silt = np.array([_prop(soil, "SILT", d) for d in depths])
+    clay, silt, sand, texture_qc = normalize_texture(clay, silt, sand)
     soc = np.array([_prop(soil, "SOC", d) for d in depths])       # g/kg
     nitro = np.array([_prop(soil, "NITROGEN", d) for d in depths])  # g/kg
     ph = np.array([_prop(soil, "PH", d) for d in depths])
@@ -275,6 +283,7 @@ def build_profile(
         "texture_name": tname, "texture_code": tcode,
         "albedo": albedo, "cn2": cn2,
         "slu1": slu1(clay[0], sand[0]),
+        "texture_qc": texture_qc,
     }
 
 
@@ -311,6 +320,7 @@ def write_sol(
     olsen_p: Optional[Sequence[float]] = None,
     calcareous: bool = False,
     depths: Sequence[str] = DEPTH_LABELS,
+    report: Optional[dict] = None,
 ) -> Path:
     """Write one DSSAT ``.SOL`` profile from a soil-point row.
 
@@ -324,6 +334,9 @@ def write_sol(
     layer) directly, or let it be derived from Mehlich-3 ``EXTP_<depth>``
     columns on ``soil`` (via :func:`olsen_by_layer`, honouring ``calcareous``).
     With neither, the P block is omitted (unchanged from before).
+
+    The file is read back and checked (:func:`.validate.validate_sol`);
+    ``report`` receives the validation and the texture normalization.
     """
     p = build_profile(soil, depths)
     if olsen_p is not None:
@@ -376,6 +389,9 @@ def write_sol(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
+    record_written(report, "sol", validate_sol(path))
+    if report is not None:
+        report["texture"] = p["texture_qc"]
     return path
 
 
