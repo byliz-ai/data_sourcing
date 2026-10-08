@@ -95,10 +95,12 @@ zero credentials (README §2.4 "First success").
 
 - **What functions exist, every parameter:** `REFERENCE.md`.
 - **Which function for which task (area / dataset / period / output), in
-  Python · R · CLI · Claude Code:** `docs/user_guide.md`.
-- **Just ask in plain language:** with the env active, run Claude Code from a
-  folder you own and describe the task — it picks the function, runs it, and
-  reports the output path (`docs/user_guide.md` §5.3).
+  Python · R · CLI · AI assistant:** `docs/user_guide.md`.
+- **Just ask in plain language, with the AI assistant you prefer** (Claude
+  Code, Codex, Gemini CLI, Copilot, Cursor, ChatGPT…). Tell it first: *"Read
+  /home/jovyan/agwise-datasourcing/code/data_sourcing/AGENTS.md"*, then describe
+  the task. It picks the function and runs it, or writes the code for you to
+  run (`docs/user_guide.md` §5.3).
 - **Runnable quickstarts:** `examples/quickstart.py` / `examples/quickstart.R`.
 - The public API is 23 functions (`get_climate`, `extract_points`,
   `get_soil`/`get_dem`, `get_seasonal`, `get_modis`, `to_dssat`/`to_apsim`/
@@ -110,8 +112,10 @@ zero credentials (README §2.4 "First success").
 - **Every run is traceable** (since v0.37): crop-model runs also write
   `manifest.json` (files + checksums, sources, parameters) and `METHODS.md`
   (a paragraph with citations, ready for a report) — `docs/provenance.md`.
-- **Using an AI assistant?** `AGENTS.md` in the repo is written for it. Claude
-  Code loads it automatically only when started inside the repo folder.
+- **Using an AI assistant?** `AGENTS.md` in the repo is written for any of
+  them. Most terminal agents load it on their own when started inside the
+  repo folder. Elsewhere, or in a browser chat, give it the path or attach the
+  file.
 
 ---
 
@@ -122,8 +126,8 @@ zero credentials (README §2.4 "First success").
   working copy — your own scratch dir is for test scripts and outputs only,
   never a git clone.
 - Trunk-based: commit and **push straight to `origin/main`**; CI runs on every
-  push. If you worked with Claude Code, end the commit body with the
-  `Co-Authored-By:` line your session is configured to use.
+  push. If an AI assistant wrote part of the change, say so in the commit
+  body (e.g. the `Co-Authored-By:` line your tool is configured to add).
 - **Editable install:** a single `git pull` in the shared clone updates everyone
   at once. After a version bump, re-run `pip install -e` once to refresh
   `agwise_data.__version__`.

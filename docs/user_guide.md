@@ -9,8 +9,9 @@ Every task is the same four decisions:
 
 > **1. an area → 2. some datasets → 3. a time period → 4. an output.**
 
-Section 4 walks each decision; [Section 5](#5-user-interface--python--r--cli--claude-code)
-shows the same tasks in Python, R, the CLI, or plain language via Claude Code.
+Section 4 walks each decision; [Section 5](#5-user-interface--python--r--cli--ai-assistant)
+shows the same tasks in Python, R, the CLI, or plain language via the AI
+assistant you prefer.
 The full parameter list for any
 function is in **[Section 6 / REFERENCE.md](../REFERENCE.md)**.
 
@@ -197,19 +198,20 @@ give the same manifest, so `diff` shows what changed between runs. For a cube,
 
 ---
 
-## 5. User interface — Python / R / CLI / Claude Code
+## 5. User interface — Python / R / CLI / AI assistant
 
 Every function is available four ways. Pick whichever fits your work; the results
-are equivalent — the first three call the same functions, and Claude Code just
-drives them for you.
+are equivalent — the first three call the same functions, and an AI assistant
+just drives them for you.
 
 - **Python** — `from agwise_data import <function>`
 - **R** — `source("r/agwise_data.R")`, then the `ad_<function>` wrapper
   (gridded wrappers return a `terra::SpatRaster`; point/writer wrappers return a
   `data.frame`). See [cglabs_setup §4](cglabs_setup.md#4-use-from-r-no-reticulate-needed).
 - **CLI** — `agwise-data <subcommand>` (prints a JSON line describing the outputs)
-- **Claude Code** — describe the task in plain language; Claude Code picks the
-  function, runs it, and tells you where the output landed (see [§5.3](#53-claude-code--plain-language))
+- **AI assistant (any)** — describe the task in plain language; the assistant
+  picks the function and runs it (or writes the code for you to run), see
+  [§5.3](#53-ai-assistants--plain-language-use-the-one-you-prefer)
 
 > **Two shapes of point output.** `extract_points` returns a **long/tidy**
 > table — one row per point × date × variable, columns `point, lon, lat, time,
@@ -320,19 +322,38 @@ agwise-data catalog list      # sources + variables available
 agwise-data cache info        # what is cached, and where
 ```
 
-### 5.3 Claude Code — plain language
+### 5.3 AI assistants — plain language (use the one you prefer)
 
-If your team uses **Claude Code**, you can run the whole layer by describing what
-you want in plain language — no need to remember function names or flags. Claude
-Code reads this guide and `REFERENCE.md`, picks the right function, runs it
-through the Python API or the CLI, and reports the DataFrame or the output file
-path. It uses the same functions, so results are identical to the three
-interfaces above.
+You can run the whole layer by describing what you want in plain language,
+with **any AI assistant**: Claude Code, OpenAI Codex, Gemini CLI, GitHub
+Copilot, Cursor, ChatGPT, Gemini… Nothing in the layer depends on a specific
+one. The assistant reads the docs, picks the right function, and either runs it
+or writes the code for you. It uses the same public functions, so the results
+are identical to the three interfaces above.
 
-**Setup:** activate the shared env ([README §2.2](../README.md#22-install)) and
-start Claude Code from a working directory you own (outputs land there); set your
-credentials for any source that needs them ([Section 3](credentials_setup.md)).
-New teammates: start from the onboarding page, [docs/onboarding.md](onboarding.md).
+The repo has one guide written for any AI: **[AGENTS.md](../AGENTS.md)**. It
+lists the task → function map, the conventions and the shared-server rules.
+Make sure your assistant reads it first.
+
+**Which kind of assistant you have changes the setup:**
+
+| Kind | Examples | How it uses the layer | How it gets `AGENTS.md` |
+| --- | --- | --- | --- |
+| **Agent in the terminal or editor** (runs commands on CGLabs) | Claude Code, OpenAI Codex CLI, Gemini CLI, GitHub Copilot (agent mode), Cursor, Aider | runs the Python/R/CLI calls itself and reports the output path | automatic in most of them when started **inside the repo folder**. From your own folder, see the first prompt below |
+| **Chat in the browser** (no access to CGLabs) | ChatGPT, Gemini, Copilot Chat, Claude.ai | writes the Python or R code; **you** run it on CGLabs | upload or paste `AGENTS.md` (and `REFERENCE.md` for parameters) at the start of the chat |
+
+**Setup for a terminal agent:** activate the shared env
+([README §2.2](../README.md#22-install)), start the assistant from a working
+directory you own (outputs land there), and set your credentials for any source
+that needs them ([Section 3](credentials_setup.md)). New teammates: start from
+[docs/onboarding.md](onboarding.md).
+
+**First prompt (works with every assistant):**
+
+> *"Read /home/jovyan/agwise-datasourcing/code/data_sourcing/AGENTS.md first.
+> Then use the agwise-data package for the tasks I give you."*
+
+For a browser chat, attach the file instead of giving the path.
 
 **Example** — the same "monthly rainfall for a country" task as
 [§5.1.A](#51-the-same-tasks-three-ways), asked in plain language:
@@ -340,21 +361,28 @@ New teammates: start from the onboarding page, [docs/onboarding.md](onboarding.m
 > *"Get monthly CHIRPS rainfall for Rwanda from 2015 to 2024 and tell me where
 > the cube is cached."*
 
-Claude Code runs the equivalent of
+The assistant runs, or writes for you, the equivalent of
 `agwise-data get --vars PRCP --country Rwanda --years 2015:2024 --freq monthly`
-(or the matching `get_climate(...)` call) and hands back the cached NetCDF path.
+(or the matching `get_climate(...)` call), and the result is the cached NetCDF
+path.
 
-It shines for **multi-step or exploratory** work — e.g. *"pull AgERA5 temperature
-and local CHIRPS v3 rainfall for these trial points, then write DSSAT files for a
-March–July season"* becomes one request instead of chaining calls by hand. Ask it
-to show the command it will run first if you want to review before it executes.
+Assistants help most with **multi-step or exploratory** work. For example,
+*"pull AgERA5 temperature and local CHIRPS v3 rainfall for these trial points,
+then write DSSAT files for a March–July season"* becomes one request instead of
+a chain of calls. They can also **explain the results**: *"Why are some July
+values NaN in my rainfall cube?"*, *"Summarize the qc_report.json of my DSSAT
+run"*, *"Turn METHODS.md into a methods paragraph in Spanish"*.
 
-It can also **explain the quality checks** for you: *"Why are some July values
-NaN in my rainfall cube?"* or *"Summarize the qc_report.json of my DSSAT run"*.
-The repo has a guide written for AI assistants, [AGENTS.md](../AGENTS.md).
-Claude Code loads it automatically only when started inside the repo folder.
-When you work from your own folder (recommended), start with *"read
-/home/jovyan/agwise-datasourcing/code/data_sourcing/AGENTS.md first"*.
+**Good practice, whatever the assistant:**
+
+- Ask it to **show each command before running it**, so you can review first.
+- **Never paste credentials** (CDS key, Earth Engine token) into a chat. They
+  stay in your home folder ([Section 3](credentials_setup.md)).
+- Use only assistants your organization allows for your data. A browser chat
+  only needs the docs and your request, not your data files.
+- Check what it did against the outputs: `qc_report.json`, `manifest.json` and
+  `METHODS.md` record exactly which functions, sources and parameters were
+  used ([provenance.md](provenance.md)).
 
 Next: **[Section 6 / REFERENCE.md](../REFERENCE.md)** documents every parameter
 of every function.

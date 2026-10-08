@@ -100,7 +100,9 @@ válidos.*
 - **Texto de métodos automático**: párrafo con fuentes, versiones, citas y
   transformaciones, generado desde las citas del catálogo.
 
-### Fase 3 — Nuevas capacidades (priorizar con el equipo)
+### Fase 3 — Nuevas capacidades
+*No se implementará (decisión del equipo, 2026-10-08). La tabla queda solo
+como referencia.*
 
 | Prioridad | Qué | Por qué |
 |---|---|---|
@@ -112,7 +114,9 @@ válidos.*
 | Baja | Alias ICASA en `harmonize` + export ACE/AgMIP | Interoperabilidad AgMIP, sin abandonar `AGRO.*` |
 | Baja | TAMSAT | Alternativa a CHIRPS en África |
 
-### Fase 4 — Tests y CI (en paralelo)
+### Fase 4 — Tests y CI
+*Fuera del plan (cerrado tras la Fase 2). Queda como referencia; parte ya se
+cubrió: tests de lluvia faltante nunca cero y de manifest determinista.*
 - Pocos **tests estructurales** de alto valor: no-zero-rain, todos los drivers
   usan el helper de retry, todo `xr.open_dataset` se cierra.
 - **Byte-pin** de writers DSSAT/APSIM (fixture con hash, como prismpy
@@ -126,9 +130,9 @@ válidos.*
 - El volumen de tests "sprint-pinned": tomar el patrón, no la cantidad.
 
 ## 5. Siguiente paso
-Las **Fases 0, 1 y 2** están hechas (v0.33.0–v0.37.0). Sigue la **Fase 3**
-(nuevas capacidades, a priorizar con el equipo); la Fase 4 (tests y CI) puede
-avanzar en paralelo.
+**Plan cerrado.** Las **Fases 0, 1 y 2** están hechas (v0.33.0–v0.37.0). El
+equipo decidió no implementar la Fase 3; las Fases 3 y 4 quedan solo como
+referencia.
 
 ## 6. Lo aprendido al aplicar la Fase 1 con datos reales
 

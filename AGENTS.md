@@ -1,4 +1,11 @@
-# AGENTS.md — guide for AI assistants (Claude Code, Codex, Copilot, …)
+# AGENTS.md — guide for any AI assistant
+
+Written for whichever assistant the user chooses: terminal or editor agents
+(Claude Code, OpenAI Codex, Gemini CLI, GitHub Copilot, Cursor, Aider, …) and
+browser chats (ChatGPT, Gemini, Claude.ai, …) that were given this file.
+`CLAUDE.md` and `GEMINI.md` only point here. Keep this file tool-neutral.
+If you cannot run commands (a browser chat), write the Python/R code for the
+user to run on CGLabs, and never ask them to paste credentials.
 
 This file is for **AI coding assistants** working in this repository or using
 the `agwise-data` package for a user. Humans should start at
@@ -45,7 +52,7 @@ WOFOST, ORYZA). Python package `agwise_data` (`src/agwise_data/`), R wrappers
 | Methods paragraph / citations | `methods_text(out_dir_or_product)` | `methods` | `ad_methods_text` |
 
 Full parameters: [REFERENCE.md](REFERENCE.md). Same task in all interfaces:
-[docs/user_guide.md §5](docs/user_guide.md#5-user-interface--python--r--cli--claude-code).
+[docs/user_guide.md §5](docs/user_guide.md#5-user-interface--python--r--cli--ai-assistant).
 
 ## Conventions you must respect
 
@@ -145,7 +152,7 @@ updates for everyone.
 | [docs/onboarding.md](docs/onboarding.md) | new teammates on CGLabs |
 | [docs/credentials_setup.md](docs/credentials_setup.md) | Copernicus CDS + Earth Engine |
 | [docs/cglabs_setup.md](docs/cglabs_setup.md) | server install, data roots, R, performance env vars |
-| [docs/user_guide.md](docs/user_guide.md) | area / data / period / output decisions; Python · R · CLI · Claude Code |
+| [docs/user_guide.md](docs/user_guide.md) | area / data / period / output decisions; Python · R · CLI · AI assistant |
 | [docs/quality_control.md](docs/quality_control.md) | everything QC: ranges, reports, writers, sources |
 | [docs/provenance.md](docs/provenance.md) | manifests, checksums, recipes, declarations, methods text |
 | [REFERENCE.md](REFERENCE.md) | every public function and parameter |

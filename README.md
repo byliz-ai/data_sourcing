@@ -24,13 +24,15 @@ account. Soil, terrain and rainfall on CGLabs need none; see
 Same in R (`ad_get_climate(...)`) and on the command line
 (`agwise-data get ...`). See [what you get back](#15-what-you-get-back).
 
-## New here? Let Claude Code set you up — and drive the module for you
+## New here? Let an AI assistant set you up — and drive the module for you
 
-The fastest way through **everything below** is to not do it by hand: open
-**Claude Code** on CGLabs (new teammates: start from the
-[onboarding guide](docs/onboarding.md)) in a
-folder you own, and ask in plain language. It reads these docs, runs the same
-public functions documented here, and reports back — you review, it executes.
+The fastest way through **everything below** is to not do it by hand: use the
+**AI assistant you prefer** (Claude Code, OpenAI Codex, Gemini CLI, GitHub
+Copilot, Cursor, ChatGPT…) and ask in plain language. Tell it first to read
+**[AGENTS.md](AGENTS.md)**, the repo's guide for any AI. A terminal agent
+started on CGLabs in a folder you own runs the same public functions documented
+here and reports back. A browser chat writes the code and you run it. New
+teammates: start from the [onboarding guide](docs/onboarding.md).
 
 | Ask it to… | Example prompt | Covers |
 | --- | --- | --- |
@@ -41,12 +43,13 @@ public functions documented here, and reports back — you review, it executes.
 Multi-step work is where it shines — one request instead of chaining calls by
 hand. Ask it to *show each command before running* if you want to review first,
 and remember the golden rule: it will place **your** credentials in **your**
-home, never in shared folders. Details and more examples:
-[user guide §5.3](docs/user_guide.md#53-claude-code--plain-language).
+home, never in shared folders. Details, which assistants load `AGENTS.md`
+on their own, and more examples:
+[user guide §5.3](docs/user_guide.md#53-ai-assistants--plain-language-use-the-one-you-prefer).
 
 Prefer to drive yourself — or want to understand what it's doing? Follow the
-documentation map below; Claude Code and the manual path are interchangeable at
-any point.
+documentation map below; the assistant and the manual path are interchangeable
+at any point.
 
 ## Documentation map — read in this order
 
@@ -60,7 +63,7 @@ top to bottom; each is a self-contained step of the journey.
 | 2 | **Installation** | this page ↓ + [docs/cglabs_setup.md](docs/cglabs_setup.md) | install on CGLabs (or a laptop) and check it works |
 | 3 | **Credentials** | [docs/credentials_setup.md](docs/credentials_setup.md) | create / configure / verify Copernicus + Google Earth Engine |
 | 4 | **User workflow** | [docs/user_guide.md](docs/user_guide.md) | choose your area, datasets, time period and output |
-| 5 | **User interface (Python / R / CLI / Claude Code)** | [docs/user_guide.md](docs/user_guide.md#5-user-interface--python--r--cli--claude-code) | run the same task in the language you prefer |
+| 5 | **User interface (Python / R / CLI / AI assistant)** | [docs/user_guide.md](docs/user_guide.md#5-user-interface--python--r--cli--ai-assistant) | run the same task in the language you prefer |
 | 6 | **Function documentation** | [REFERENCE.md](REFERENCE.md) | look up every function: parameters, types, defaults, examples |
 | 6b | **Data quality (QC)** | [docs/quality_control.md](docs/quality_control.md) | understand why a value is `NaN`, what a `QCWarning` means, how to read `qc_report.json` |
 | 6c | **Provenance** | [docs/provenance.md](docs/provenance.md) | cite the data (`METHODS.md`), check files with `manifest.json`, read `.meta.json` |
@@ -259,7 +262,8 @@ credentials next — see [Section 3](docs/credentials_setup.md).
 data_sourcing/
 ├── README.md              ← you are here (Sections 1–2)
 ├── REFERENCE.md           ← Section 6: every function, every parameter
-├── AGENTS.md  CLAUDE.md   ← guide for AI assistants
+├── AGENTS.md              ← guide for any AI assistant
+├── CLAUDE.md  GEMINI.md   ← one-line pointers to AGENTS.md
 ├── CHANGELOG.md  CONTRIBUTING.md
 ├── docs/
 │   ├── onboarding.md          ← new teammates start here
@@ -306,8 +310,9 @@ follow the **[user workflow (Section 4)](docs/user_guide.md)**.
   verify Copernicus CDS and Google Earth Engine, click-by-click.
 - **[Section 4 — User workflow](docs/user_guide.md):** choose your study area,
   datasets, time period and output type.
-- **[Section 5 — User interface](docs/user_guide.md#5-user-interface--python--r--cli--claude-code):**
-  the same tasks in Python, R, the CLI, or plain language via Claude Code.
+- **[Section 5 — User interface](docs/user_guide.md#5-user-interface--python--r--cli--ai-assistant):**
+  the same tasks in Python, R, the CLI, or plain language via the AI assistant
+  you prefer.
 - **[Section 6 — Function documentation](REFERENCE.md):** every public function
   with all its parameters, types, defaults and a runnable example.
 - **[Data quality](docs/quality_control.md):** what is checked, what a

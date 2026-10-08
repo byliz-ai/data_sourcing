@@ -100,7 +100,7 @@ README). Each doc has **one job** and one home for each topic:
 | 6 Function reference | `REFERENCE.md` | every function's parameter tables |
 | Data quality | `docs/quality_control.md` | QC behaviour, default ranges, reports, sources/credits |
 | Provenance | `docs/provenance.md` | run manifests, sidecars, recipes, declarations, methods text |
-| AI assistants | `AGENTS.md` (`CLAUDE.md` imports it) | compact task→function map, code map, invariants |
+| AI assistants (any) | `AGENTS.md` (`CLAUDE.md`, `GEMINI.md` only point to it) | compact task→function map, code map, invariants; keep it tool-neutral |
 | History | `CHANGELOG.md` | what changed per version and **why** (include real-data evidence) |
 
 - **Don't duplicate** setup steps, folder explanations or a doc list across
@@ -152,9 +152,9 @@ true as the module grows:
 [prismpy](https://github.com/izuku-franck1555/prismpy) — known defects plus a
 phased plan (QC ranges, provenance manifests, SPAM, IDW, NASA POWER, HWSD,
 ISIMIP3b) — is in [docs/prismpy_comparison.md](docs/prismpy_comparison.md).
-**Phases 0 (fixes), 1 (quality control) and 2 (provenance) are done**
-(v0.33.0–v0.37.0); next is Phase 3 (new sources and capabilities, to
-prioritize with the team).
+**The plan is closed:** Phases 0 (fixes), 1 (quality control) and 2
+(provenance) are done (v0.33.0–v0.37.0). The team decided not to implement
+Phase 3 (new sources); Phases 3 and 4 stay in that doc only as reference.
 
 ## Lessons that shaped the code (don't undo them)
 

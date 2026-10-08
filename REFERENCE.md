@@ -797,7 +797,7 @@ Helpers for scripts are in `agwise_data.provenance` (`sha256_file`,
 Every function above has an **R wrapper** (`ad_<name>`, same arguments —
 `source("r/agwise_data.R")`) and a **CLI subcommand** (`agwise-data <name>`).
 The full Python ↔ R ↔ CLI mapping, with side-by-side examples, is in
-**[user guide §5](docs/user_guide.md#5-user-interface--python--r--cli--claude-code)**.
+**[user guide §5](docs/user_guide.md#5-user-interface--python--r--cli--ai-assistant)**.
 
 ```bash
 agwise-data --help            # list every subcommand
