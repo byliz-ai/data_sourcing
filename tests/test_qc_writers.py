@@ -41,27 +41,26 @@ def test_gridded_srad_above_ra_is_masked():
 
 
 @pytest.mark.parametrize(
-    "fractions, expect",
+    "fractions, over3, over5",
     [
-        ((30.0, 30.0, 38.5), "renormalized"),               # 98.5 %
-        ((30.0, 30.0, 36.0), "renormalized_with_warning"),  # 96 %
-        ((30.0, 30.0, 30.0), "excluded"),                   # 90 %
+        ((30.0, 30.0, 38.5), 0, 0),   # 98.5 %
+        ((30.0, 30.0, 36.0), 1, 0),   # 96 %
+        ((30.0, 30.0, 30.0), 1, 1),   # 90 %: still rescaled, flagged
     ],
 )
-def test_normalize_texture_levels(fractions, expect):
+def test_normalize_texture_always_rescales_and_flags(fractions, over3, over5):
     clay, silt, sand, info = qc.normalize_texture(*[[v] for v in fractions])
-    assert info[expect] == 1
-    if expect == "excluded":
-        assert np.isnan(clay[0]) and np.isnan(sand[0])
-    else:
-        assert clay[0] + silt[0] + sand[0] == pytest.approx(100.0)
+    assert clay[0] + silt[0] + sand[0] == pytest.approx(100.0)
+    assert info["renormalized"] == 1
+    assert info["deviation_over_3pct"] == over3
+    assert info["large_deviation_over_5pct"] == over5
 
 
 def test_normalize_texture_leaves_missing_layers_alone():
     clay, silt, sand, info = qc.normalize_texture([np.nan, 20.0], [30.0, 30.0], [40.0, 50.0])
     assert np.isnan(clay[0]) and silt[0] == 30.0
-    assert info == {"renormalized": 0, "renormalized_with_warning": 0,
-                    "excluded": 0, "max_deviation_pct": 0.0}
+    assert info == {"renormalized": 0, "deviation_over_3pct": 0,
+                    "large_deviation_over_5pct": 0, "max_deviation_pct": 0.0}
 
 
 def test_check_weather_dates_swap_ra_and_gapfill():
@@ -169,7 +168,8 @@ def test_build_profile_normalizes_texture():
     p = soil.build_profile(row)
     top = p["clay"][0] + p["silt"][0] + p["sand"][0]
     assert top == pytest.approx(100.0)
-    assert p["texture_qc"]["renormalized_with_warning"] == 1
+    assert p["texture_qc"]["deviation_over_3pct"] == 1
+    assert p["texture_qc"]["large_deviation_over_5pct"] == 0
 
 
 def test_to_dssat_writes_qc_report(tmp_path):

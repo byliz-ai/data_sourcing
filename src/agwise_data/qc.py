@@ -334,31 +334,31 @@ def write_report(product_path: Path, report: dict) -> Path:
 # Cross-variable checks used by the crop-model writers.
 
 TEXTURE_RENORMALIZE_PCT = 3.0  # |sum - 100| <= 3: rescale silently
-TEXTURE_WARN_PCT = 5.0         # <= 5: rescale and warn; > 5: exclude (NaN)
+TEXTURE_WARN_PCT = 5.0         # > 3: rescale and count; > 5: also flag as large
 
 
 def normalize_texture(clay, silt, sand):
     """Make clay + silt + sand sum to 100 % per layer.
 
-    Returns ``(clay, silt, sand, info)``. A layer whose sum is within 3 % of
-    100 is rescaled; within 5 % it is rescaled and counted as a warning;
-    further off, the three values become NaN (the layer is excluded and is
-    written as -99). A layer with any missing fraction is left as is.
+    Every layer with all three fractions is rescaled to 100 %. Layers that
+    were more than 3 % off are counted, and those more than 5 % off are also
+    counted as ``large_deviation`` so the report shows them. No layer is
+    dropped: SoilGrids predicts each fraction independently, and in its
+    0-5 cm layer 28-40 % of African pixels (Rwanda, Kenya, Ethiopia) are more
+    than 5 % off — excluding them (prismpy's rule) would blank the top layer
+    of a third of all profiles. A layer with a missing fraction is left as is.
+    Returns ``(clay, silt, sand, info)``.
     """
     clay, silt, sand = (np.asarray(v, dtype="float64").copy() for v in (clay, silt, sand))
     total = clay + silt + sand
-    dev = np.abs(total - 100.0)
     ok = np.isfinite(total) & (total > 0)
-    rescale = ok & (dev <= TEXTURE_WARN_PCT)
-    excluded = ok & (dev > TEXTURE_WARN_PCT)
-    factor = np.where(rescale, 100.0 / np.where(ok, total, 1.0), 1.0)
+    dev = np.where(ok, np.abs(total - 100.0), np.nan)
+    factor = np.where(ok, 100.0 / np.where(ok, total, 1.0), 1.0)
     clay, silt, sand = clay * factor, silt * factor, sand * factor
-    for arr in (clay, silt, sand):
-        arr[excluded] = np.nan
     info = {
-        "renormalized": int((rescale & (dev > 0) & (dev <= TEXTURE_RENORMALIZE_PCT)).sum()),
-        "renormalized_with_warning": int((rescale & (dev > TEXTURE_RENORMALIZE_PCT)).sum()),
-        "excluded": int(excluded.sum()),
+        "renormalized": int((ok & (dev > 0)).sum()),
+        "deviation_over_3pct": int((ok & (dev > TEXTURE_RENORMALIZE_PCT)).sum()),
+        "large_deviation_over_5pct": int((ok & (dev > TEXTURE_WARN_PCT)).sum()),
         "max_deviation_pct": float(np.nanmax(dev)) if ok.any() else None,
     }
     return clay, silt, sand, info

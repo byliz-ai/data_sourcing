@@ -248,8 +248,8 @@ def build_profile(
     Returns arrays keyed by DSSAT/APSIM meaning plus scalar metadata
     (texture, albedo, runoff curve, SLU1). Clay + silt + sand are first made
     to sum to 100 % per layer (:func:`agwise_data.qc.normalize_texture`:
-    rescaled within 5 %, excluded beyond); what changed is in
-    ``"texture_qc"``.
+    every complete layer is rescaled; deviations over 3 % / 5 % are counted);
+    what changed is in ``"texture_qc"``.
     """
     clay = np.array([_prop(soil, "CLAY", d) for d in depths])
     sand = np.array([_prop(soil, "SAND", d) for d in depths])

@@ -299,7 +299,7 @@ def summarize(records: Sequence[Optional[dict]]) -> dict:
         "tmin_gt_tmax_swapped": sum(
             r.get("weather", {}).get("tmin_gt_tmax_swapped", 0) for r in recs
         ),
-        "texture_layers_excluded": sum(
-            (r.get("texture") or {}).get("excluded", 0) for r in recs
+        "texture_layers_over_5pct": sum(
+            (r.get("texture") or {}).get("large_deviation_over_5pct", 0) for r in recs
         ),
     }
